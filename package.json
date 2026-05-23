@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "concurrently -n web,api -c cyan,magenta \"next dev\" \"tsx server/index.ts\"",
     "dev:ambient": "concurrently -n web,api,mac -c cyan,magenta,green \"next dev\" \"tsx server/index.ts\" \"wait-on http://localhost:3000 && npm run build:ambient && electron ambient/dist/main.js\"",
-    "dev:notch": "concurrently -n ui,electron -c cyan,green \"vite --config notch/vite.config.ts\" \"wait-on http://localhost:5174 && npm run build:notch-electron && SIMULATION_MODE=true electron notch/dist-electron/electron/main.js\"",
+    "dev:notch": "concurrently -n web,api,ui,electron -c cyan,magenta,blue,green \"next dev\" \"tsx server/index.ts\" \"vite --config notch/vite.config.ts\" \"wait-on http://localhost:3000 http://localhost:5174 && npm run build:notch-electron && SIMULATION_MODE=true electron notch/dist-electron/electron/main.js\"",
     "build:notch-electron": "tsc -p notch/tsconfig.electron.json",
     "build:notch-ui": "vite build --config notch/vite.config.ts",
     "build:notch": "npm run build:notch-ui && npm run build:notch-electron",

@@ -1,47 +1,22 @@
 # Notch
 
-Ambient AI copilot for Account Executives — a macOS overlay that surfaces pre-call prep, live assist during calls, and post-call actions from a knowledge graph.
+Ambient AI copilot for Account Executives — **two connected clusters**:
 
-**No work integrations needed to demo.** The `SimulationEngine` replays realistic fixture data with the same interface as real Salesforce/Gong/Gmail connectors.
-
-## Run the demo (macOS)
+- **Central cluster** — dashboard for integrations, deals, meetings, actions (`/dashboard`)
+- **Mobile cluster** — droplet below the Mac notch for ultra-fast in-call assist (`⌘⇧Space`)
 
 ```bash
 npm install
 npm run dev:notch
 ```
 
-| Hotkey | Action |
-|--------|--------|
-| `⌘⇧D` | Start simulated call |
-| `⌘⇧E` | End call |
-| `⌘⇧Space` | Graph search |
+| Surface | URL / access |
+|---------|----------------|
+| Central dashboard | http://localhost:3000/dashboard |
+| Mobile droplet | Green dot below notch · `⌘⇧Space` |
 
-Or use the **Start call / End call** buttons at the bottom of the panel.
+Try in the droplet: *"Wtf do I say to their GDPR question?"*
 
-## What's in the repo
+No work integrations required — shared simulation context powers both clusters.
 
-| Path | Purpose |
-|------|---------|
-| `notch/` | **Primary product** — Electron app, simulation, graph |
-| `app/`, `server/` | Legacy STREAM PWA + API (optional) |
-
-## Requirements
-
-- **macOS** for the Electron overlay
-- **Optional:** `ANTHROPIC_API_KEY` for future Claude integration (fixtures include pre-built live assist responses)
-
-## Docs
-
-- [notch/README.md](notch/README.md) — demo details
-- [NOTCH_SPEC.md](NOTCH_SPEC.md) — full build spec
-
-## Legacy PWA
-
-The Next.js signal feed PWA still runs separately:
-
-```bash
-npm run dev          # http://localhost:3000
-```
-
-Deploy to Vercel with `DEMO_MODE=1` for the interactive web demo.
+See [notch/README.md](notch/README.md) and [NOTCH_SPEC.md](NOTCH_SPEC.md).

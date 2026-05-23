@@ -2,149 +2,80 @@ import 'dotenv/config'
 import { app, BrowserWindow, globalShortcut, screen, Tray, nativeImage, ipcMain } from 'electron'
 import type { NativeImage } from 'electron'
 import { join } from 'path'
-import { SimulationEngine } from '../simulation/SimulationEngine'
-import { GraphStore } from '../graph/GraphStore'
-import type {
-  ExtractedSignal,
-  LoadBearingGap,
-  Phase,
-  PostCallSummary,
-  PreCallPrep,
-  TechnicalQuestion
-} from '../simulation/types'
 
 const isDev = !app.isPackaged
-const RENDERER_URL = isDev
+const CENTRAL_URL = isDev
+  ? 'http://localhost:3000/dashboard'
+  : `http://localhost:3000/dashboard`
+const MOBILE_URL = isDev
   ? 'http://localhost:5174'
   : `file://${join(__dirname, '../dist-renderer/index.html')}`
 
-type LiveState = {
-  transcript: { speaker: string; text: string }[]
-  liveAnswer: TechnicalQuestion | null
-  loadBearing: LoadBearingGap[]
-  signals: ExtractedSignal[]
-  checkedPoints: Set<number>
-}
+const DROPLET_IDLE = { w: 24, h: 24 }
+const DROPLET_EXPANDED = { w: 380, h: 460 }
 
-type NotchState = {
-  phase: Phase
-  prep: PreCallPrep | null
-  live: LiveState
-  postCall: PostCallSummary | null
-  searchOpen: boolean
-  callActive: boolean
-  simulationMode: boolean
-}
-
-let panelWindow: BrowserWindow | null = null
+let centralWindow: BrowserWindow | null = null
+let dropletWindow: BrowserWindow | null = null
 let tray: Tray | null = null
-let engine: SimulationEngine
-let graph: GraphStore
-let state: NotchState
-let sessionId = ''
+let dropletExpanded = false
 
-function defaultLive(): LiveState {
-  return {
-    transcript: [],
-    liveAnswer: null,
-    loadBearing: [],
-    signals: [],
-    checkedPoints: new Set()
+function dropletPosition(expanded: boolean): { x: number; y: number; w: number; h: number } {
+  const { width } = screen.getPrimaryDisplay().workAreaSize
+  const w = expanded ? DROPLET_EXPANDED.w : DROPLET_IDLE.w
+  const h = expanded ? DROPLET_EXPANDED.h : DROPLET_IDLE.h
+  const x = Math.round((width - w) / 2)
+  const y = expanded ? 36 : 32
+  return { x, y, w, h }
+}
+
+function setDropletExpanded(expanded: boolean): void {
+  if (!dropletWindow) return
+  dropletExpanded = expanded
+  const { x, y, w, h } = dropletPosition(expanded)
+  dropletWindow.setBounds({ x, y, width: w, height: h }, true)
+  dropletWindow.setFocusable(expanded)
+  if (expanded) {
+    dropletWindow.focus()
+    dropletWindow.webContents.send('notch:mode', 'expanded')
+  } else {
+    dropletWindow.webContents.send('notch:mode', 'idle')
   }
 }
 
-function broadcast(): void {
-  panelWindow?.webContents.send('notch:state', {
-    ...state,
-    live: { ...state.live, checkedPoints: [...state.live.checkedPoints] }
+function toggleDroplet(): void {
+  setDropletExpanded(!dropletExpanded)
+}
+
+function createCentralWindow(): BrowserWindow {
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 860,
+    minWidth: 960,
+    minHeight: 640,
+    title: 'Notch — Central Cluster',
+    backgroundColor: '#f5f5f7',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false
+    }
   })
+
+  win.loadURL(CENTRAL_URL)
+  return win
 }
 
-function setPhase(phase: Phase): void {
-  state.phase = phase
-  state.callActive = phase === 'live_call'
-  updateTray()
-  broadcast()
-}
-
-async function loadPreCall(): Promise<void> {
-  const scenario = engine.getScenario()
-  state.prep = await engine.getPreCallPrep(scenario.active_deal_id)
-  state.live = defaultLive()
-  state.postCall = null
-  setPhase('pre_call')
-}
-
-async function startCall(): Promise<void> {
-  const scenario = engine.getScenario()
-  sessionId = `session-${Date.now()}`
-  state.live = defaultLive()
-  setPhase('live_call')
-
-  engine.startCallReplay(
-    scenario.call_id,
-    {
-      onTranscriptChunk: (speaker, text) => {
-        state.live.transcript.push({ speaker, text })
-        if (state.live.transcript.length > 20) state.live.transcript.shift()
-        broadcast()
-      },
-      onSignalDetected: (signal) => {
-        state.live.signals.push(signal)
-        graph.addSessionSignals(scenario.active_deal_id, sessionId, [signal])
-        broadcast()
-      },
-      onTechnicalQuestion: (trigger) => {
-        state.live.liveAnswer = trigger
-        broadcast()
-      },
-      onLoadBearingGap: (gap) => {
-        state.live.loadBearing.push(gap)
-        broadcast()
-      },
-      onCallEnd: (summary) => {
-        finishCall(summary)
-      }
-    },
-    scenario.replay_speed
-  )
-}
-
-function finishCall(summary: PostCallSummary): void {
-  engine.stopCallReplay()
-  const scenario = engine.getScenario()
-  graph.saveSession(
-    sessionId,
-    scenario.active_deal_id,
-    'post_call',
-    JSON.stringify(state.live.transcript),
-    summary.summary,
-    summary.signals
-  )
-  state.postCall = summary
-  setPhase('post_call')
-}
-
-async function endCall(): Promise<void> {
-  engine.stopCallReplay()
-  const summary = await engine.getPostCallSummary(sessionId || 'manual')
-  finishCall(summary)
-}
-
-function createPanelWindow(): BrowserWindow {
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize
-  const panelWidth = 320
-  const panelHeight = 700
+function createDropletWindow(): BrowserWindow {
+  const { x, y, w, h } = dropletPosition(false)
 
   const win = new BrowserWindow({
-    width: panelWidth,
-    height: panelHeight,
-    x: width - panelWidth - 12,
-    y: 48,
+    width: w,
+    height: h,
+    x,
+    y,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
-    focusable: true,
+    focusable: false,
     skipTaskbar: true,
     hasShadow: false,
     movable: true,
@@ -158,108 +89,57 @@ function createPanelWindow(): BrowserWindow {
 
   win.setAlwaysOnTop(true, 'screen-saver')
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  win.loadURL(RENDERER_URL)
+  win.loadURL(MOBILE_URL)
   win.show()
 
   return win
 }
 
-function createTrayIcon(callActive: boolean): NativeImage {
+function createTrayIcon(): NativeImage {
   const size = 16
   const canvas = Buffer.alloc(size * size * 4)
   for (let i = 0; i < size * size; i++) {
     const o = i * 4
     const x = i % size
     const y = Math.floor(i / size)
-    const cx = size / 2
-    const cy = size / 2
-    const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+    const dist = Math.sqrt((x - 7.5) ** 2 + (y - 7.5) ** 2)
     if (dist < 5) {
-      canvas[o] = callActive ? 80 : 180
-      canvas[o + 1] = callActive ? 220 : 180
-      canvas[o + 2] = callActive ? 120 : 180
+      canvas[o] = 80
+      canvas[o + 1] = 200
+      canvas[o + 2] = 120
       canvas[o + 3] = 255
     }
   }
   return nativeImage.createFromBuffer(canvas, { width: size, height: size })
 }
 
-function updateTray(): void {
-  if (!tray) return
-  tray.setImage(createTrayIcon(state.callActive))
-  tray.setToolTip(state.callActive ? 'Notch — call active' : 'Notch — idle')
-}
+app.whenReady().then(() => {
+  centralWindow = createCentralWindow()
+  dropletWindow = createDropletWindow()
 
-app.whenReady().then(async () => {
-  if (process.platform === 'darwin') app.dock?.hide()
-
-  const simulationMode = process.env.SIMULATION_MODE !== 'false'
-  engine = new SimulationEngine('live-call-demo')
-  engine.setMode(simulationMode ? 'simulation' : 'live')
-  graph = new GraphStore()
-
-  const deal = await engine.getDealContext(engine.getScenario().active_deal_id)
-  graph.ingestDeal(deal)
-
-  state = {
-    phase: 'idle',
-    prep: null,
-    live: defaultLive(),
-    postCall: null,
-    searchOpen: false,
-    callActive: false,
-    simulationMode
-  }
-
-  panelWindow = createPanelWindow()
-  await loadPreCall()
-
-  tray = new Tray(createTrayIcon(false))
+  tray = new Tray(createTrayIcon())
+  tray.setToolTip('Notch')
   tray.setContextMenu(
     require('electron').Menu.buildFromTemplate([
-      { label: 'Pre-call prep', click: () => void loadPreCall() },
-      { label: 'Start call (⌘⇧D)', click: () => void startCall() },
-      { label: 'End call (⌘⇧E)', click: () => void endCall() },
+      { label: 'Show dashboard', click: () => centralWindow?.show() },
+      { label: 'Open mobile assist (⌘⇧Space)', click: toggleDroplet },
       { type: 'separator' },
       { label: 'Quit', click: () => app.quit() }
     ])
   )
 
-  globalShortcut.register('CommandOrControl+Shift+Space', () => {
-    state.searchOpen = !state.searchOpen
-    broadcast()
-  })
-  globalShortcut.register('CommandOrControl+Shift+D', () => void startCall())
-  globalShortcut.register('CommandOrControl+Shift+E', () => void endCall())
+  globalShortcut.register('CommandOrControl+Shift+Space', toggleDroplet)
 
-  ipcMain.handle('notch:getState', () => ({
-    ...state,
-    live: { ...state.live, checkedPoints: [...state.live.checkedPoints] }
-  }))
+  ipcMain.on('notch:collapse', () => setDropletExpanded(false))
+  ipcMain.on('notch:expand', () => setDropletExpanded(true))
 
-  ipcMain.on('notch:togglePoint', (_e, idx: number) => {
-    if (state.live.checkedPoints.has(idx)) state.live.checkedPoints.delete(idx)
-    else state.live.checkedPoints.add(idx)
-    broadcast()
-  })
-
-  ipcMain.on('notch:closeSearch', () => {
-    state.searchOpen = false
-    broadcast()
-  })
-
-  ipcMain.on('notch:startCall', () => void startCall())
-  ipcMain.on('notch:endCall', () => void endCall())
-  ipcMain.on('notch:loadPreCall', () => void loadPreCall())
-
-  console.log('[notch] ready — ⌘⇧D start call · ⌘⇧E end · ⌘⇧Space search')
+  console.log('[notch] central + mobile clusters ready — ⌘⇧Space for droplet')
 })
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
-  graph?.close()
 })
 
 app.on('window-all-closed', () => {
-  /* tray app */
+  /* keep tray */
 })

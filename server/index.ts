@@ -50,7 +50,7 @@ async function main(): Promise<void> {
     void startSlackSocketMode(io).catch((e) =>
       console.warn('[slack] socket mode skipped:', e.message)
     )
-    startXPolling(io)
+    if (process.env.DEMO_MODE !== '1') startXPolling(io)
   })
 }
 

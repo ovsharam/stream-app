@@ -152,7 +152,13 @@ async function fetchXNitterFallback(limit = 30): Promise<StreamItem[]> {
 }
 
 export async function syncX(io?: SocketServer): Promise<StreamItem[]> {
-  if (!getToken('x')) return []
+  let token: Record<string, unknown> | undefined
+  try {
+    token = getToken('x')
+  } catch {
+    return []
+  }
+  if (!token) return []
 
   try {
     let items: StreamItem[]

@@ -1,22 +1,17 @@
 # Notch
 
-Ambient AI copilot for Account Executives — **two connected clusters**:
-
-- **Central cluster** — streaming feed of notifications from Notch, Meet, Gmail, Slack, Gong (`/dashboard`)
-- **Mobile cluster** — droplet below the Mac notch for ultra-fast in-call assist (`⌘⇧Space`)
+**Desktop-only** — two native Electron apps (central stream + mobile droplet).
 
 ```bash
 npm install
 npm run dev:notch
 ```
 
-| Surface | URL / access |
-|---------|----------------|
-| Central dashboard | http://localhost:3000/dashboard |
-| Mobile droplet | Green dot below notch · `⌘⇧Space` |
+Do **not** use the browser for the product shell. Electron opens both windows automatically.
 
-Try in the droplet: *"Wtf do I say to their GDPR question?"*
+| App | Description |
+|-----|-------------|
+| **Central** | X-style live stream · Meet join · Notch AI transcript |
+| **Mobile** | Droplet below notch · `⌘⇧Space` mid-call assist |
 
-No work integrations required — shared simulation context powers both clusters.
-
-See [notch/README.md](notch/README.md) and [NOTCH_SPEC.md](NOTCH_SPEC.md).
+Legacy Next.js PWA at `/` is separate. See [notch/README.md](notch/README.md).

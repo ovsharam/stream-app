@@ -1,44 +1,30 @@
-# Notch — Central + Mobile Clusters
+# Notch Desktop
 
-Two connected surfaces sharing one knowledge graph:
-
-| Cluster | What it is | Where |
-|---------|-----------|--------|
-| **Central** | Locked-in dashboard — integrations, deals, meetings, actions, activity | Main window → `/dashboard` |
-| **Mobile** | Ambient droplet below the Mac notch — ultra-fast in-call assist | Top-center dot → `⌘⇧Space` |
-
-## Run both clusters
+**Two native Electron apps** — not browser tabs.
 
 ```bash
 npm run dev:notch
 ```
 
-Opens:
-- **Central cluster** — http://localhost:3000/dashboard
-- **Mobile droplet** — green dot below notch (click or `⌘⇧Space` to expand)
+| App | What |
+|-----|------|
+| **Central cluster** | X-style live stream desktop window |
+| **Mobile cluster** | Green droplet below Mac notch · `⌘⇧Space` |
 
-## Mobile cluster demo
+Requires API on `:3131` (started automatically).
 
-1. Click the droplet or press `⌘⇧Space`
-2. Type: `Wtf do I say to their GDPR question?`
-3. Hit **Get guidance** — shared context returns a **Say this** script + agenda next step + trust note
+## Central stream
 
-Context is grepped from the same graph the central cluster shows (Acme Corp, EU residency pattern, Redwood reference, SCC template).
+- Light X desktop layout — nav, feed, trending rail
+- **Join Meet** buttons open call in system browser from desktop app
+- **Notch AI** live transcript panel (Otter-style) during calls
+- Events stream in from Gmail, Slack, Meet, Gong, build agents
 
-## Central cluster
+## Mobile cluster
 
-- **Overview** — active deal, signals, action queue
-- **Integrations** — Gmail, Slack, Salesforce, Gong, Calendar
-- **Meetings** — live call strip + stream placeholder
-- **Actions** — email drafts, SF updates, build briefs
-- **Activity** — cross-source event log
+Separate always-on-top Electron window. Ambient assist mid-call.
 
-## Architecture
+## Dev URLs (Electron loads these — don't use browser for product)
 
-```
-Central (Next.js /dashboard)  ──┐
-                                  ├── /api/cluster/*  ← shared context
-Mobile (Electron droplet)     ──┘
-```
-
-Simulation mode — no work accounts required.
+- Central: `http://localhost:5174/central.html`
+- Mobile: `http://localhost:5174/`

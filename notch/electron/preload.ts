@@ -12,12 +12,19 @@ contextBridge.exposeInMainWorld('notch', {
   }
 })
 
+contextBridge.exposeInMainWorld('notchDesktop', {
+  openExternal: (url: string) => ipcRenderer.send('shell:open', url)
+})
+
 declare global {
   interface Window {
-    notch: {
+    notch?: {
       collapse: () => void
       expand: () => void
       onMode: (cb: (mode: DropletMode) => void) => () => void
+    }
+    notchDesktop?: {
+      openExternal: (url: string) => void
     }
   }
 }

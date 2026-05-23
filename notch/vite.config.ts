@@ -9,11 +9,18 @@ export default defineConfig({
   server: { port: 5174, strictPort: true },
   build: {
     outDir: resolve(__dirname, 'dist-renderer'),
-    emptyOutDir: true
+    emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        mobile: resolve(__dirname, 'index.html'),
+        central: resolve(__dirname, 'central.html')
+      }
+    }
   },
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src')
+      '@': resolve(__dirname, 'src'),
+      '@shared': resolve(__dirname, '../shared')
     }
   }
 })

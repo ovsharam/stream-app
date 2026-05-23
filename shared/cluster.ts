@@ -88,5 +88,8 @@ export type CentralStreamEvent = {
   body: string
   highlight?: string
   promptPreview?: string
+  meetingLink?: string
+  joinable?: boolean
+  speaker?: string
   meta?: Record<string, string>
 }

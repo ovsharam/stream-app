@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AssistResult, ClusterSearchHit } from '../../shared/cluster'
-import { mobileApi } from './lib/mobile-api'
+import type { AssistResult, ClusterSearchHit } from '@shared/cluster'
+import { clusterApi } from './lib/api'
 
 type Mode = 'idle' | 'expanded'
 
@@ -35,7 +35,7 @@ export default function MobileDroplet() {
   useEffect(() => {
     if (mode !== 'expanded') return
     const t = setTimeout(() => {
-      void mobileApi.search(query).then(setHits).catch(() => setHits([]))
+      void clusterApi.search(query).then(setHits).catch(() => setHits([]))
     }, 100)
     return () => clearTimeout(t)
   }, [query, mode])
@@ -52,7 +52,7 @@ export default function MobileDroplet() {
     if (!query.trim()) return
     setLoading(true)
     try {
-      const r = await mobileApi.assist(query)
+      const r = await clusterApi.assist(query)
       setAssist(r)
     } finally {
       setLoading(false)

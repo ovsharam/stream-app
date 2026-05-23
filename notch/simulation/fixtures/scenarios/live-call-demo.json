@@ -1,0 +1,13 @@
+{
+  "id": "live-call-demo",
+  "active_deal_id": "acme-corp",
+  "call_id": "acme-discovery-2",
+  "calendar_event": {
+    "title": "Acme Corp — Technical Deep Dive",
+    "starts_in_minutes": 12,
+    "meeting_link": "https://zoom.us/j/demo",
+    "attendees": ["sarah-kim", "mark-obrien", "jen-lee"]
+  },
+  "replay_speed": 8,
+  "initial_phase": "pre_call"
+}

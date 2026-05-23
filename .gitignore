@@ -1,0 +1,14 @@
+node_modules
+dist
+out
+release
+.env
+.env.local
+*.db
+.DS_Store
+.vercel
+.next
+notch/dist-electron
+notch/dist-renderer
+ambient/dist
+*.tsbuildinfo

@@ -1,0 +1,38 @@
+{
+  "id": "acme-discovery-2",
+  "deal_id": "acme-corp",
+  "duration_seconds": 2280,
+  "events": [
+    { "t": 0, "speaker": "AE", "text": "Great to have everyone on. Mark, glad you could join." },
+    { "t": 8, "speaker": "Mark O'Brien", "text": "Thanks. I wanted to get a sense of the timeline and what we're committing to." },
+    { "t": 45, "speaker": "Sarah Kim", "text": "We're ready to move forward but we need to resolve the data residency question first." },
+    { "t": 52, "speaker": "Jen Lee", "text": "Right, that's actually my main concern. We need to understand your GDPR Article 46 compliance posture — specifically around standard contractual clauses and whether you can guarantee Frankfurt region isolation for all our data." },
+    {
+      "t": 58,
+      "speaker": "NOTCH_TRIGGER",
+      "signal_type": "technical_question",
+      "signal_content": "GDPR Art. 46 + SCC + Frankfurt region isolation",
+      "generated_response": "We support EU data residency via Frankfurt region isolation — all data stays within the EU. For GDPR Art. 46 compliance, we use Standard Contractual Clauses. We have a pre-signed SCC addendum to our DPA — your legal team typically clears it in under 10 days. We can scope the entire pilot to run within EU infrastructure, no data leaves the region.",
+      "sources": ["security-docs", "slack-legal-channel", "redwood-close-transcript"]
+    },
+    { "t": 120, "speaker": "Sarah Kim", "text": "That's helpful. Can you send that SCC template after the call?" },
+    { "t": 180, "speaker": "Mark O'Brien", "text": "What's the timeline if we want to be live by end of Q3?" },
+    {
+      "t": 185,
+      "speaker": "NOTCH_TRIGGER",
+      "signal_type": "load_bearing_question_gap",
+      "signal_content": "Pilot success definition still not closed",
+      "urgency": "high"
+    },
+    { "t": 240, "speaker": "AE", "text": "Great question — let's define what a successful 30-day pilot looks like so we're aligned before we talk timeline." },
+    { "t": 300, "speaker": "Sarah Kim", "text": "Budget is approved at $180k ceiling — we just need legal and IT sign-off." },
+    {
+      "t": 305,
+      "speaker": "NOTCH_TRIGGER",
+      "signal_type": "signal",
+      "signal_content": "Budget confirmed at $180k ACV ceiling",
+      "signal_type_extracted": "budget",
+      "confidence": 0.97
+    }
+  ]
+}

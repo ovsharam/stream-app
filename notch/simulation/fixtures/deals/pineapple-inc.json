@@ -1,0 +1,31 @@
+{
+  "id": "pineapple-inc",
+  "company": "Pineapple AI",
+  "stage": "Technical Eval",
+  "acv": 48000,
+  "seats": 120,
+  "close_target": "Q2 2026",
+  "contacts": [
+    {
+      "id": "alex-rivera",
+      "name": "Alex Rivera",
+      "title": "Head of Engineering",
+      "role": "champion",
+      "last_interaction": "Slack · 3 weeks ago · no reply",
+      "notes": "Deal stalled on EU data residency. No DPA sent."
+    }
+  ],
+  "signals": [
+    { "type": "blocker", "content": "EU data residency — no DPA sent", "source": "gmail", "confidence": 0.92 },
+    { "type": "risk", "content": "Stalled 21 days", "source": "salesforce", "confidence": 0.88 }
+  ],
+  "last_meeting": {
+    "date": "2026-04-28",
+    "summary": "Pilot scope agreed but legal blocked on residency. Follow-up promised, never sent.",
+    "agreed_next_steps": ["Send SCC template", "Schedule IT review"]
+  },
+  "talking_points": [
+    "Reference NovaBank — same blocker, resolved in 48h with SCC package",
+    "Ask what specific IT sign-off criteria are missing"
+  ]
+}

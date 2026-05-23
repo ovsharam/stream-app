@@ -1,0 +1,28 @@
+{
+  "id": "redwood-hq",
+  "company": "Redwood HQ",
+  "stage": "Closed Won",
+  "acv": 220000,
+  "seats": 3100,
+  "close_target": "Q1 2026",
+  "contacts": [
+    {
+      "id": "dana-chen",
+      "name": "Dana Chen",
+      "title": "CISO",
+      "role": "technical_evaluator",
+      "last_interaction": "Gong · closed won · EU residency resolved",
+      "notes": "Similar scale to Acme. Frankfurt isolation + SCC cleared legal in 9 days."
+    }
+  ],
+  "signals": [
+    { "type": "blocker", "content": "EU data residency — resolved with SCC", "source": "gong", "confidence": 0.96 },
+    { "type": "budget", "content": "$220k ACV closed", "source": "salesforce", "confidence": 0.99 }
+  ],
+  "last_meeting": {
+    "date": "2026-01-14",
+    "summary": "Closed after pilot proved Frankfurt isolation. Legal cleared SCC in 9 days.",
+    "agreed_next_steps": ["Full rollout Q1", "Reference call available"]
+  },
+  "talking_points": []
+}

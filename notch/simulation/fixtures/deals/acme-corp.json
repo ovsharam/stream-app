@@ -1,0 +1,52 @@
+{
+  "id": "acme-corp",
+  "company": "Acme Corp",
+  "stage": "Discovery",
+  "acv": 180000,
+  "seats": 2400,
+  "close_target": "Q3 2026",
+  "contacts": [
+    {
+      "id": "sarah-kim",
+      "name": "Sarah Kim",
+      "title": "VP Platform Engineering",
+      "role": "champion",
+      "last_interaction": "Email · 1 day ago · confirmed budget",
+      "notes": "Technically sharp. Prefers directness. Will push back on vague answers."
+    },
+    {
+      "id": "mark-obrien",
+      "name": "Mark O'Brien",
+      "title": "CFO",
+      "role": "economic_buyer",
+      "last_interaction": "Added to calendar invite · this morning",
+      "notes": "Added late — likely here to pressure on cost or timeline. Has final budget authority."
+    },
+    {
+      "id": "jen-lee",
+      "name": "Jen Lee",
+      "title": "IT Security Lead",
+      "role": "technical_evaluator",
+      "last_interaction": "Not in previous calls",
+      "notes": "New to the deal. Likely owns IT sign-off. EU compliance will be her concern."
+    }
+  ],
+  "signals": [
+    { "type": "budget", "content": "$180k ACV ceiling confirmed", "source": "email", "confidence": 0.97 },
+    { "type": "blocker", "content": "EU data residency requirement", "source": "gong", "confidence": 0.91 },
+    { "type": "motion", "content": "Pilot-first before full commit", "source": "salesforce", "confidence": 0.88 },
+    { "type": "timeline", "content": "Q3 close target", "source": "gong", "confidence": 0.85 },
+    { "type": "champion", "content": "Sarah Kim confirmed internal champion", "source": "slack", "confidence": 0.93 }
+  ],
+  "last_meeting": {
+    "date": "2026-05-16",
+    "summary": "Initial discovery. Sarah walked through platform architecture. EU data residency flagged as concern. Agreed to follow-up with IT and legal. Next step: technical deep-dive with Jen's team.",
+    "agreed_next_steps": ["Technical call with IT team", "Send SCC template", "Confirm pilot scope"]
+  },
+  "talking_points": [
+    "Open with Redwood HQ reference — similar scale, similar EU concern, closed in 6 weeks",
+    "Confirm pilot scope before budget conversation — Mark will ask about cost first",
+    "Get Jen's sign-off criteria in writing — IT blocked Pineapple for 3 weeks without it",
+    "Ask: 'what does a successful 30-day pilot look like to you?' — close on that definition"
+  ]
+}

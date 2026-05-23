@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "STREAM Copilot",
+  "version": "0.1.0",
+  "description": "Browser context for ambient AE/FDE copilot — scopes graph search to what you're viewing.",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "http://localhost:3131/*",
+    "https://*.vercel.app/*",
+    "https://mail.google.com/*",
+    "https://*.lightning.force.com/*",
+    "https://*.salesforce.com/*",
+    "https://www.linkedin.com/*",
+    "https://*.zoom.us/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://mail.google.com/*",
+        "https://*.lightning.force.com/*",
+        "https://*.salesforce.com/*",
+        "https://www.linkedin.com/*",
+        "https://*.zoom.us/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "STREAM — sync browser context"
+  }
+}

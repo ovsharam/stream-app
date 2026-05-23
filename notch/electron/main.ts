@@ -11,8 +11,8 @@ const MOBILE_URL = isDev
   ? 'http://localhost:5174'
   : `file://${join(__dirname, '../dist-renderer/index.html')}`
 
-const DROPLET_IDLE = { w: 24, h: 24 }
-const DROPLET_EXPANDED = { w: 380, h: 460 }
+const DROPLET_IDLE = { w: 44, h: 52 }
+const DROPLET_EXPANDED = { w: 400, h: 480 }
 
 let centralWindow: BrowserWindow | null = null
 let dropletWindow: BrowserWindow | null = null
@@ -24,7 +24,7 @@ function dropletPosition(expanded: boolean): { x: number; y: number; w: number; 
   const w = expanded ? DROPLET_EXPANDED.w : DROPLET_IDLE.w
   const h = expanded ? DROPLET_EXPANDED.h : DROPLET_IDLE.h
   const x = Math.round((width - w) / 2)
-  const y = expanded ? 36 : 32
+  const y = expanded ? 28 : 4
   return { x, y, w, h }
 }
 
@@ -53,7 +53,7 @@ function createCentralWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 640,
     title: 'Notch — Central Cluster',
-    backgroundColor: '#f5f5f7',
+    backgroundColor: '#000000',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false

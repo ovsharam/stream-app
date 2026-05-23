@@ -20,10 +20,25 @@ body {
   overflow: hidden;
 }
 
+.droplet-shell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 4px;
+  height: 100%;
+}
+
+.droplet-live-label {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #34d399;
+  margin-top: 2px;
+}
+
 .droplet-idle {
-  width: 14px;
-  height: 14px;
-  margin: 5px auto;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: none;
   cursor: pointer;

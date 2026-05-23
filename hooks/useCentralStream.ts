@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CentralStreamEvent } from '@shared/cluster'
 import { STREAM_REPLAY, STREAM_SEED } from '@/lib/central-stream-demo'
 
-const REPLAY_MS = 4200
+const REPLAY_MS = 2800
 
 export function useCentralStream() {
   const [events, setEvents] = useState<CentralStreamEvent[]>([])
@@ -15,7 +15,7 @@ export function useCentralStream() {
   useEffect(() => {
     if (booted.current) return
     booted.current = true
-    setEvents(STREAM_SEED)
+    setEvents([...STREAM_SEED].sort((a, b) => b.ts - a.ts))
     setLive(true)
 
     const interval = setInterval(() => {
@@ -31,7 +31,7 @@ export function useCentralStream() {
         ts: Date.now()
       }
       replayIdx.current += 1
-      setEvents((prev) => [...prev, event])
+      setEvents((prev) => [event, ...prev])
     }, REPLAY_MS)
 
     return () => clearInterval(interval)

@@ -61,13 +61,16 @@ export default function MobileDroplet() {
 
   if (mode === 'idle') {
     return (
-      <button
-        type="button"
-        className="droplet-idle"
-        onClick={expand}
-        title="Notch — ⌘⇧Space"
-        aria-label="Open Notch assist"
-      />
+      <div className="droplet-shell">
+        <button
+          type="button"
+          className="droplet-idle"
+          onClick={expand}
+          title="Notch — ⌘⇧Space"
+          aria-label="Open Notch assist"
+        />
+        <span className="droplet-live-label">LIVE</span>
+      </div>
     )
   }
 

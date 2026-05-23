@@ -20,7 +20,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "postinstall": "node -e \"try{require('better-sqlite3')}catch(e){}\" && (test -d node_modules/electron && npx @electron/rebuild -f -w better-sqlite3 || true)"
+    "postinstall": "node -e \"try{require('better-sqlite3')}catch(e){}\" && (npm rebuild better-sqlite3 2>/dev/null; test -d node_modules/electron && npx @electron/rebuild -f -w better-sqlite3 2>/dev/null; true)"
   },
   "dependencies": {
     "@serwist/next": "^9.0.15",

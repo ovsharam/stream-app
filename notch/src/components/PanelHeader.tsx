@@ -15,7 +15,7 @@ type Props = {
 
 export function PanelHeader({ phase, callActive, simulationMode }: Props) {
   return (
-    <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
+    <div className="drag-region flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
       <div className="flex items-center gap-2">
         <span
           className={`h-2 w-2 rounded-full ${callActive ? 'live-pulse bg-[#50DC78]' : 'bg-white/25'}`}
@@ -25,9 +25,14 @@ export function PanelHeader({ phase, callActive, simulationMode }: Props) {
           {LABELS[phase]}
         </span>
       </div>
-      {simulationMode && (
-        <span className="font-mono text-[9px] uppercase tracking-wider text-teal-400/80">sim</span>
-      )}
+      <div className="flex items-center gap-2">
+        {simulationMode && (
+          <span className="font-mono text-[9px] uppercase tracking-wider text-teal-400/80">sim</span>
+        )}
+        <span className="text-white/20" title="Drag to move">
+          ⠿
+        </span>
+      </div>
     </div>
   )
 }

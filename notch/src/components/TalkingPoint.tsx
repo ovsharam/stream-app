@@ -6,7 +6,7 @@ type Props = {
 
 export function TalkingPoint({ text, checked, onToggle }: Props) {
   return (
-    <label className="flex cursor-pointer gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+    <label className="no-drag flex cursor-pointer gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
       {onToggle && (
         <input
           type="checkbox"

@@ -25,7 +25,7 @@ export function SearchPanel({ onClose }: Props) {
   )
 
   return (
-    <div className="absolute inset-0 z-10 flex flex-col rounded-[14px] bg-[rgba(16,16,20,0.96)] backdrop-blur-xl">
+    <div className="no-drag absolute inset-0 z-10 flex flex-col rounded-[14px] bg-[rgba(16,16,20,0.96)] backdrop-blur-xl">
       <div className="border-b border-white/10 px-4 py-3">
         <input
           autoFocus

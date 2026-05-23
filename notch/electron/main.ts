@@ -147,6 +147,7 @@ function createPanelWindow(): BrowserWindow {
     focusable: true,
     skipTaskbar: true,
     hasShadow: false,
+    movable: true,
     resizable: false,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),

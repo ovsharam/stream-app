@@ -9,7 +9,7 @@ type Props = {
 
 export function DemoControls({ phase, onStart, onEnd, onPrep }: Props) {
   return (
-    <div className="shrink-0 border-t border-white/10 px-3 py-2.5">
+    <div className="no-drag shrink-0 border-t border-white/10 px-3 py-2.5">
       <div className="flex gap-2">
         {phase !== 'live_call' && (
           <button

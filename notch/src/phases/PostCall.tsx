@@ -47,7 +47,7 @@ export function PostCall({ summary }: Props) {
 
       <button
         type="button"
-        className="w-full rounded-lg border border-[#85B7EB]/30 bg-[#378ADD]/10 py-2.5 text-xs font-medium text-[#85B7EB]"
+        className="no-drag w-full rounded-lg border border-[#85B7EB]/30 bg-[#378ADD]/10 py-2.5 text-xs font-medium text-[#85B7EB]"
       >
         Review follow-up email
       </button>

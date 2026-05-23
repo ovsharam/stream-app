@@ -58,3 +58,35 @@ export type ClusterSearchHit = {
   source: string
   score: number
 }
+
+export type StreamSource =
+  | 'notch'
+  | 'meet'
+  | 'gmail'
+  | 'slack'
+  | 'gong'
+  | 'salesforce'
+  | 'build'
+  | 'insight'
+
+export type StreamEventKind =
+  | 'transcript_live'
+  | 'transcript_done'
+  | 'signal'
+  | 'assist'
+  | 'integration'
+  | 'build_prompt'
+  | 'insight'
+  | 'action'
+
+export type CentralStreamEvent = {
+  id: string
+  ts: number
+  source: StreamSource
+  kind: StreamEventKind
+  title: string
+  body: string
+  highlight?: string
+  promptPreview?: string
+  meta?: Record<string, string>
+}

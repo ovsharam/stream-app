@@ -50,6 +50,7 @@ import {
 } from './browser/context'
 import { fetchGmailThreads } from './sources/gmail'
 import { buildClusterContext, searchCluster, assistCluster } from './cluster/service'
+import { getCentralStream } from './cluster/stream'
 
 function serializeContext(ctx: ReturnType<typeof getActiveContext>) {
   return {
@@ -371,6 +372,10 @@ export function createRouter(io?: SocketServer): Router {
   // Cluster API — shared context between central dashboard + mobile droplet
   router.get('/cluster/context', (_req, res) => {
     res.json(buildClusterContext())
+  })
+
+  router.get('/cluster/stream', (_req, res) => {
+    res.json(getCentralStream())
   })
 
   router.get('/cluster/search', (req, res) => {

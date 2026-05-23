@@ -2,7 +2,7 @@
 
 Ambient AI copilot for Account Executives — **two connected clusters**:
 
-- **Central cluster** — dashboard for integrations, deals, meetings, actions (`/dashboard`)
+- **Central cluster** — streaming feed of notifications from Notch, Meet, Gmail, Slack, Gong (`/dashboard`)
 - **Mobile cluster** — droplet below the Mac notch for ultra-fast in-call assist (`⌘⇧Space`)
 
 ```bash

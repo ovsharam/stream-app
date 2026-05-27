@@ -104,3 +104,31 @@ export function updateItemFlags(
 export function itemExists(id: string): boolean {
   return !!getDb().prepare('SELECT 1 FROM stream_items WHERE id = ?').get(id)
 }
+
+export function deleteItemsByIds(ids: string[]): number {
+  const database = getDb()
+  const stmt = database.prepare('DELETE FROM stream_items WHERE id = ?')
+  let removed = 0
+  const tx = database.transaction((batch: string[]) => {
+    for (const id of batch) {
+      removed += stmt.run(id).changes
+    }
+  })
+  tx(ids)
+  return removed
+}
+
+/** Remove demo seed rows left over from early DEMO_MODE runs. */
+export function deleteDemoSeedItems(): number {
+  const database = getDb()
+  const result = database
+    .prepare(
+      `DELETE FROM stream_items WHERE
+        id IN ('gmail-demo-thread-1', 'x-demo-tweet-1')
+        OR (source = 'slack' AND body LIKE '%Staging deploy green%')
+        OR (source = 'perplexity' AND title = 'What changed in my stream?')
+        OR (source = 'note' AND body LIKE '%Follow up with Sarah after standup%')`
+    )
+    .run()
+  return result.changes
+}

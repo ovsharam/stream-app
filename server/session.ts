@@ -84,12 +84,26 @@ export function setToken(
 }
 
 type SessionMeta = {
-  connections: { gmail: boolean; slack: boolean; x: boolean; perplexity: boolean }
+  connections: {
+    gmail: boolean
+    slack: boolean
+    x: boolean
+    monday: boolean
+    discord: boolean
+    perplexity: boolean
+  }
   preferences: { xMinEngagement: number; onboardingComplete: boolean }
 }
 
 const DEFAULT_META: SessionMeta = {
-  connections: { gmail: false, slack: false, x: false, perplexity: false },
+  connections: {
+    gmail: false,
+    slack: false,
+    x: false,
+    monday: false,
+    discord: false,
+    perplexity: false
+  },
   preferences: { xMinEngagement: 0, onboardingComplete: false }
 }
 

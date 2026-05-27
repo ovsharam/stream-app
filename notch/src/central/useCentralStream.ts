@@ -1,48 +1,45 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CentralStreamEvent } from '@shared/cluster'
-import { STREAM_REPLAY, STREAM_SEED } from '../lib/stream-demo'
+import { clusterApi, integrationApi } from '../lib/api'
+import { getUserRole } from '../lib/user-role'
 
-const REPLAY_MS = 2800
+const POLL_MS = 2000
+const AUTO_SYNC_MS = 5000
 
 export function useCentralStream() {
   const [events, setEvents] = useState<CentralStreamEvent[]>([])
   const [live, setLive] = useState(false)
-  const [transcriptLines, setTranscriptLines] = useState<{ speaker: string; text: string; ts: number }[]>([])
-  const replayIdx = useRef(0)
+  const lastAutoSyncMs = useRef(0)
 
   useEffect(() => {
-    setEvents([...STREAM_SEED].sort((a, b) => b.ts - a.ts))
-    setLive(true)
-
-    const interval = setInterval(() => {
-      const next = STREAM_REPLAY[replayIdx.current]
-      if (!next) {
-        setLive(false)
-        clearInterval(interval)
-        return
+    const sync = async () => {
+      const now = Date.now()
+      if (now - lastAutoSyncMs.current >= AUTO_SYNC_MS) {
+        lastAutoSyncMs.current = now
+        void integrationApi.syncAll().catch(() => undefined)
       }
-      const event: CentralStreamEvent = {
-        ...next,
-        id: `live-${replayIdx.current}-${Date.now()}`,
-        ts: Date.now()
-      }
-      replayIdx.current += 1
-      setEvents((prev) => [event, ...prev])
+      const incoming = await clusterApi.stream(getUserRole())
+      setEvents(incoming)
+      setLive(
+        incoming.some(
+          (e) =>
+            e.kind === 'transcript_live' ||
+            e.kind === 'assist' ||
+            (e.kind === 'insight' && e.title.toLowerCase().includes('load-bearing'))
+        )
+      )
+    }
 
-      if (event.kind === 'transcript_live' && event.speaker && event.body) {
-        setTranscriptLines((prev) => [
-          { speaker: event.speaker, text: event.body, ts: event.ts },
-          ...prev
-        ].slice(0, 12))
-      }
-    }, REPLAY_MS)
+    void sync()
+    const interval = setInterval(() => void sync(), POLL_MS)
+    const onRole = () => void sync()
+    window.addEventListener('stream:user-role', onRole)
 
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('stream:user-role', onRole)
+    }
   }, [])
 
-  const meetActive = events.some(
-    (e) => e.source === 'meet' && e.joinable && !events.some((x) => x.kind === 'transcript_done' && x.ts > e.ts)
-  ) || live
-
-  return { events, live, transcriptLines, meetActive }
+  return { events, live }
 }

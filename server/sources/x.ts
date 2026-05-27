@@ -31,7 +31,7 @@ export function getXAuthUrl(state: string): { url: string; state: string } {
     response_type: 'code',
     client_id: clientId ?? '',
     redirect_uri: redirectUri,
-    scope: 'tweet.read users.read offline.access',
+    scope: 'tweet.read tweet.write users.read offline.access',
     state,
     code_challenge: challenge,
     code_challenge_method: 'plain'
@@ -191,4 +191,17 @@ export function isXConfigured(): boolean {
 
 export function isXConnected(): boolean {
   return !!getToken('x')
+}
+
+export async function postXTweet(text: string, replyToTweetId?: string): Promise<{ id: string }> {
+  const client = await getXClient()
+  const payload: { text: string; reply?: { in_reply_to_tweet_id: string } } = {
+    text: text.trim().slice(0, 280)
+  }
+  if (replyToTweetId) payload.reply = { in_reply_to_tweet_id: replyToTweetId }
+
+  const res = await client.post('/tweets', payload)
+  const id = res.data?.data?.id as string | undefined
+  if (!id) throw new Error('X did not return tweet id')
+  return { id }
 }

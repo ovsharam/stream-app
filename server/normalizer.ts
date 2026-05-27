@@ -19,6 +19,15 @@ function stripHtml(html: string): string {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, code) => {
+      const n = parseInt(code, 10)
+      return Number.isFinite(n) ? String.fromCodePoint(n) : ' '
+    })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => {
+      const n = parseInt(hex, 16)
+      return Number.isFinite(n) ? String.fromCodePoint(n) : ' '
+    })
+    .replace(/[\u200B-\u200D\uFEFF\u034F\u00AD]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -128,6 +137,63 @@ export function normalizeXTweet(tweet: {
   }
 }
 
+export function normalizeMondayUpdate(update: {
+  id: string | number
+  title: string
+  body: string
+  user?: { name: string }
+  boardName?: string
+  createdAt: string | Date
+  metadata?: Record<string, unknown>
+}): StreamItem {
+  const bodyFull = update.body
+  return {
+    id: `monday-${update.id}`,
+    source: 'monday',
+    sender: {
+      name: update.user?.name ?? 'Monday',
+      handle: update.boardName ? `#${update.boardName}` : 'monday'
+    },
+    timestamp: new Date(update.createdAt),
+    title: update.title,
+    body: truncate(bodyFull),
+    bodyFull,
+    isUnread: true,
+    isStarred: false,
+    metadata: { updateId: String(update.id), ...update.metadata }
+  }
+}
+
+export function normalizeDiscordMessage(msg: {
+  id: string
+  channelId: string
+  channelName?: string
+  author: { username: string; global_name?: string; id: string; avatar?: string | null }
+  content: string
+  timestamp: string
+  metadata?: Record<string, unknown>
+}): StreamItem {
+  const bodyFull = msg.content || '[Attachment / embed]'
+  return {
+    id: `discord-${msg.channelId}-${msg.id}`,
+    source: 'discord',
+    sender: {
+      name: msg.author.global_name ?? msg.author.username,
+      handle: msg.author.username,
+      avatarUrl: msg.author.avatar
+        ? `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png`
+        : undefined
+    },
+    timestamp: new Date(msg.timestamp),
+    title: msg.channelName ? `#${msg.channelName}` : '#discord',
+    body: truncate(bodyFull),
+    bodyFull,
+    isUnread: true,
+    isStarred: false,
+    metadata: { channelId: msg.channelId, messageId: msg.id, ...msg.metadata }
+  }
+}
+
 export function normalizePerplexityResponse(response: {
   query: string
   answer: string
@@ -182,6 +248,10 @@ export function normalizeRaw(
       return normalizeSlackMessage(payload as Parameters<typeof normalizeSlackMessage>[0])
     case 'x':
       return normalizeXTweet(payload as Parameters<typeof normalizeXTweet>[0])
+    case 'monday':
+      return normalizeMondayUpdate(payload as Parameters<typeof normalizeMondayUpdate>[0])
+    case 'discord':
+      return normalizeDiscordMessage(payload as Parameters<typeof normalizeDiscordMessage>[0])
     case 'perplexity':
       return normalizePerplexityResponse(
         payload as Parameters<typeof normalizePerplexityResponse>[0]

@@ -1,147 +1,214 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AssistResult, ClusterSearchHit } from '@shared/cluster'
+import type { AssistResult } from '@shared/cluster'
 import { clusterApi } from './lib/api'
+import {
+  buildAmbientContext,
+  loadMobileSettings,
+  type AmbientContext
+} from './lib/mobile-settings'
 
-type Mode = 'idle' | 'expanded'
+type Phase = 'hidden' | 'pill' | 'chat'
+
+type ChatMsg = {
+  id: string
+  role: 'user' | 'assistant' | 'system'
+  text: string
+  assist?: AssistResult
+}
 
 export default function MobileDroplet() {
-  const [mode, setMode] = useState<Mode>('idle')
+  const [phase, setPhase] = useState<Phase>('hidden')
   const [query, setQuery] = useState('')
-  const [hits, setHits] = useState<ClusterSearchHit[]>([])
-  const [assist, setAssist] = useState<AssistResult | null>(null)
+  const [messages, setMessages] = useState<ChatMsg[]>([])
   const [loading, setLoading] = useState(false)
+  const [ambient, setAmbient] = useState<AmbientContext | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
-  const expand = useCallback(() => {
-    window.notch?.expand?.()
-    setMode('expanded')
-    setTimeout(() => inputRef.current?.focus(), 120)
+  const refreshAmbient = useCallback(() => {
+    const s = loadMobileSettings()
+    if (s.ambientListen) setAmbient(buildAmbientContext(s.objective))
+    else setAmbient(null)
   }, [])
 
-  const collapse = useCallback(() => {
-    window.notch?.collapse?.()
-    setMode('idle')
-    setQuery('')
-    setAssist(null)
-  }, [])
+  const applyPhase = useCallback(
+    (p: Phase) => {
+      setPhase(p)
+      if (p === 'hidden') {
+        setQuery('')
+        setMessages([])
+      }
+      if (p === 'chat') {
+        refreshAmbient()
+        setTimeout(() => inputRef.current?.focus(), 60)
+      }
+    },
+    [refreshAmbient]
+  )
 
   useEffect(() => {
-    return window.notch?.onMode?.((m: Mode) => {
-      if (m === 'expanded') expand()
-      else collapse()
-    })
-  }, [expand, collapse])
+    void window.notch?.getMode?.().then((m) => applyPhase(m))
+    return window.notch?.onMode?.(applyPhase)
+  }, [applyPhase])
 
   useEffect(() => {
-    if (mode !== 'expanded') return
-    const t = setTimeout(() => {
-      void clusterApi.search(query).then(setHits).catch(() => setHits([]))
-    }, 100)
-    return () => clearTimeout(t)
-  }, [query, mode])
+    const onSettings = () => refreshAmbient()
+    window.addEventListener('notch:mobile-settings', onSettings)
+    window.addEventListener('storage', onSettings)
+    return () => {
+      window.removeEventListener('notch:mobile-settings', onSettings)
+      window.removeEventListener('storage', onSettings)
+    }
+  }, [refreshAmbient])
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+  }, [messages, loading])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') collapse()
+      if (e.key === 'Escape') window.notch?.hide?.()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [collapse])
+  }, [])
 
-  const runAssist = async () => {
-    if (!query.trim()) return
+  const openChat = () => {
+    if (phase !== 'chat') {
+      window.notch?.chat?.()
+      refreshAmbient()
+    }
+  }
+
+  const onInputChange = (value: string) => {
+    setQuery(value)
+    if (value.length > 0 && phase === 'pill') openChat()
+  }
+
+  const send = async () => {
+    const q = query.trim()
+    if (!q || loading) return
+
+    const settings = loadMobileSettings()
+    setQuery('')
+    setMessages((m) => [...m, { id: `u-${Date.now()}`, role: 'user', text: q }])
     setLoading(true)
+
     try {
-      const r = await clusterApi.assist(query)
-      setAssist(r)
+      const r = await clusterApi.assist(q, settings.objective)
+      setMessages((m) => [
+        ...m,
+        { id: `a-${Date.now()}`, role: 'assistant', text: r.sayThis, assist: r }
+      ])
+    } catch {
+      setMessages((m) => [
+        ...m,
+        { id: `e-${Date.now()}`, role: 'assistant', text: 'Could not reach Notch — is the API running?' }
+      ])
     } finally {
       setLoading(false)
     }
   }
 
-  if (mode === 'idle') {
+  if (phase === 'hidden') return null
+
+  if (phase === 'pill') {
     return (
-      <div className="droplet-shell">
-        <button
-          type="button"
-          className="droplet-idle"
-          onClick={expand}
-          title="Notch — ⌘⇧Space"
-          aria-label="Open Notch assist"
+      <div className="mobile-root mobile-drop-in">
+        <button type="button" className="mobile-pill" onClick={openChat} aria-label="Open Notch">
+          <span className="mobile-pill-dot" />
+          <div className="mobile-wave" aria-hidden>
+            <span /><span /><span /><span />
+          </div>
+          <span className="mobile-pill-label">Notch</span>
+        </button>
+        <input
+          ref={inputRef}
+          className="mobile-pill-capture"
+          value={query}
+          onChange={(e) => onInputChange(e.target.value)}
+          onFocus={openChat}
+          placeholder=""
+          aria-label="Start typing to ask Notch"
         />
-        <span className="droplet-live-label">LIVE</span>
       </div>
     )
   }
 
   return (
-    <div className="droplet-panel">
-      <div className="drag-region flex items-center justify-between border-b border-white/10 px-3 py-2">
-        <div className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 live-pulse" />
-          <span className="text-[10px] font-medium text-white/70">Notch</span>
+    <div className="mobile-root mobile-drop-in">
+      <button type="button" className="mobile-pill mobile-pill-open" onClick={() => window.notch?.hide?.()}>
+        <span className="mobile-pill-dot mobile-pill-dot-live" />
+        <div className="mobile-wave" aria-hidden>
+          <span /><span /><span /><span />
         </div>
-        <button type="button" onClick={collapse} className="no-drag text-white/30 hover:text-white/60">
-          ✕
-        </button>
-      </div>
+        <span className="mobile-pill-label">Listening</span>
+      </button>
 
-      <div className="no-drag p-3">
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && void runAssist()}
-          placeholder='Wtf do I say to their question?'
-          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white/90 placeholder:text-white/25 outline-none focus:border-[#378ADD]/40"
-        />
-        <button
-          type="button"
-          onClick={() => void runAssist()}
-          disabled={loading || !query.trim()}
-          className="mt-2 w-full rounded-lg bg-[#378ADD]/25 py-2 text-xs font-medium text-[#85B7EB] disabled:opacity-40"
-        >
-          {loading ? 'Searching context…' : 'Get guidance'}
-        </button>
-
-        {assist && (
-          <div className="live-answer-enter mt-3 space-y-3">
-            <div className="rounded-lg border border-[#378ADD]/25 bg-[#378ADD]/10 p-3">
-              <p className="text-[10px] uppercase tracking-wider text-[#85B7EB]/70">Say this</p>
-              <p className="mt-2 text-xs leading-relaxed text-white/90">{assist.sayThis}</p>
+      <div className="mobile-glass">
+        {ambient && (
+          <div className="mobile-ambient">
+            <div className="mobile-ambient-head">
+              <span className="mobile-ambient-badge">Ambient</span>
+              <span className="mobile-ambient-elapsed">{ambient.elapsed} on call</span>
             </div>
-            {assist.agendaNext && (
-              <div className="rounded-lg border border-[#EF9F27]/20 bg-[#BA7517]/5 px-3 py-2">
-                <p className="text-[10px] text-[#EF9F27]">Next on agenda</p>
-                <p className="mt-1 text-xs text-white/70">{assist.agendaNext}</p>
-              </div>
-            )}
-            {assist.trustNote && (
-              <p className="text-[10px] leading-relaxed text-white/40">{assist.trustNote}</p>
-            )}
-            <p className="font-mono text-[9px] text-white/20">{assist.sources.join(' · ')}</p>
+            <p className="mobile-ambient-meeting">{ambient.meetingTitle}</p>
+            <p className="mobile-ambient-topic">{ambient.activeTopic}</p>
+            <div className="mobile-ambient-shift">
+              <p className="mobile-ambient-shift-label">Objective lens</p>
+              <p className="mobile-ambient-shift-text">{ambient.objectiveShift}</p>
+            </div>
+            <ul className="mobile-ambient-lines">
+              {ambient.recentLines.map((l, i) => (
+                <li key={i}>
+                  <strong>{l.speaker}</strong> {l.text}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 
-        {!assist && hits.length > 0 && (
-          <div className="mt-3 space-y-1">
-            <p className="text-[10px] uppercase tracking-wider text-white/25">Context</p>
-            {hits.slice(0, 4).map((h) => (
-              <button
-                key={h.id}
-                type="button"
-                onClick={() => {
-                  setQuery(h.title)
-                  void runAssist()
-                }}
-                className="w-full rounded-lg px-2 py-2 text-left hover:bg-white/5"
-              >
-                <p className="text-xs text-white/75">{h.title}</p>
-                <p className="line-clamp-1 text-[10px] text-white/35">{h.snippet}</p>
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="mobile-chat" ref={scrollRef}>
+          {messages.length === 0 && (
+            <p className="mobile-chat-hint">Ask anything — e.g. &quot;wtf is the answer&quot;</p>
+          )}
+          {messages.map((m) => (
+            <div key={m.id} className={`mobile-msg mobile-msg-${m.role}`}>
+              {m.role === 'assistant' && m.assist ? (
+                <>
+                  <p className="mobile-msg-label">{m.assist.headline}</p>
+                  <p className="mobile-msg-say">{m.assist.sayThis}</p>
+                  {m.assist.agendaNext && (
+                    <p className="mobile-msg-next">
+                      <span>Talk track</span> {m.assist.agendaNext}
+                    </p>
+                  )}
+                  {m.assist.trustNote && (
+                    <p className="mobile-msg-trust">{m.assist.trustNote}</p>
+                  )}
+                  <p className="mobile-msg-sources">{m.assist.sources.join(' · ')}</p>
+                </>
+              ) : (
+                <p>{m.text}</p>
+              )}
+            </div>
+          ))}
+          {loading && <p className="mobile-typing">Notch is thinking…</p>}
+        </div>
+
+        <div className="mobile-compose">
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && void send()}
+            placeholder="wtf is the answer"
+            className="mobile-compose-input"
+          />
+          <button type="button" className="mobile-compose-send" onClick={() => void send()} disabled={!query.trim() || loading}>
+            ↑
+          </button>
+        </div>
       </div>
     </div>
   )

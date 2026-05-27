@@ -18,7 +18,9 @@ export function getSlackAuthUrl(): string {
     'im:history',
     'mpim:history',
     'users:read',
-    'channels:read'
+    'channels:read',
+    'chat:write',
+    'chat:write.public'
   ].join(',')
 
   return `https://slack.com/oauth/v2/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${encodeURIComponent(redirectUri)}`
@@ -205,4 +207,51 @@ export function isSlackConfigured(): boolean {
 
 export function isSlackConnected(): boolean {
   return !!getToken('slack')
+}
+
+export async function resolveSlackChannel(nameOrId: string): Promise<string> {
+  const tokens = getToken('slack')
+  const token = (tokens?.botToken ?? tokens?.userToken) as string | undefined
+  if (!token) throw new Error('Slack not connected')
+
+  if (/^[CDG][A-Z0-9]+$/i.test(nameOrId)) return nameOrId
+
+  const needle = nameOrId.replace(/^#/, '').toLowerCase()
+  const channelsRes = (await slackApi('conversations.list', token, {
+    types: 'public_channel,private_channel',
+    limit: '200'
+  })) as { ok: boolean; channels?: { id: string; name?: string }[] }
+
+  if (!channelsRes.ok || !channelsRes.channels) throw new Error('Could not list Slack channels')
+  const hit =
+    channelsRes.channels.find((c) => c.name?.toLowerCase() === needle) ??
+    channelsRes.channels.find((c) => c.name?.toLowerCase().includes(needle))
+  if (!hit?.id) throw new Error(`Slack channel not found: ${nameOrId}`)
+  return hit.id
+}
+
+export async function sendSlackMessage(input: {
+  channel: string
+  text: string
+  threadTs?: string
+}): Promise<{ ts: string; channel: string }> {
+  const tokens = getToken('slack')
+  const token = (tokens?.botToken ?? tokens?.userToken) as string | undefined
+  if (!token) throw new Error('Slack not connected')
+
+  const channel = await resolveSlackChannel(input.channel)
+  const params: Record<string, string> = {
+    channel,
+    text: input.text.trim()
+  }
+  if (input.threadTs) params.thread_ts = input.threadTs
+
+  const res = (await slackApi('chat.postMessage', token, params)) as {
+    ok: boolean
+    ts?: string
+    channel?: string
+    error?: string
+  }
+  if (!res.ok || !res.ts) throw new Error(res.error ?? 'Slack post failed')
+  return { ts: res.ts, channel: res.channel ?? channel }
 }

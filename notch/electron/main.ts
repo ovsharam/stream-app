@@ -1,9 +1,15 @@
 import 'dotenv/config'
 import { app, BrowserWindow, globalShortcut, screen, Tray, nativeImage, ipcMain, shell } from 'electron'
+import type { BrowserWindow as BW, Input } from 'electron'
 import type { NativeImage } from 'electron'
 import { join } from 'path'
 
 const isDev = !app.isPackaged
+const mobileOnly = process.argv.includes('--mobile-only')
+const SIM = process.env.SIMULATION_MODE === 'true' || process.env.DEMO_MODE === '1'
+const HOTKEY = 'CommandOrControl+Shift+M'
+const API = 'http://localhost:3131'
+
 const CENTRAL_URL = isDev
   ? 'http://localhost:5174/central.html'
   : `file://${join(__dirname, '../dist-renderer/central.html')}`
@@ -11,76 +17,132 @@ const MOBILE_URL = isDev
   ? 'http://localhost:5174/'
   : `file://${join(__dirname, '../dist-renderer/index.html')}`
 
-const DROPLET_IDLE = { w: 48, h: 56 }
-const DROPLET_EXPANDED = { w: 400, h: 480 }
+const MOBILE_SIZE = { w: 280, h: 420 }
 
 let centralWindow: BrowserWindow | null = null
-let dropletWindow: BrowserWindow | null = null
+let mobileWindow: BrowserWindow | null = null
 let tray: Tray | null = null
-let dropletExpanded = false
+let mobileVisible = false
+let mobilePosition: { x: number; y: number } | null = null
 
-function dropletPosition(expanded: boolean): { x: number; y: number; w: number; h: number } {
-  const { width } = screen.getPrimaryDisplay().workAreaSize
-  const w = expanded ? DROPLET_EXPANDED.w : DROPLET_IDLE.w
-  const h = expanded ? DROPLET_EXPANDED.h : DROPLET_IDLE.h
-  return { x: Math.round((width - w) / 2), y: expanded ? 28 : 4, w, h }
+function isHotkey(input: Input): boolean {
+  return Boolean(input.meta && input.shift && !input.alt && !input.control && input.key?.toUpperCase() === 'M')
 }
 
-function setDropletExpanded(expanded: boolean): void {
-  if (!dropletWindow) return
-  dropletExpanded = expanded
-  const { x, y, w, h } = dropletPosition(expanded)
-  dropletWindow.setBounds({ x, y, width: w, height: h }, true)
-  dropletWindow.setFocusable(expanded)
-  if (expanded) {
-    dropletWindow.focus()
-    dropletWindow.webContents.send('notch:mode', 'expanded')
-  } else {
-    dropletWindow.webContents.send('notch:mode', 'idle')
+function wireLocalHotkey(win: BW, toggle: () => void): void {
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || !isHotkey(input)) return
+    event.preventDefault()
+    toggle()
+  })
+}
+
+function mobileBounds(): { x: number; y: number; w: number; h: number } {
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize
+  const defaultX = width - MOBILE_SIZE.w - 16
+  const defaultY = 38
+  const x = mobilePosition?.x ?? defaultX
+  const y = mobilePosition?.y ?? defaultY
+  return {
+    x: Math.max(8, Math.min(x, width - MOBILE_SIZE.w - 8)),
+    y: Math.max(8, Math.min(y, height - MOBILE_SIZE.h - 8)),
+    w: MOBILE_SIZE.w,
+    h: MOBILE_SIZE.h
   }
 }
 
-function toggleDroplet(): void {
-  setDropletExpanded(!dropletExpanded)
+function showMobile(): void {
+  if (!mobileWindow || mobileWindow.isDestroyed()) return
+  mobileVisible = true
+  const b = mobileBounds()
+  mobileWindow.setIgnoreMouseEvents(false)
+  mobileWindow.setOpacity(1)
+  mobileWindow.setBounds(b, true)
+  mobileWindow.show()
+  mobileWindow.focus()
+  mobileWindow.webContents.send('notch:mode', 'open')
+  mobileWindow.webContents.send('focus-search')
+}
+
+function hideMobile(): void {
+  if (!mobileWindow || mobileWindow.isDestroyed()) return
+  mobileVisible = false
+  mobileWindow.hide()
+  mobileWindow.setOpacity(0)
+  mobileWindow.setIgnoreMouseEvents(true, { forward: true })
+  mobileWindow.webContents.send('notch:mode', 'hidden')
+}
+
+function toggleMobile(): void {
+  if (mobileVisible) hideMobile()
+  else showMobile()
+}
+
+async function simPost(path: string): Promise<void> {
+  try {
+    await fetch(`${API}/api${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    mobileWindow?.webContents.send('sim:refresh')
+    centralWindow?.webContents.send('sim:refresh')
+  } catch (e) {
+    console.error('[notch] sim api failed', e)
+  }
+}
+
+function registerShortcuts(): void {
+  globalShortcut.unregisterAll()
+  const ok = globalShortcut.register(HOTKEY, toggleMobile)
+  if (!ok) console.error(`[notch] failed to register ${HOTKEY}`)
+  else console.log(`[notch] ${HOTKEY} registered`)
+
+  if (SIM) {
+    globalShortcut.register('CommandOrControl+Shift+D', () => void simPost('/sim/start-call'))
+    globalShortcut.register('CommandOrControl+Shift+E', () => void simPost('/sim/end-call'))
+    console.log('[notch] sim shortcuts: ⌘⇧D start call · ⌘⇧E end call')
+  }
 }
 
 function createCentralWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    width: 1280,
-    height: 900,
-    minWidth: 1000,
-    minHeight: 700,
-    title: 'Notch',
-    backgroundColor: '#ffffff',
+    width: 1100,
+    height: 860,
+    minWidth: 988,
+    minHeight: 560,
+    title: 'Stream',
+    backgroundColor: '#0E0E12',
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 16 },
+    trafficLightPosition: { x: 16, y: 18 },
+    vibrancy: 'under-window',
+    visualEffectState: 'active',
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webviewTag: true
     }
   })
 
+  wireLocalHotkey(win, toggleMobile)
   win.loadURL(CENTRAL_URL)
+  win.show()
+  win.focus()
+  win.on('closed', () => {
+    centralWindow = null
+  })
   return win
 }
 
-function createDropletWindow(): BrowserWindow {
-  const { x, y, w, h } = dropletPosition(false)
-
+function createMobileWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    width: w,
-    height: h,
-    x,
-    y,
-    transparent: true,
+    ...mobileBounds(),
+    show: false,
     frame: false,
+    transparent: true,
     alwaysOnTop: true,
-    focusable: false,
+    focusable: true,
     skipTaskbar: true,
-    hasShadow: false,
+    hasShadow: true,
     movable: true,
-    resizable: false,
+    opacity: 0,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -90,9 +152,18 @@ function createDropletWindow(): BrowserWindow {
 
   win.setAlwaysOnTop(true, 'screen-saver')
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  win.loadURL(MOBILE_URL)
-  win.show()
+  win.setIgnoreMouseEvents(true, { forward: true })
 
+  wireLocalHotkey(win, toggleMobile)
+
+  win.on('moved', () => {
+    if (!mobileVisible) return
+    const [x, y] = win.getPosition()
+    mobilePosition = { x, y }
+  })
+
+  win.webContents.on('did-finish-load', () => hideMobile())
+  win.loadURL(MOBILE_URL)
   return win
 }
 
@@ -115,35 +186,41 @@ function createTrayIcon(): NativeImage {
 }
 
 app.whenReady().then(() => {
-  centralWindow = createCentralWindow()
-  dropletWindow = createDropletWindow()
+  mobileWindow = createMobileWindow()
+  if (!mobileOnly) centralWindow = createCentralWindow()
 
   tray = new Tray(createTrayIcon())
-  tray.setToolTip('Notch — Central + Mobile')
+  tray.setToolTip('Stream — ⌘⇧M mobile cluster')
   tray.setContextMenu(
     require('electron').Menu.buildFromTemplate([
-      { label: 'Central stream', click: () => centralWindow?.show() },
-      { label: 'Mobile assist (⌘⇧Space)', click: toggleDroplet },
+      {
+        label: 'Stream Central',
+        click: () => {
+          if (centralWindow && !centralWindow.isDestroyed()) {
+            centralWindow.show()
+            centralWindow.focus()
+          } else {
+            centralWindow = createCentralWindow()
+          }
+        }
+      },
+      { label: 'Mobile cluster (⌘⇧M)', click: toggleMobile },
       { type: 'separator' },
       { label: 'Quit', click: () => app.quit() }
     ])
   )
 
-  globalShortcut.register('CommandOrControl+Shift+Space', toggleDroplet)
+  registerShortcuts()
 
-  ipcMain.on('notch:collapse', () => setDropletExpanded(false))
-  ipcMain.on('notch:expand', () => setDropletExpanded(true))
+  ipcMain.on('notch:hide', () => hideMobile())
+  ipcMain.handle('notch:getMode', () => (mobileVisible ? 'open' : 'hidden'))
   ipcMain.on('shell:open', (_e, url: string) => {
     if (typeof url === 'string' && url.startsWith('http')) void shell.openExternal(url)
   })
 
-  console.log('[notch] desktop apps ready — central stream + mobile droplet · ⌘⇧Space')
+  console.log('[stream] central + mobile ready · mobile hidden until ⌘⇧M')
 })
 
-app.on('will-quit', () => {
-  globalShortcut.unregisterAll()
-})
-
-app.on('window-all-closed', () => {
-  /* tray */
-})
+app.on('will-quit', () => globalShortcut.unregisterAll())
+app.on('window-all-closed', () => {})
+app.on('activate', () => registerShortcuts())

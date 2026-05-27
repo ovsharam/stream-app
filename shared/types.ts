@@ -1,4 +1,11 @@
-export type StreamSource = 'gmail' | 'slack' | 'x' | 'perplexity' | 'note'
+export type StreamSource =
+  | 'gmail'
+  | 'slack'
+  | 'x'
+  | 'monday'
+  | 'discord'
+  | 'perplexity'
+  | 'note'
 
 export interface StreamItem {
   id: string
@@ -48,6 +55,8 @@ export type ConnectionStatus = {
   gmail: boolean
   slack: boolean
   x: boolean
+  monday: boolean
+  discord: boolean
   perplexity: boolean
 }
 
@@ -55,6 +64,8 @@ export const SOURCE_COLORS: Record<StreamSource, string> = {
   gmail: '#EA4335',
   slack: '#E01E5A',
   x: '#ffffff',
+  monday: '#ff3d57',
+  discord: '#5865f2',
   perplexity: '#20B2AA',
   note: '#F5A623'
 }

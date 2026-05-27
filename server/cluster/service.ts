@@ -1,33 +1,69 @@
 import type { AssistResult, ClusterContext, ClusterSearchHit } from '../../shared/cluster'
+import { getGraphSignals, getSimSignals, isSimCallActive } from '../sim/engine'
+import { getConnections } from '../store'
+import { getCachedCalendarEvents } from '../sources/calendar'
 
 const SAY_PATTERNS = /wtf|what do i say|how do i respond|help me answer|what should i say/i
 const AGENDA_PATTERNS = /next step|agenda|where do i go|pilot|close/i
 
 export function buildClusterContext(): ClusterContext {
+  const live = isSimCallActive()
+  const graphSignals = getGraphSignals('acme-corp')
+  const liveSignals = getSimSignals()
+  const connections = getConnections()
+  const calendarEvents = getCachedCalendarEvents()
+  const nextMeeting = calendarEvents[0]
+  const liveMeeting = calendarEvents.find((e) => e.live)
+  const recentSignals = [...liveSignals, ...graphSignals].slice(0, 8).map((s) => ({
+    type: s.type,
+    content: s.content,
+    source: s.speaker ? 'transcript' : 'graph'
+  }))
   return {
     activeDeal: {
       id: 'acme-corp',
       company: 'Acme Corp',
-      stage: 'Discovery',
+      stage: live ? 'Live Call' : 'Discovery',
       acv: 180000,
-      healthScore: 62
+      healthScore: live ? 67 : 62
     },
     integrations: [
-      { id: 'gmail', name: 'Gmail', connected: true, configured: true, lastSync: '2m ago' },
-      { id: 'slack', name: 'Slack', connected: true, configured: true, lastSync: '5m ago' },
-      { id: 'salesforce', name: 'Salesforce', connected: true, configured: true, lastSync: '12m ago' },
-      { id: 'gong', name: 'Gong', connected: true, configured: true, lastSync: '1h ago' },
-      { id: 'calendar', name: 'Google Calendar', connected: true, configured: true, lastSync: 'live' },
-      { id: 'notion', name: 'Notion', connected: false, configured: true }
+      { id: 'gmail', name: 'Gmail', connected: connections.gmail, configured: true },
+      { id: 'slack', name: 'Slack', connected: connections.slack, configured: true },
+      { id: 'x', name: 'X', connected: connections.x, configured: true },
+      { id: 'monday', name: 'Monday', connected: connections.monday, configured: true },
+      { id: 'discord', name: 'Discord', connected: connections.discord, configured: true },
+      { id: 'gong', name: 'Gong', connected: false, configured: false },
+      {
+        id: 'calendar',
+        name: 'Google Calendar',
+        connected: connections.gmail,
+        configured: true,
+        lastSync: calendarEvents.length > 0 ? 'synced' : undefined
+      }
     ],
-    meeting: {
-      id: 'mtg-acme-tech',
-      title: 'Acme Corp — Technical Deep Dive',
-      company: 'Acme Corp',
-      startsInMinutes: 0,
-      phase: 'live_call',
-      meetingLink: 'https://zoom.us/j/demo'
-    },
+    meeting: liveMeeting
+      ? {
+          id: liveMeeting.id,
+          title: liveMeeting.title,
+          company: liveMeeting.title.split('—')[0]?.trim() || liveMeeting.title,
+          startsInMinutes: 0,
+          phase: 'live_call',
+          meetingLink: liveMeeting.link
+        }
+      : nextMeeting
+        ? {
+            id: nextMeeting.id,
+            title: nextMeeting.title,
+            company: nextMeeting.title.split('—')[0]?.trim() || nextMeeting.title,
+            startsInMinutes: Math.max(
+              0,
+              Math.round((nextMeeting.startsAt - Date.now()) / 60000)
+            ),
+            phase: 'pre_call',
+            meetingLink: nextMeeting.link
+          }
+        : null,
     actions: [
       {
         id: 'a1',
@@ -58,13 +94,16 @@ export function buildClusterContext(): ClusterContext {
         dealId: 'acme-corp'
       }
     ],
-    recentSignals: [
-      { type: 'blocker', content: 'EU data residency requirement', source: 'gong' },
-      { type: 'budget', content: '$180k ACV ceiling confirmed', source: 'email' },
-      { type: 'champion', content: 'Sarah Kim driving eval', source: 'slack' },
-      { type: 'technical', content: 'GDPR Art. 46 / Frankfurt isolation asked', source: 'transcript' }
-    ],
-    phase: 'live_call'
+    recentSignals:
+      recentSignals.length > 0
+        ? recentSignals
+        : [
+            { type: 'blocker', content: 'EU data residency requirement', source: 'gong' },
+            { type: 'budget', content: '$180k ACV ceiling confirmed', source: 'email' },
+            { type: 'champion', content: 'Sarah Kim driving eval', source: 'slack' },
+            { type: 'technical', content: 'GDPR Art. 46 / Frankfurt isolation asked', source: 'transcript' }
+          ],
+    phase: live ? 'live_call' : 'pre_call'
   }
 }
 
@@ -128,10 +167,50 @@ export function searchCluster(q: string): ClusterSearchHit[] {
     .slice(0, 6)
 }
 
-export function assistCluster(query: string, liveContext?: string): AssistResult {
+export function assistCluster(
+  query: string,
+  options?: { objective?: 'discovery' | 'v1_ship' }
+): AssistResult {
   const q = query.trim()
-  const isSay = SAY_PATTERNS.test(q)
+  const isSay = SAY_PATTERNS.test(q) || /wtf|answer|what is the/i.test(q)
   const isAgenda = AGENDA_PATTERNS.test(q)
+  const v1 = options?.objective === 'v1_ship'
+
+  const configResponse = {
+    headline: v1 ? 'V1 config — webhook + Frankfurt' : 'Platform config — webhook retries',
+    response: v1
+      ? 'Jen asked about webhook retry and dead-letter behavior under EU isolation. For V1, propose: Frankfurt-only queue, 3 retries with exponential backoff, DLQ stays in-region. Skip multi-region failover for pilot.'
+      : 'Customer is probing webhook retry semantics and dead-letter handling alongside Frankfurt isolation — standard technical eval questions.',
+    sayThis: v1
+      ? '"For V1 we keep everything in Frankfurt — webhook retries use exponential backoff, max three attempts, and dead letters never leave the EU partition. That\'s the same config Redwood shipped in week one. I can send the exact retry policy doc right after this call."'
+      : '"Webhook retries are configurable — default is exponential backoff with a dead-letter queue. For your EU requirement we bind the entire retry pipeline to Frankfurt so nothing transits outside the region. Want me to walk through the exact config?"',
+    sources: ['platform-docs', 'redwood-v1-config', 'frankfurt-isolation', 'transcript-live'],
+    agendaNext: v1
+      ? 'Anchor on minimal V1 scope: Frankfurt isolation + webhook policy doc → book technical sign-off this week.'
+      : 'Clarify whether they need custom retry counts or if standard policy meets their SRE runbook.',
+    trustNote: v1
+      ? 'Objective shifted to V1 — lead with speed and bounded scope, not full enterprise roadmap.'
+      : 'Stay consultative — confirm their maintenance windows before promising retry timing.',
+    guideQuestions: v1
+      ? [
+          {
+            text: 'What is the minimum Frankfurt config you need live in week one?',
+            why: 'Scopes V1 without enterprise roadmap',
+            urgent: true
+          },
+          {
+            text: 'Can we use standard webhook retry (3x, in-region DLQ) for the pilot?',
+            why: 'Closes Jen\'s technical question with a default',
+            urgent: false
+          },
+          {
+            text: 'Who signs off on retry policy — Jen or your platform SRE?',
+            why: 'Surfaces decision owner',
+            urgent: false
+          }
+        ]
+      : undefined
+  }
 
   const gdprResponse = {
     headline: 'GDPR Art. 46 + Frankfurt isolation',
@@ -141,10 +220,31 @@ export function assistCluster(query: string, liveContext?: string): AssistResult
       '"Great question, Jen. We support EU data residency through Frankfurt region isolation — all pilot data stays in the EU. For GDPR Article 46, we use Standard Contractual Clauses with a pre-signed addendum to our DPA. NovaBank and Redwood HQ cleared legal in under 10 days with the same package. I\'ll send the SCC template right after this call — and we can scope the entire pilot within EU infrastructure so nothing leaves the region."',
     sources: ['security-docs', 'redwood-close', 'novabank-pattern', 'slack-legal'],
     agendaNext: 'Close pilot success definition before Mark pushes timeline — ask what a successful 30-day pilot looks like.',
-    trustNote: 'Acknowledge Jen\'s concern explicitly before answering — builds IT trust. Don\'t rush to timeline.'
+    trustNote: 'Acknowledge Jen\'s concern explicitly before answering — builds IT trust. Don\'t rush to timeline.',
+    guideQuestions: [
+      {
+        text: 'Can we define pilot success criteria before we talk full rollout timeline?',
+        why: 'Load-bearing for Mark\'s timeline question',
+        urgent: true
+      },
+      {
+        text: 'Jen — does our SCC + Frankfurt isolation package match your IT checklist?',
+        why: 'Direct close on open blocker',
+        urgent: false
+      },
+      {
+        text: 'Sarah — who besides legal needs to sign the DPA addendum?',
+        why: 'Maps sign-off path',
+        urgent: false
+      }
+    ]
   }
 
-  if (isSay || /gdpr|residency|frankfurt|scc|compliance|technical/i.test(q)) {
+  if (isSay || /webhook|retry|dead.?letter|config|stack|frankfurt|isolation/i.test(q)) {
+    return { query: q, intent: 'say_this', ...configResponse }
+  }
+
+  if (isSay || /gdpr|residency|scc|compliance|technical/i.test(q)) {
     return {
       query: q,
       intent: 'say_this',

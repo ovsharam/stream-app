@@ -25,6 +25,45 @@ export type ClusterMeeting = {
   meetingLink?: string
 }
 
+export type GmailAccount = {
+  id: string
+  email: string
+  feedEnabled: boolean
+  calendarEnabled: boolean
+  addedAt: number
+}
+
+export type MondayAccount = {
+  id: string
+  name: string
+  email: string
+}
+
+export type GoogleCalendarOption = {
+  id: string
+  name: string
+  primary?: boolean
+  enabled: boolean
+  accountId?: string
+  accountEmail?: string
+}
+
+export type CalendarRailEvent = {
+  id: string
+  title: string
+  timeLabel: string
+  durationLabel: string
+  kind: 'meet' | 'calendar'
+  link?: string
+  live: boolean
+  ended?: boolean
+  startsAt: number
+  endsAt: number
+  /** 0 = today, 1 = tomorrow, 2 = third day */
+  dayIndex: number
+  dayHeading: string
+}
+
 export type AssistResult = {
   query: string
   intent: 'say_this' | 'search' | 'agenda' | 'general'
@@ -34,6 +73,9 @@ export type AssistResult = {
   sources: string[]
   agendaNext?: string
   trustNote?: string
+  guideQuestions?: { text: string; why?: string; urgent?: boolean }[]
+  autoDetected?: boolean
+  triggerPhrase?: string
 }
 
 export type ClusterContext = {
@@ -64,6 +106,9 @@ export type StreamSource =
   | 'meet'
   | 'gmail'
   | 'slack'
+  | 'x'
+  | 'monday'
+  | 'discord'
   | 'gong'
   | 'salesforce'
   | 'build'
@@ -91,5 +136,67 @@ export type CentralStreamEvent = {
   meetingLink?: string
   joinable?: boolean
   speaker?: string
-  meta?: Record<string, string>
+  meta?: Record<string, unknown>
+}
+
+export type ClusterThreadUpdate = {
+  id: string
+  ts: number
+  actor: string
+  body: string
+  source: string
+}
+
+export type MondayStatusOption = {
+  index: number
+  label: string
+}
+
+export type MondayRunResult = {
+  ok: boolean
+  message: string
+  executed: string[]
+  actions: { kind: 'comment' | 'move'; body?: string; statusLabel?: string }[]
+}
+
+export type MondayCreateResult = {
+  ok: boolean
+  itemId: string
+  itemName: string
+  boardId: string
+  boardName: string
+  groupTitle?: string
+  taskUrl: string
+}
+
+export type ComposeActionResult = {
+  ok: boolean
+  provider: string
+  message: string
+  executed: string[]
+}
+
+export type MondayCreateTarget = {
+  boardId: string
+  boardName: string
+  groupId?: string
+  groupTitle?: string
+}
+
+export type ClusterThread = {
+  itemId: string
+  itemTitle: string
+  day: string
+  source?: 'monday' | 'gmail'
+  threadId?: string
+  accountId?: string
+  boardId?: string
+  boardName?: string
+  taskUrl?: string
+  statusColumnId?: string
+  currentStatus?: string
+  statusOptions?: MondayStatusOption[]
+  canExecute?: boolean
+  parent: ClusterThreadUpdate | null
+  updates: ClusterThreadUpdate[]
 }

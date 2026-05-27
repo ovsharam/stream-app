@@ -1,0 +1,34 @@
+import { google } from 'googleapis'
+import { calendarEnabledAccounts } from './gmailAccounts'
+
+export const GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.modify',
+  'https://www.googleapis.com/auth/gmail.compose',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/calendar.readonly'
+]
+
+export function getOAuth2Client() {
+  const clientId = process.env.GMAIL_CLIENT_ID
+  const clientSecret = process.env.GMAIL_CLIENT_SECRET
+  const base = process.env.APP_URL ?? 'http://localhost:3131'
+  const redirectUri =
+    process.env.GMAIL_REDIRECT_URI || `${base}/api/auth/gmail/callback`
+
+  if (!clientId || !clientSecret) {
+    throw new Error('Google OAuth credentials not configured')
+  }
+
+  return new google.auth.OAuth2(clientId, clientSecret, redirectUri)
+}
+
+export function authClientForTokens(tokens: Record<string, unknown>) {
+  const oauth2 = getOAuth2Client()
+  oauth2.setCredentials(tokens)
+  return oauth2
+}
+
+export async function isGoogleConnected(): Promise<boolean> {
+  return (await calendarEnabledAccounts()).length > 0
+}

@@ -52,3 +52,16 @@ export function itemExists(id: string): boolean {
   const mod = require('./db-sqlite') as typeof import('./db-sqlite')
   return mod.itemExists(id)
 }
+
+export function deleteItemsByIds(ids: string[]): number {
+  if (ids.length === 0) return 0
+  if (useMemory()) return memoryStore.deleteItemsByIds(ids)
+  const mod = require('./db-sqlite') as typeof import('./db-sqlite')
+  return mod.deleteItemsByIds(ids)
+}
+
+export function deleteDemoSeedItems(): number {
+  if (useMemory()) return memoryStore.deleteDemoSeedItems()
+  const mod = require('./db-sqlite') as typeof import('./db-sqlite')
+  return mod.deleteDemoSeedItems()
+}

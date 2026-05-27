@@ -5,6 +5,8 @@ const LABELS: Record<StreamSource, string> = {
   gmail: 'Gmail',
   slack: 'Slack',
   x: 'X',
+  monday: 'Monday',
+  discord: 'Discord',
   perplexity: 'Perplexity',
   note: 'Note'
 }

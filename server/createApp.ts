@@ -5,13 +5,14 @@ import type { Server as SocketServer } from 'socket.io'
 import { createRouter } from './router'
 import { getSessionId, readSessionId } from './session'
 import { runWithSession } from './request-context'
+import { getCorsOrigins } from './corsOrigins'
 
 export function createApp(getIo?: () => SocketServer | undefined): express.Application {
   const app = express()
 
   app.use(
     cors({
-      origin: process.env.APP_URL ?? true,
+      origin: getCorsOrigins(),
       credentials: true
     })
   )

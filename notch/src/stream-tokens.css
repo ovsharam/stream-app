@@ -1,0 +1,20 @@
+/* Stream v2 design tokens — dark-first */
+:root {
+  --bg-primary: #0e0e12;
+  --bg-secondary: #16161a;
+  --bg-tertiary: #1e1e24;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.14);
+  --signal-blocker: #f09595;
+  --signal-budget: #97c459;
+  --signal-champion: #afa9ec;
+  --signal-timeline: #ef9f27;
+  --signal-technical: #85b7eb;
+  --signal-motion: #5dcaa5;
+  --text-primary: rgba(255, 255, 255, 0.88);
+  --text-secondary: rgba(255, 255, 255, 0.5);
+  --text-muted: rgba(255, 255, 255, 0.25);
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+}

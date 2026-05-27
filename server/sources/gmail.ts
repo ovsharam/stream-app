@@ -1,56 +1,41 @@
 import { google } from 'googleapis'
 import type { Server as SocketServer } from 'socket.io'
 import { normalizeGmailThread } from '../normalizer'
-import { upsertItems, itemExists } from '../db'
-import { getToken, setToken, setConnection } from '../store'
+import { upsertItems, itemExists, getRecentItems } from '../db'
 import type { StreamItem } from '../../shared/types'
+import { getOAuth2Client, GOOGLE_SCOPES, authClientForTokens } from './googleOAuth'
+import { syncCalendar } from './calendar'
+import {
+  upsertGmailAccount,
+  feedEnabledAccounts,
+  hasGmailAccounts,
+  accountSlug,
+  type GmailAccountRecord
+} from './gmailAccounts'
 
-const SCOPES = [
-  'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/gmail.modify'
-]
-
-function getOAuth2Client() {
-  const clientId = process.env.GMAIL_CLIENT_ID
-  const clientSecret = process.env.GMAIL_CLIENT_SECRET
-  const base = process.env.APP_URL ?? 'http://localhost:3000'
-  const redirectUri =
-    process.env.GMAIL_REDIRECT_URI || `${base}/api/auth/gmail/callback`
-
-  if (!clientId || !clientSecret) {
-    throw new Error('Gmail OAuth credentials not configured')
-  }
-
-  return new google.auth.OAuth2(clientId, clientSecret, redirectUri)
-}
-
-export function getGmailAuthUrl(): string {
+export function getGmailAuthUrl(sessionId: string, addAccount = false): string {
   const oauth2 = getOAuth2Client()
   return oauth2.generateAuthUrl({
     access_type: 'offline',
-    prompt: 'consent',
-    scope: SCOPES
+    prompt: addAccount ? 'select_account consent' : 'consent',
+    scope: GOOGLE_SCOPES,
+    state: sessionId
   })
 }
 
-export async function handleGmailCallback(code: string): Promise<void> {
+export async function handleGmailCallback(code: string, sessionId: string): Promise<void> {
   const oauth2 = getOAuth2Client()
   const { tokens } = await oauth2.getToken(code)
-  setToken('gmail', tokens as Record<string, unknown>)
-  setConnection('gmail', true)
+  await upsertGmailAccount(tokens as Record<string, unknown>, sessionId)
 }
 
-function getAuthenticatedClient() {
+async function fetchGmailThreadsForAccount(
+  account: GmailAccountRecord,
+  limit = 50
+): Promise<StreamItem[]> {
   const oauth2 = getOAuth2Client()
-  const tokens = getToken('gmail')
-  if (!tokens) throw new Error('Gmail not connected')
-  oauth2.setCredentials(tokens)
-  return oauth2
-}
-
-export async function fetchGmailThreads(limit = 50): Promise<StreamItem[]> {
-  const auth = getAuthenticatedClient()
-  const gmail = google.gmail({ version: 'v1', auth })
+  oauth2.setCredentials(account.tokens)
+  const gmail = google.gmail({ version: 'v1', auth: oauth2 })
 
   const listRes = await gmail.users.threads.list({
     userId: 'me',
@@ -59,6 +44,7 @@ export async function fetchGmailThreads(limit = 50): Promise<StreamItem[]> {
   })
 
   const items: StreamItem[] = []
+  const slug = accountSlug(account.email)
 
   for (const thread of listRes.data.threads ?? []) {
     if (!thread.id) continue
@@ -93,13 +79,19 @@ export async function fetchGmailThreads(limit = 50): Promise<StreamItem[]> {
     }
 
     const normalized = normalizeGmailThread({
-      id: thread.id,
+      id: `${slug}-${thread.id}`,
       snippet: detail.data.snippet ?? undefined,
       subject: getHeader('Subject') ?? undefined,
       from,
       date: new Date(parseInt(latest.internalDate ?? '0', 10)),
       body,
-      labelIds: latest.labelIds ?? undefined
+      labelIds: latest.labelIds ?? undefined,
+      metadata: {
+        threadId: thread.id,
+        accountEmail: account.email,
+        accountId: account.id,
+        messageCount: messages.length
+      }
     })
 
     if (normalized) items.push(normalized)
@@ -108,22 +100,146 @@ export async function fetchGmailThreads(limit = 50): Promise<StreamItem[]> {
   return items
 }
 
+let lastGmailError: string | null = null
+
+export function getLastGmailError(): string | null {
+  return lastGmailError
+}
+
+export function googleApiNeedsEnable(error: string | null): boolean {
+  if (!error) return false
+  return /has not been used|is disabled|accessNotConfigured|403/i.test(error)
+}
+
+export function googleApiEnableUrl(error: string | null): string | null {
+  if (!error) return null
+  if (/calendar/i.test(error)) {
+    return 'https://console.cloud.google.com/apis/library/calendar-json.googleapis.com'
+  }
+  if (/gmail/i.test(error)) {
+    return 'https://console.cloud.google.com/apis/library/gmail.googleapis.com'
+  }
+  return 'https://console.cloud.google.com/apis/dashboard'
+}
+
 export async function syncGmail(io?: SocketServer): Promise<StreamItem[]> {
-  if (!getToken('gmail')) return []
+  const accounts = await feedEnabledAccounts()
+  if (accounts.length === 0) return []
 
-  try {
-    const items = await fetchGmailThreads(50)
-    const newItems = items.filter((i) => !itemExists(i.id))
-    upsertItems(items)
+  const allItems: StreamItem[] = []
+  const errors: string[] = []
 
+  for (const account of accounts) {
+    try {
+      const items = await fetchGmailThreadsForAccount(account, 50)
+      allItems.push(...items)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      errors.push(`${account.email}: ${message}`)
+      console.error('[gmail] sync failed for', account.email, err)
+    }
+  }
+
+  if (allItems.length > 0) {
+    const newItems = allItems.filter((i) => !itemExists(i.id))
+    upsertItems(allItems)
     for (const item of newItems) {
       io?.emit('stream:item', item)
     }
+  }
 
-    return items
-  } catch (err) {
-    console.error('[gmail] sync failed:', err)
-    return []
+  await syncCalendar()
+
+  if (errors.length > 0 && allItems.length === 0) {
+    lastGmailError = errors.join(' · ')
+  } else {
+    lastGmailError = errors.length > 0 ? errors.join(' · ') : null
+  }
+
+  return allItems
+}
+
+function parseFromHeader(raw: string): { name: string; email: string } {
+  const fromMatch = raw.match(/^(?:"?([^"]*)"?\s)?<?([^>]+)>?$/)
+  return {
+    name: fromMatch?.[1]?.trim() || raw,
+    email: fromMatch?.[2]?.trim() || raw
+  }
+}
+
+function extractPlainBody(payload: { parts?: { mimeType?: string | null; body?: { data?: string | null } | null }[] | null; body?: { data?: string | null } | null } | null | undefined): string {
+  const parts = payload?.parts ?? []
+  const plain = parts.find((p) => p.mimeType === 'text/plain')
+  if (plain?.body?.data) {
+    return Buffer.from(plain.body.data, 'base64').toString('utf-8')
+  }
+  if (payload?.body?.data) {
+    return Buffer.from(payload.body.data, 'base64').toString('utf-8')
+  }
+  return ''
+}
+
+export async function getGmailThreadContext(input: {
+  streamItemId?: string
+  threadId?: string
+  accountId?: string
+}): Promise<{
+  threadId: string
+  subject: string
+  accountId: string
+  accountEmail: string
+  gmailUrl: string
+  messages: { id: string; ts: number; actor: string; body: string }[]
+} | null> {
+  let threadId = input.threadId
+  let accountId = input.accountId
+
+  if (input.streamItemId) {
+    const item = getRecentItems(500).find((i) => i.id === input.streamItemId)
+    if (item?.source === 'gmail') {
+      threadId = String(item.metadata?.threadId ?? threadId ?? '')
+      accountId = String(item.metadata?.accountId ?? accountId ?? '')
+    }
+  }
+
+  if (!threadId) return null
+
+  const { gmail, account } = await gmailClientForAccount(accountId)
+  const detail = await gmail.users.threads.get({
+    userId: 'me',
+    id: threadId,
+    format: 'full'
+  })
+
+  const rawMessages = detail.data.messages ?? []
+  if (rawMessages.length === 0) return null
+
+  const messages = rawMessages.map((msg) => {
+    const headers = msg.payload?.headers ?? []
+    const getHeader = (name: string) =>
+      headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? ''
+    const from = parseFromHeader(getHeader('From'))
+    const body = extractPlainBody(msg.payload).trim() || (detail.data.snippet ?? '')
+
+    return {
+      id: msg.id ?? `${threadId}-${msg.internalDate ?? '0'}`,
+      ts: parseInt(msg.internalDate ?? '0', 10),
+      actor: from.name || from.email,
+      body
+    }
+  })
+
+  const firstHeaders = rawMessages[0]?.payload?.headers ?? []
+  const subject =
+    firstHeaders.find((h) => h.name?.toLowerCase() === 'subject')?.value ?? '(no subject)'
+
+  return {
+    threadId,
+    subject,
+    accountId: account.id,
+    accountEmail: account.email,
+    gmailUrl: `https://mail.google.com/mail/u/0/#inbox/${threadId}`,
+    messages
   }
 }
 
@@ -131,6 +247,83 @@ export function isGmailConfigured(): boolean {
   return !!(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET)
 }
 
-export function isGmailConnected(): boolean {
-  return !!getToken('gmail')
+export async function isGmailConnected(): Promise<boolean> {
+  return hasGmailAccounts()
+}
+
+function encodeEmailBody(body: string): string {
+  return Buffer.from(body).toString('base64url')
+}
+
+async function gmailClientForAccount(accountId?: string) {
+  const accounts = await feedEnabledAccounts()
+  const account =
+    (accountId ? accounts.find((a) => a.id === accountId) : null) ?? accounts[0]
+  if (!account) throw new Error('No Gmail account available')
+  const oauth2 = authClientForTokens(account.tokens)
+  return { gmail: google.gmail({ version: 'v1', auth: oauth2 }), account }
+}
+
+export async function replyToGmailThread(input: {
+  threadId: string
+  accountId?: string
+  body: string
+}): Promise<{ id: string }> {
+  const { gmail, account } = await gmailClientForAccount(input.accountId)
+  const thread = await gmail.users.threads.get({ userId: 'me', id: input.threadId, format: 'metadata' })
+  const last = thread.data.messages?.at(-1)
+  if (!last?.id) throw new Error('Thread has no messages')
+
+  const headers = last.payload?.headers ?? []
+  const getHeader = (name: string) =>
+    headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? ''
+  const subject = getHeader('Subject').startsWith('Re:')
+    ? getHeader('Subject')
+    : `Re: ${getHeader('Subject') || '(no subject)'}`
+  const to = getHeader('Reply-To') || getHeader('From')
+  if (!to) throw new Error('Could not resolve reply recipient')
+
+  const raw = [
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    `In-Reply-To: ${getHeader('Message-ID')}`,
+    `References: ${getHeader('Message-ID')}`,
+    'Content-Type: text/plain; charset=utf-8',
+    '',
+    input.body.trim()
+  ].join('\r\n')
+
+  const sent = await gmail.users.messages.send({
+    userId: 'me',
+    requestBody: {
+      threadId: input.threadId,
+      raw: encodeEmailBody(raw)
+    }
+  })
+
+  if (!sent.data.id) throw new Error('Gmail did not return message id')
+  return { id: sent.data.id }
+}
+
+export async function sendGmailMessage(input: {
+  to: string
+  subject: string
+  body: string
+  accountId?: string
+}): Promise<{ id: string }> {
+  const { gmail } = await gmailClientForAccount(input.accountId)
+  const raw = [
+    `To: ${input.to}`,
+    `Subject: ${input.subject}`,
+    'Content-Type: text/plain; charset=utf-8',
+    '',
+    input.body.trim()
+  ].join('\r\n')
+
+  const sent = await gmail.users.messages.send({
+    userId: 'me',
+    requestBody: { raw: encodeEmailBody(raw) }
+  })
+  if (!sent.data.id) throw new Error('Gmail did not return message id')
+  return { id: sent.data.id }
 }

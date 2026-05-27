@@ -1,14 +1,24 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-type DropletMode = 'idle' | 'expanded'
+export type DropletPhase = 'hidden' | 'open'
 
 contextBridge.exposeInMainWorld('notch', {
-  collapse: () => ipcRenderer.send('notch:collapse'),
-  expand: () => ipcRenderer.send('notch:expand'),
-  onMode: (cb: (mode: DropletMode) => void) => {
-    const handler = (_: unknown, mode: DropletMode) => cb(mode)
+  hide: () => ipcRenderer.send('notch:hide'),
+  getMode: (): Promise<DropletPhase> => ipcRenderer.invoke('notch:getMode'),
+  onMode: (cb: (mode: DropletPhase) => void) => {
+    const handler = (_: unknown, mode: DropletPhase) => cb(mode)
     ipcRenderer.on('notch:mode', handler)
     return () => ipcRenderer.removeListener('notch:mode', handler)
+  },
+  onFocusSearch: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on('focus-search', handler)
+    return () => ipcRenderer.removeListener('focus-search', handler)
+  },
+  onSimRefresh: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on('sim:refresh', handler)
+    return () => ipcRenderer.removeListener('sim:refresh', handler)
   }
 })
 
@@ -19,13 +29,13 @@ contextBridge.exposeInMainWorld('notchDesktop', {
 declare global {
   interface Window {
     notch?: {
-      collapse: () => void
-      expand: () => void
-      onMode: (cb: (mode: DropletMode) => void) => () => void
+      hide: () => void
+      getMode: () => Promise<DropletPhase>
+      onMode: (cb: (mode: DropletPhase) => void) => () => void
+      onFocusSearch: (cb: () => void) => () => void
+      onSimRefresh: (cb: () => void) => () => void
     }
-    notchDesktop?: {
-      openExternal: (url: string) => void
-    }
+    notchDesktop?: { openExternal: (url: string) => void }
   }
 }
 

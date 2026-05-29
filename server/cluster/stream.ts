@@ -3,7 +3,21 @@ import { getRecentItems } from '../db'
 import { getSimIntel, getSimSignals, getSimTranscript, isSimCallActive } from '../sim/engine'
 
 type UserRole = 'ae' | 'am' | 'csm' | 'fde'
-type ExternalSource = 'gmail' | 'slack' | 'x' | 'monday' | 'discord' | 'perplexity' | 'note'
+type ExternalSource =
+  | 'gmail'
+  | 'slack'
+  | 'x'
+  | 'monday'
+  | 'discord'
+  | 'perplexity'
+  | 'claude'
+  | 'gemini'
+  | 'cursor'
+  | 'github'
+  | 'gdocs'
+  | 'gong'
+  | 'meeting'
+  | 'note'
 
 function hash(input: string): string {
   let h = 0
@@ -67,13 +81,36 @@ function gongRoleEvent(role: UserRole, now: number): CentralStreamEvent | null {
 }
 
 function mapExternalSource(source: ExternalSource): CentralStreamEvent['source'] {
-  if (source === 'perplexity' || source === 'note') return 'insight'
+  if (
+    source === 'perplexity' ||
+    source === 'claude' ||
+    source === 'gemini' ||
+    source === 'cursor' ||
+    source === 'note'
+  ) {
+    return 'insight'
+  }
   return source
 }
 
 function externalEvents(now: number): CentralStreamEvent[] {
   const items = getRecentItems(220).filter((item) =>
-    ['gmail', 'slack', 'x', 'monday', 'discord', 'perplexity', 'note'].includes(item.source)
+    [
+      'gmail',
+      'slack',
+      'x',
+      'monday',
+      'discord',
+      'perplexity',
+      'claude',
+      'gemini',
+      'cursor',
+      'github',
+      'gdocs',
+      'gong',
+      'meeting',
+      'note'
+    ].includes(item.source)
   )
 
   const mondayItems = items.filter((item) => item.source === 'monday')
@@ -144,8 +181,8 @@ function externalEvents(now: number): CentralStreamEvent[] {
       return {
         id: `ext-monday-thread-${hash(`${key}:${value.count}:${value.latestTs}`)}`,
         ts: value.latestTs,
-        source: 'monday',
-        kind: 'integration',
+        source: 'monday' as const,
+        kind: 'integration' as const,
         title: value.itemName,
         body: value.parentBody,
         highlight: `${Math.max(0, value.count - 1)} updates`,
@@ -187,7 +224,15 @@ function externalEvents(now: number): CentralStreamEvent[] {
               threadCount: String(Math.max(0, Number(item.metadata.messageCount) - 1)),
               grouped: Number(item.metadata.messageCount) > 1 ? 'true' : undefined
             }
-          : {})
+          : {}),
+        ...(item.metadata?.repo ? { repo: String(item.metadata.repo) } : {}),
+        ...(item.metadata?.issueNumber
+          ? { issueNumber: String(item.metadata.issueNumber) }
+          : {}),
+        ...(item.metadata?.documentId ? { documentId: String(item.metadata.documentId) } : {}),
+        ...(item.metadata?.callId ? { callId: String(item.metadata.callId) } : {}),
+        ...(item.metadata?.sessionId ? { sessionId: String(item.metadata.sessionId) } : {}),
+        ...(item.metadata?.projectLabel ? { projectLabel: String(item.metadata.projectLabel) } : {})
       }
     }))
 

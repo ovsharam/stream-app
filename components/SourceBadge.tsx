@@ -8,6 +8,13 @@ const LABELS: Record<StreamSource, string> = {
   monday: 'Monday',
   discord: 'Discord',
   perplexity: 'Perplexity',
+  claude: 'Claude',
+  cursor: 'Cursor',
+  github: 'GitHub',
+  gemini: 'Gemini',
+  gdocs: 'Docs',
+  gong: 'Gong',
+  meeting: 'Meeting',
   note: 'Note'
 }
 

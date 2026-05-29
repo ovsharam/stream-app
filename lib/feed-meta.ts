@@ -11,7 +11,10 @@ export const SOURCE_META: Record<
   x: { handle: '@x', avatar: 'X', color: '#ffffff', bg: '#0f1419' },
   monday: { handle: '@monday', avatar: 'Mo', color: '#ff3d57', bg: '#2a0a12' },
   discord: { handle: '@discord', avatar: 'D', color: '#5865f2', bg: '#0e1230' },
+  github: { handle: '@github', avatar: 'GH', color: '#e7e9ea', bg: '#24292f' },
+  gdocs: { handle: '@gdocs', avatar: 'Gd', color: '#4285f4', bg: '#0a1628' },
   gong: { handle: '@gong', avatar: 'Go', color: '#ff6b35', bg: '#2a1208' },
+  meeting: { handle: '@meeting', avatar: 'Mt', color: '#FF9500', bg: '#2a1a00' },
   salesforce: { handle: '@salesforce', avatar: 'SF', color: '#00a1e0', bg: '#061820' },
   build: { handle: '@build', avatar: '⚡', color: '#ffd400', bg: '#2a2400' },
   insight: { handle: '@notch', avatar: '✦', color: '#e7e9ea', bg: '#16181c' }

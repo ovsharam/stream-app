@@ -7,6 +7,7 @@ import { AgendaTracker } from './components/AgendaTracker'
 import { ContextStrip } from './components/ContextStrip'
 import { GuideQuestions } from './components/GuideQuestions'
 import { LiveAnswer } from './components/LiveAnswer'
+import { MeetingPanel } from './components/MeetingPanel'
 
 type Phase = 'hidden' | 'open'
 
@@ -93,6 +94,8 @@ export default function MobileApp() {
         </div>
 
         {ctx?.agenda && <AgendaTracker agenda={ctx.agenda} />}
+
+        <MeetingPanel />
 
         <div className="mobile-body">
           {ctx && (

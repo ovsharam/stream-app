@@ -6,6 +6,7 @@ import { createRouter } from './router'
 import { getSessionId, readSessionId } from './session'
 import { runWithSession } from './request-context'
 import { getCorsOrigins } from './corsOrigins'
+import { ensureGeminiFromEnv } from './sources/gemini'
 
 export function createApp(getIo?: () => SocketServer | undefined): express.Application {
   const app = express()
@@ -21,7 +22,10 @@ export function createApp(getIo?: () => SocketServer | undefined): express.Appli
 
   app.use((req, res, next) => {
     const sid = readSessionId(req) ?? getSessionId(req, res)
-    runWithSession(sid, () => next())
+    runWithSession(sid, () => {
+      ensureGeminiFromEnv(sid)
+      next()
+    })
   })
 
   const router = () => createRouter(getIo?.())

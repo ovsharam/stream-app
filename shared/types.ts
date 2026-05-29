@@ -5,6 +5,13 @@ export type StreamSource =
   | 'monday'
   | 'discord'
   | 'perplexity'
+  | 'claude'
+  | 'cursor'
+  | 'github'
+  | 'gemini'
+  | 'gdocs'
+  | 'gong'
+  | 'meeting'
   | 'note'
 
 export interface StreamItem {
@@ -58,6 +65,12 @@ export type ConnectionStatus = {
   monday: boolean
   discord: boolean
   perplexity: boolean
+  claude: boolean
+  cursor: boolean
+  github: boolean
+  gemini: boolean
+  gdocs: boolean
+  gong: boolean
 }
 
 export const SOURCE_COLORS: Record<StreamSource, string> = {
@@ -67,5 +80,12 @@ export const SOURCE_COLORS: Record<StreamSource, string> = {
   monday: '#ff3d57',
   discord: '#5865f2',
   perplexity: '#20B2AA',
+  claude: '#D97757',
+  cursor: '#7B61FF',
+  github: '#24292f',
+  gemini: '#4285F4',
+  gdocs: '#4285F4',
+  gong: '#7c3aed',
+  meeting: '#FF9500',
   note: '#F5A623'
 }

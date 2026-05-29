@@ -222,6 +222,143 @@ export function normalizePerplexityResponse(response: {
   }
 }
 
+export function normalizeAiAssist(input: {
+  source: StreamSource
+  query: string
+  answer: string
+  senderName: string
+  handle?: string
+  metadata?: Record<string, unknown>
+}): StreamItem {
+  return {
+    id: `${input.source}-${uuidv4()}`,
+    source: input.source,
+    sender: { name: input.senderName, handle: input.handle ?? input.source },
+    timestamp: new Date(),
+    title: input.query,
+    body: truncate(input.answer),
+    bodyFull: input.answer,
+    isUnread: true,
+    isStarred: false,
+    metadata: { query: input.query, ...input.metadata }
+  }
+}
+
+export function normalizeClaudeConversation(input: {
+  sessionId: string
+  projectSlug: string
+  projectLabel: string
+  title: string
+  body: string
+  updatedAt: Date
+  messageCount: number
+}): StreamItem {
+  return {
+    id: `claude-session-${input.sessionId}`,
+    source: 'claude',
+    sender: { name: 'Claude', handle: input.projectLabel },
+    timestamp: input.updatedAt,
+    title: input.title,
+    body: truncate(input.body),
+    bodyFull: input.body,
+    isUnread: true,
+    isStarred: false,
+    metadata: {
+      sessionId: input.sessionId,
+      projectSlug: input.projectSlug,
+      projectLabel: input.projectLabel,
+      messageCount: input.messageCount,
+      conversation: 'true'
+    }
+  }
+}
+
+export function normalizeGithubItem(item: {
+  id: string
+  number: number
+  repo: string
+  title: string
+  body: string
+  url: string
+  updatedAt: Date
+  author: string
+}): StreamItem {
+  return {
+    id: `github-${item.id}`,
+    source: 'github',
+    sender: { name: item.author, handle: item.repo },
+    timestamp: item.updatedAt,
+    title: `#${item.number} ${item.title}`,
+    body: truncate(item.body || item.title),
+    bodyFull: item.body || item.title,
+    isUnread: true,
+    isStarred: false,
+    metadata: {
+      itemId: `github-${item.id}`,
+      issueNumber: item.number,
+      repo: item.repo,
+      url: item.url
+    }
+  }
+}
+
+export function normalizeGdocsItem(item: {
+  id: string
+  title: string
+  url: string
+  modifiedAt: Date
+  owner: string
+  accountEmail?: string
+}): StreamItem {
+  return {
+    id: `gdocs-${item.id}`,
+    source: 'gdocs',
+    sender: { name: item.owner, handle: 'google-docs' },
+    timestamp: item.modifiedAt,
+    title: item.title,
+    body: 'Google Doc updated',
+    bodyFull: item.title,
+    isUnread: true,
+    isStarred: false,
+    metadata: {
+      itemId: `gdocs-${item.id}`,
+      documentId: item.id,
+      url: item.url,
+      accountEmail: item.accountEmail
+    }
+  }
+}
+
+export function normalizeGongCall(call: {
+  id: string
+  title: string
+  startedAt: Date
+  durationSec?: number
+  url?: string
+  participants: string[]
+}): StreamItem {
+  const mins = call.durationSec ? Math.round(call.durationSec / 60) : undefined
+  return {
+    id: `gong-${call.id}`,
+    source: 'gong',
+    sender: { name: 'Gong', handle: 'gong' },
+    timestamp: call.startedAt,
+    title: call.title,
+    body: truncate(
+      `${call.participants.slice(0, 3).join(', ') || 'Call'}${mins ? ` · ${mins} min` : ''}`
+    ),
+    bodyFull: call.participants.join(', '),
+    isUnread: true,
+    isStarred: false,
+    metadata: {
+      itemId: `gong-${call.id}`,
+      callId: call.id,
+      url: call.url,
+      participants: call.participants
+    }
+  }
+}
+
 export function normalizeNote(text: string, title?: string): StreamItem {
   return {
     id: `note-${uuidv4()}`,
@@ -256,6 +393,18 @@ export function normalizeRaw(
       return normalizePerplexityResponse(
         payload as Parameters<typeof normalizePerplexityResponse>[0]
       )
+    case 'claude':
+    case 'gemini':
+    case 'cursor':
+      return normalizeAiAssist(payload as Parameters<typeof normalizeAiAssist>[0])
+    case 'github':
+      return normalizeGithubItem(payload as Parameters<typeof normalizeGithubItem>[0])
+    case 'gdocs':
+      return normalizeGdocsItem(payload as Parameters<typeof normalizeGdocsItem>[0])
+    case 'gong':
+      return normalizeGongCall(payload as Parameters<typeof normalizeGongCall>[0])
+    case 'meeting':
+      return null
     case 'note':
       return normalizeNote(String(payload.text ?? ''), payload.title as string | undefined)
     default:

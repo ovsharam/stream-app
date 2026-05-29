@@ -559,7 +559,13 @@ export type MondayBoardTarget = {
   groupTitle?: string
 }
 
-const CREATE_GROUP_PREFER = ['new ideas', 'backlog', 'to do', 'todo', 'open', 'planned', 'in progress']
+export type MondayBoardCatalogEntry = {
+  boardId: string
+  boardName: string
+  groups: { id: string; title: string }[]
+}
+
+const CREATE_GROUP_PREFER = ['new ideas', 'new features', 'backlog', 'to do', 'todo', 'open', 'planned', 'in progress']
 const CREATE_GROUP_AVOID = ['completed', 'done', 'archive', 'archived', 'closed', 'won', 'lost']
 
 function pickCreateGroup(groups: { id: string; title: string }[]): { id: string; title: string } | undefined {
@@ -613,14 +619,14 @@ function persistMondayCreateDefaults(board: MondayBoardTarget): void {
   })
 }
 
-export async function listMondayBoardTargets(): Promise<MondayBoardTarget[]> {
+export async function listMondayBoardCatalog(): Promise<MondayBoardCatalogEntry[]> {
   if (!getMondayToken()) return []
 
   const data = await mondayApi<{
     boards: { id: string; name: string; groups: { id: string; title: string }[] }[]
   }>(
     `
-      query NotchBoardTargets {
+      query NotchBoardCatalog {
         boards(limit: 50) {
           id
           name
@@ -633,11 +639,20 @@ export async function listMondayBoardTargets(): Promise<MondayBoardTarget[]> {
     `
   )
 
-  return (data.boards ?? []).map((board) => {
-    const group = pickCreateGroup(board.groups ?? [])
+  return (data.boards ?? []).map((board) => ({
+    boardId: board.id,
+    boardName: board.name,
+    groups: board.groups ?? []
+  }))
+}
+
+export async function listMondayBoardTargets(): Promise<MondayBoardTarget[]> {
+  const catalog = await listMondayBoardCatalog()
+  return catalog.map((board) => {
+    const group = pickCreateGroup(board.groups)
     return {
-      boardId: board.id,
-      boardName: board.name,
+      boardId: board.boardId,
+      boardName: board.boardName,
       groupId: group?.id,
       groupTitle: group?.title
     }

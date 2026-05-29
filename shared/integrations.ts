@@ -89,13 +89,79 @@ export const INTEGRATION_CATALOG: IntegrationDef[] = [
   {
     id: 'perplexity',
     name: 'Perplexity',
-    tagline: 'Research from the feed',
+    tagline: 'Research answers in the feed',
     status: 'live',
     auth: 'api_token',
     capabilities: ['ingest', 'execute'],
     composePrefix: 'perplexity',
     actions: ['trigger_webhook'],
     feedSources: ['perplexity']
+  },
+  {
+    id: 'claude',
+    name: 'Claude',
+    tagline: 'Draft & ask — posts to feed',
+    status: 'live',
+    auth: 'api_token',
+    capabilities: ['ingest', 'execute', 'draft_llm'],
+    composePrefix: 'claude',
+    actions: ['draft_reply', 'trigger_webhook'],
+    feedSources: ['claude']
+  },
+  {
+    id: 'gemini',
+    name: 'Gemini',
+    tagline: 'Google AI ask & summarize',
+    status: 'live',
+    auth: 'api_token',
+    capabilities: ['ingest', 'execute', 'draft_llm'],
+    composePrefix: 'gemini',
+    actions: ['draft_reply', 'trigger_webhook'],
+    feedSources: ['gemini']
+  },
+  {
+    id: 'cursor',
+    name: 'Cursor',
+    tagline: 'Agent prompts & cloud runs',
+    status: 'live',
+    auth: 'api_token',
+    capabilities: ['ingest', 'execute'],
+    composePrefix: 'cursor',
+    actions: ['trigger_webhook'],
+    feedSources: ['cursor']
+  },
+  {
+    id: 'github',
+    name: 'GitHub',
+    tagline: 'Issues in feed, create & comment',
+    status: 'live',
+    auth: 'api_token',
+    capabilities: ['ingest', 'execute'],
+    composePrefix: 'github',
+    actions: ['create_record', 'comment'],
+    feedSources: ['github']
+  },
+  {
+    id: 'gdocs',
+    name: 'Google Docs',
+    tagline: 'Doc activity, create & append',
+    status: 'live',
+    auth: 'oauth',
+    capabilities: ['ingest', 'execute'],
+    composePrefix: 'gdocs',
+    actions: ['create_record', 'update_field'],
+    feedSources: ['gdocs']
+  },
+  {
+    id: 'gong',
+    name: 'Gong',
+    tagline: 'Call recordings & notes',
+    status: 'live',
+    auth: 'api_token',
+    capabilities: ['ingest', 'execute'],
+    composePrefix: 'gong',
+    actions: ['comment', 'update_field'],
+    feedSources: ['gong']
   },
   {
     id: 'linear',

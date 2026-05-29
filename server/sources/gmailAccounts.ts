@@ -135,6 +135,60 @@ export async function feedEnabledAccounts(sessionId?: string): Promise<GmailAcco
   return (await listGmailAccounts(sessionId)).filter((a) => a.feedEnabled)
 }
 
+/** Desktop fallback when API calls omit session cookies (e.g. Electron main process). */
+export async function feedEnabledAccountsAnySession(): Promise<GmailAccountRecord[]> {
+  const current = await feedEnabledAccounts()
+  if (current.length > 0) return current
+  if (process.env.VERCEL) return []
+
+  try {
+    const { getDb } = require('../db-sqlite') as typeof import('../db-sqlite')
+    getDb().exec(`
+      CREATE TABLE IF NOT EXISTS session_tokens (
+        session_id TEXT NOT NULL,
+        source TEXT NOT NULL,
+        token_json TEXT NOT NULL,
+        PRIMARY KEY (session_id, source)
+      );
+    `)
+
+    const rows = getDb()
+      .prepare(`SELECT token_json FROM session_tokens WHERE source = ?`)
+      .all(STORE_KEY) as { token_json: string }[]
+
+    for (const row of rows) {
+      const parsed = JSON.parse(row.token_json) as { accounts?: GmailAccountRecord[] }
+      const enabled = (parsed.accounts ?? []).filter((a) => a.feedEnabled)
+      if (enabled.length > 0) return enabled
+    }
+
+    const legacy = getDb()
+      .prepare(`SELECT token_json FROM session_tokens WHERE source = 'gmail'`)
+      .all() as { token_json: string }[]
+    for (const row of legacy) {
+      try {
+        const tokens = JSON.parse(row.token_json) as Record<string, unknown>
+        const email = await resolveEmailForTokens(tokens)
+        return [
+          {
+            id: accountIdForEmail(email),
+            email,
+            tokens,
+            feedEnabled: true,
+            calendarEnabled: true,
+            addedAt: Date.now()
+          }
+        ]
+      } catch {
+        continue
+      }
+    }
+  } catch {
+    /* sqlite unavailable in memory mode */
+  }
+  return []
+}
+
 export async function calendarEnabledAccounts(sessionId?: string): Promise<GmailAccountRecord[]> {
   return (await listGmailAccounts(sessionId)).filter((a) => a.calendarEnabled)
 }

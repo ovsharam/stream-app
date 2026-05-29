@@ -91,6 +91,12 @@ type SessionMeta = {
     monday: boolean
     discord: boolean
     perplexity: boolean
+    claude: boolean
+    cursor: boolean
+    github: boolean
+    gemini: boolean
+    gdocs: boolean
+    gong: boolean
   }
   preferences: { xMinEngagement: number; onboardingComplete: boolean }
 }
@@ -102,7 +108,13 @@ const DEFAULT_META: SessionMeta = {
     x: false,
     monday: false,
     discord: false,
-    perplexity: false
+    perplexity: false,
+    claude: false,
+    cursor: false,
+    github: false,
+    gemini: false,
+    gdocs: false,
+    gong: false
   },
   preferences: { xMinEngagement: 0, onboardingComplete: false }
 }

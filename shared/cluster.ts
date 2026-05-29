@@ -1,3 +1,5 @@
+import type { GraphRagContext } from './personal-kb'
+
 export type DashboardTab = 'overview' | 'integrations' | 'meetings' | 'actions' | 'activity'
 
 export type ClusterIntegration = {
@@ -64,6 +66,30 @@ export type CalendarRailEvent = {
   dayHeading: string
 }
 
+export type PerplexityNewsItem = {
+  id: string
+  title: string
+  summary: string
+  url?: string
+  ts: number
+}
+
+export type PerplexityRailState = {
+  connected: boolean
+  accountEmail?: string
+  news: PerplexityNewsItem[]
+  error?: string
+  updatedAt?: number
+}
+
+export type CalendarRailResponse = {
+  events: CalendarRailEvent[]
+  connected: boolean
+  error?: string
+  needsReconnect?: boolean
+  perplexity?: PerplexityRailState
+}
+
 export type AssistResult = {
   query: string
   intent: 'say_this' | 'search' | 'agenda' | 'general'
@@ -76,6 +102,8 @@ export type AssistResult = {
   guideQuestions?: { text: string; why?: string; urgent?: boolean }[]
   autoDetected?: boolean
   triggerPhrase?: string
+  /** Personal KB / GraphRAG-lite context for latent retrieval. */
+  latentContext?: GraphRagContext
 }
 
 export type ClusterContext = {
@@ -109,7 +137,10 @@ export type StreamSource =
   | 'x'
   | 'monday'
   | 'discord'
+  | 'github'
+  | 'gdocs'
   | 'gong'
+  | 'meeting'
   | 'salesforce'
   | 'build'
   | 'insight'

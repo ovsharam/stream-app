@@ -50,7 +50,28 @@ import {
   isDiscordConfigured,
   isDiscordConnected
 } from './sources/discord'
-import { connectPerplexity, askPerplexity, isPerplexityConnected } from './sources/perplexity'
+import {
+  connectPerplexityAccount,
+  askPerplexity,
+  isPerplexityConnected,
+  perplexityAccountLabel,
+  syncPerplexity,
+  PERPLEXITY_PORTAL_URL,
+  PERPLEXITY_SIGNIN_URL
+} from './sources/perplexity'
+import { getPerplexityNewsRail } from './sources/perplexityNews'
+import { connectClaude, isClaudeConnected, connectClaudeOAuthAsync, syncClaude, claudeAccountLabel, refreshClaudeApiAccess } from './sources/claude'
+import {
+  buildClaudeOAuthUrl,
+  detectLocalClaudeAccount,
+  exchangeClaudeOAuthCode,
+  importLocalClaudeCredentials
+} from './sources/claudeOAuth'
+import { connectGemini, isGeminiConnected } from './sources/gemini'
+import { connectCursor, isCursorConnected } from './sources/cursor'
+import { connectGithub, isGithubConnected, syncGithub } from './sources/github'
+import { isGdocsConnected, syncGdocs } from './sources/gdocs'
+import { connectGong, isGongConnected, syncGong } from './sources/gong'
 import { registerIntegrationExecutors } from './integrations/executors'
 import { runIntegrationAction } from './integrations/registry'
 import { parseComposeCommand, COMPOSE_HELP } from '../shared/compose'
@@ -67,6 +88,18 @@ import {
   getSignalsForCase
 } from './graph/store'
 import { syncGmailItemsToGraph } from './graph/gmail-ingest'
+import { ingestConsciousness, ingestRecentStream, retrieveContext } from './kb/pipeline'
+import { recordComposeAction, markStreamItemSeen } from './kb/telemetry'
+import {
+  startMeetingSession,
+  endMeetingSession,
+  getActiveMeeting,
+  getMeeting,
+  ingestChunk,
+  starMoment,
+  speculate,
+  getLatestPrediction
+} from './cluster/meetingPipeline'
 import { scoreFdeDecision } from './scoring/fde-scorer'
 import {
   setBrowserContext,
@@ -123,6 +156,7 @@ export function createRouter(io?: SocketServer): Router {
     const gmailError = getLastGmailError()
     const calendarError = getLastCalendarError()
     const gmailConnected = demo || (await isGmailConnected())
+    const gdocsConnected = demo || (await isGdocsConnected())
     res.json({
       connections: getConnections(),
       configured: {
@@ -131,17 +165,42 @@ export function createRouter(io?: SocketServer): Router {
         x: isXConfigured() || demo,
         monday: isMondayConfigured() || demo,
         discord: isDiscordConfigured() || demo,
-        perplexity: true
+        perplexity: true,
+        claude: true,
+        gemini: true,
+        cursor: true,
+        github: true,
+        gdocs: isGmailConfigured() || demo,
+        gong: true
       },
       connected: demo
-        ? { gmail: true, slack: true, x: true, monday: true, discord: true, perplexity: true }
+        ? {
+            gmail: true,
+            slack: true,
+            x: true,
+            monday: true,
+            discord: true,
+            perplexity: true,
+            claude: true,
+            gemini: true,
+            cursor: true,
+            github: true,
+            gdocs: true,
+            gong: true
+          }
         : {
             gmail: gmailConnected,
             slack: isSlackConnected(),
             x: isXConnected(),
             monday: isMondayConnected(),
             discord: isDiscordConnected(),
-            perplexity: isPerplexityConnected()
+            perplexity: isPerplexityConnected(),
+            claude: isClaudeConnected(),
+            gemini: isGeminiConnected(),
+            cursor: isCursorConnected(),
+            github: isGithubConnected(),
+            gdocs: gdocsConnected,
+            gong: isGongConnected()
           },
       syncErrors: demo
         ? {}
@@ -320,15 +379,159 @@ export function createRouter(io?: SocketServer): Router {
     res.json({ count: items.length })
   })
 
-  // Perplexity
-  router.post('/auth/perplexity', (req, res) => {
+  // Perplexity — account login via portal + API key (no public OAuth)
+  router.get('/auth/perplexity', (_req, res) => {
+    res.json({
+      signInUrl: PERPLEXITY_SIGNIN_URL,
+      portalUrl: PERPLEXITY_PORTAL_URL,
+      accountLabel: perplexityAccountLabel()
+    })
+  })
+
+  router.post('/auth/perplexity', async (req, res) => {
+    const { apiKey, accountEmail } = req.body as { apiKey?: string; accountEmail?: string }
+    if (!apiKey?.trim()) {
+      res.status(400).json({ error: 'API key required' })
+      return
+    }
+    try {
+      const result = await connectPerplexityAccount(apiKey.trim(), accountEmail, io)
+      res.json({
+        ok: true,
+        count: result.newsCount,
+        accountLabel: perplexityAccountLabel()
+      })
+    } catch (err) {
+      res.status(401).json({ error: String(err) })
+    }
+  })
+
+  router.post('/auth/perplexity/sync', async (_req, res) => {
+    const items = await syncPerplexity(io, true)
+    res.json({ count: items.length })
+  })
+
+  router.post('/auth/claude', (req, res) => {
     const { apiKey } = req.body as { apiKey?: string }
     if (!apiKey) {
       res.status(400).json({ error: 'API key required' })
       return
     }
-    connectPerplexity(apiKey)
+    connectClaude(apiKey)
     res.json({ ok: true })
+  })
+
+  router.get('/auth/claude', (req, res) => {
+    const sessionId = readSessionId(req) ?? getSessionId(req, res)
+    const local = detectLocalClaudeAccount()
+    res.json({
+      url: buildClaudeOAuthUrl(sessionId),
+      localAccount: local,
+      accountLabel: claudeAccountLabel()
+    })
+  })
+
+  router.post('/auth/claude/code', async (req, res) => {
+    const sessionId = readSessionId(req) ?? getSessionId(req, res)
+    const { code } = req.body as { code?: string }
+    if (!code?.trim()) {
+      res.status(400).json({ error: 'Authorization code required' })
+      return
+    }
+    try {
+      const creds = await exchangeClaudeOAuthCode(sessionId, code.trim())
+      await connectClaudeOAuthAsync(creds)
+      const items = await syncClaude(io)
+      res.json({ ok: true, count: items.length, accountLabel: claudeAccountLabel() })
+    } catch (err) {
+      res.status(401).json({ error: String(err) })
+    }
+  })
+
+  router.post('/auth/claude/import', async (_req, res) => {
+    try {
+      const creds = importLocalClaudeCredentials()
+      await connectClaudeOAuthAsync(creds)
+      const items = await syncClaude(io)
+      res.json({
+        ok: true,
+        count: items.length,
+        accountLabel: claudeAccountLabel(),
+        subscriptionType: creds.subscriptionType
+      })
+    } catch (err) {
+      res.status(400).json({ error: String(err) })
+    }
+  })
+
+  router.post('/auth/claude/sync', async (_req, res) => {
+    const items = await syncClaude(io)
+    res.json({ count: items.length })
+  })
+
+  router.post('/auth/claude/refresh-key', async (_req, res) => {
+    const ok = await refreshClaudeApiAccess()
+    res.json({ ok, accountLabel: claudeAccountLabel() })
+  })
+
+  router.post('/auth/gemini', (req, res) => {
+    const { apiKey } = req.body as { apiKey?: string }
+    if (!apiKey) {
+      res.status(400).json({ error: 'API key required' })
+      return
+    }
+    connectGemini(apiKey)
+    res.json({ ok: true })
+  })
+
+  router.post('/auth/cursor', (req, res) => {
+    const { apiKey, repo } = req.body as { apiKey?: string; repo?: string }
+    if (!apiKey) {
+      res.status(400).json({ error: 'API key required' })
+      return
+    }
+    connectCursor(apiKey, repo)
+    res.json({ ok: true })
+  })
+
+  router.post('/auth/github', async (req, res) => {
+    const { pat, defaultRepo } = req.body as { pat?: string; defaultRepo?: string }
+    if (!pat) {
+      res.status(400).json({ error: 'Personal access token required' })
+      return
+    }
+    connectGithub(pat, defaultRepo)
+    const items = await syncGithub(io)
+    res.json({ ok: true, count: items.length })
+  })
+
+  router.post('/auth/github/sync', async (_req, res) => {
+    const items = await syncGithub(io)
+    res.json({ count: items.length })
+  })
+
+  router.post('/auth/gdocs/sync', async (_req, res) => {
+    const items = await syncGdocs(io)
+    res.json({ count: items.length })
+  })
+
+  router.post('/auth/gong', async (req, res) => {
+    const { accessKey, accessSecret } = req.body as {
+      accessKey?: string
+      accessSecret?: string
+    }
+    if (!accessKey || !accessSecret) {
+      res.status(400).json({ error: 'accessKey and accessSecret required' })
+      return
+    }
+    connectGong(accessKey, accessSecret)
+    const items = await syncGong(io)
+    res.json({ ok: true, count: items.length })
+  })
+
+  router.post('/auth/gong/sync', async (_req, res) => {
+    const items = await syncGong(io)
+    res.json({ count: items.length })
   })
 
   router.post('/ai/query', async (req, res) => {
@@ -367,7 +570,12 @@ export function createRouter(io?: SocketServer): Router {
       syncX(io),
       syncMonday(io),
       syncDiscord(io),
-      syncCalendar()
+      syncCalendar(),
+      syncGithub(io),
+      syncGdocs(io),
+      syncGong(io),
+      syncClaude(io),
+      syncPerplexity(io)
     ])
     res.json({
       gmail: results[0].status === 'fulfilled' ? results[0].value.length : 0,
@@ -375,7 +583,13 @@ export function createRouter(io?: SocketServer): Router {
       x: results[2].status === 'fulfilled' ? results[2].value.length : 0,
       monday: results[3].status === 'fulfilled' ? results[3].value.length : 0,
       discord: results[4].status === 'fulfilled' ? results[4].value.length : 0,
-      calendar: results[5].status === 'fulfilled' ? results[5].value.length : 0
+      calendar: results[5].status === 'fulfilled' ? results[5].value.length : 0,
+      github: results[6].status === 'fulfilled' ? results[6].value.length : 0,
+      gdocs: results[7].status === 'fulfilled' ? results[7].value.length : 0,
+      gong: results[8].status === 'fulfilled' ? results[8].value.length : 0,
+      claude: results[9].status === 'fulfilled' ? results[9].value.length : 0,
+      perplexity: results[10].status === 'fulfilled' ? results[10].value.length : 0,
+      kbIngested: ingestRecentStream(80)
     })
   })
 
@@ -502,9 +716,18 @@ export function createRouter(io?: SocketServer): Router {
   })
 
   router.get('/cluster/calendar', async (_req, res) => {
+    const pplxRail = getPerplexityNewsRail()
+    const perplexityState = {
+      connected: isPerplexityConnected(),
+      accountEmail: perplexityAccountLabel(),
+      news: pplxRail.news,
+      error: pplxRail.error,
+      updatedAt: pplxRail.updatedAt
+    }
+
     const connected = await isGmailConnected()
     if (!connected) {
-      res.json({ events: [], connected: false })
+      res.json({ events: [], connected: false, perplexity: perplexityState })
       return
     }
     try {
@@ -514,7 +737,8 @@ export function createRouter(io?: SocketServer): Router {
         events,
         connected: true,
         error: error ?? undefined,
-        needsReconnect: calendarNeedsReconnect(error)
+        needsReconnect: calendarNeedsReconnect(error),
+        perplexity: perplexityState
       })
     } catch (err) {
       const message = String(err)
@@ -522,7 +746,8 @@ export function createRouter(io?: SocketServer): Router {
         events: [],
         connected: true,
         error: message,
-        needsReconnect: calendarNeedsReconnect(message)
+        needsReconnect: calendarNeedsReconnect(message),
+        perplexity: perplexityState
       })
     }
   })
@@ -927,6 +1152,7 @@ export function createRouter(io?: SocketServer): Router {
       return
     }
 
+    const startedAt = Date.now()
     try {
       const result = await runIntegrationAction({
         provider: parsed.provider,
@@ -937,8 +1163,19 @@ export function createRouter(io?: SocketServer): Router {
         io
       })
 
+      recordComposeAction({
+        operatorId: 'local',
+        subjectId: raw.slice(0, 64),
+        contextItemId: contextItemId?.replace(/^ext-/, ''),
+        provider: parsed.provider,
+        actionKind: parsed.intent,
+        rawCommand: raw,
+        ok: result.ok,
+        startedAt
+      })
+
       if (!result.ok) {
-        res.status(400).json({ ok: false, error: result.message, ...result })
+        res.status(400).json({ ...result, error: result.message })
         return
       }
 
@@ -959,10 +1196,146 @@ export function createRouter(io?: SocketServer): Router {
     res.json(searchCluster(q))
   })
 
+  // Personal knowledge graph — stream of consciousness + integration ingest + GraphRAG-lite
+  router.post('/kb/stream', (req, res) => {
+    const text = String(req.body.text ?? '').trim()
+    if (!text) {
+      res.status(400).json({ error: 'text required' })
+      return
+    }
+    const dp = ingestConsciousness(text)
+    res.json({ ok: true, datapoint: dp })
+  })
+
+  router.get('/kb/context', (req, res) => {
+    const q = String(req.query.q ?? '')
+    res.json(retrieveContext(q))
+  })
+
+  router.post('/kb/ingest/recent', (_req, res) => {
+    const count = ingestRecentStream(60)
+    res.json({ ok: true, count })
+  })
+
+  router.post('/kb/seen/:itemId', (req, res) => {
+    const itemId = req.params.itemId.replace(/^ext-/, '')
+    markStreamItemSeen(itemId)
+    res.json({ ok: true })
+  })
+
+  router.get('/kb/stats', (_req, res) => {
+    const { listDatapoints, listEntities, listTraces } = require('./kb/store') as typeof import('./kb/store')
+    const recent = listDatapoints(20)
+      .filter((dp) => dp.kind === 'consciousness')
+      .slice(0, 5)
+      .map((dp) => ({
+        id: dp.id,
+        excerpt: dp.body.slice(0, 120),
+        intention: dp.intention.dominant,
+        ingestedAt: dp.ingestedAt
+      }))
+    res.json({
+      datapoints: listDatapoints(500).length,
+      entities: listEntities(500).length,
+      traces: listTraces(500).length,
+      recent
+    })
+  })
+
   router.post('/cluster/assist', (req, res) => {
     const query = String(req.body.query ?? '')
     const objective = req.body.objective as 'discovery' | 'v1_ship' | undefined
-    res.json(mobileAssist(query, objective))
+    const result = mobileAssist(query, objective)
+    if (query.trim()) {
+      result.latentContext = retrieveContext(query)
+    }
+    res.json(result)
+  })
+
+  /* ------------------------- Meeting Intelligence ----------------------- */
+
+  router.post('/meeting/start', (req, res) => {
+    const session = startMeetingSession({
+      title: req.body?.title ? String(req.body.title) : undefined,
+      dealHint: req.body?.dealHint ? String(req.body.dealHint) : undefined
+    })
+    res.json({ ok: true, session })
+  })
+
+  router.post('/meeting/chunk', (req, res) => {
+    const text = String(req.body?.text ?? '').trim()
+    if (!text) {
+      res.status(400).json({ error: 'text required' })
+      return
+    }
+    const ts = Number(req.body?.ts ?? Date.now())
+    const session = ingestChunk({ text, ts })
+    if (!session) {
+      res.status(400).json({ error: 'no active meeting' })
+      return
+    }
+    const newSignals = session.signals.filter(
+      (s) => s.chunkIndex === session.chunks.length - 1
+    )
+    res.json({ ok: true, signals: newSignals })
+    if (newSignals.length > 0) {
+      void speculate(newSignals[newSignals.length - 1].text).catch((e) =>
+        console.warn('[meeting] speculate error', (e as Error).message)
+      )
+    }
+  })
+
+  router.post('/meeting/star', (req, res) => {
+    const text = req.body?.text ? String(req.body.text) : undefined
+    const moment = starMoment(text)
+    if (!moment) {
+      res.status(400).json({ error: 'no active meeting' })
+      return
+    }
+    res.json({ ok: true, moment })
+  })
+
+  router.get('/meeting/state', (_req, res) => {
+    const session = getActiveMeeting()
+    const prediction = getLatestPrediction()
+    res.json({
+      active: Boolean(session),
+      session: session
+        ? {
+            id: session.id,
+            startedAt: session.startedAt,
+            chunkCount: session.chunks.length,
+            signalCount: session.signals.length,
+            starredCount: session.starred.length,
+            latestChunks: session.chunks.slice(-12).map((c) => c.text),
+            title: session.title,
+            dealHint: session.dealHint
+          }
+        : null,
+      prediction
+    })
+  })
+
+  router.post('/meeting/end', async (_req, res) => {
+    try {
+      const result = await endMeetingSession({ io, persist: true })
+      if (!result) {
+        res.status(400).json({ error: 'no active meeting' })
+        return
+      }
+      res.json(result)
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message })
+    }
+  })
+
+  router.get('/meeting/:id', (req, res) => {
+    const session = getMeeting(String(req.params.id))
+    if (!session) {
+      res.status(404).json({ error: 'meeting not found' })
+      return
+    }
+    res.json({ session })
   })
 
   router.get('/mobile/context', (req, res) => {

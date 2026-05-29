@@ -221,6 +221,18 @@ export function IconGmail({ className }: IconProps) {
   )
 }
 
+/** Google Meet / video call */
+export function IconVideoCall({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <path
+        fill="currentColor"
+        d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"
+      />
+    </svg>
+  )
+}
+
 /** Monday.com — multicolor dot mark */
 export function IconMonday({ className }: IconProps) {
   return (

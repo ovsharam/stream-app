@@ -6,8 +6,16 @@ export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/gmail.compose',
   'https://www.googleapis.com/auth/gmail.send',
-  'https://www.googleapis.com/auth/calendar.readonly'
+  'https://www.googleapis.com/auth/calendar.readonly',
+  'https://www.googleapis.com/auth/documents',
+  'https://www.googleapis.com/auth/drive.readonly',
+  'https://www.googleapis.com/auth/drive.file'
 ]
+
+/** Optional — associates Docs/Drive calls with a GCP project (quota + API enablement). */
+export function getGoogleApiKey(): string | undefined {
+  return process.env.GOOGLE_API_KEY?.trim() || undefined
+}
 
 export function getOAuth2Client() {
   const clientId = process.env.GMAIL_CLIENT_ID

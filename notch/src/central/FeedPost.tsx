@@ -9,6 +9,8 @@ const AVATAR: Record<string, { bg: string; color: string; label: string }> = {
   slack: { bg: '#611f69', color: '#fff', label: 'S' },
   x: { bg: '#111', color: '#fff', label: 'X' },
   discord: { bg: '#5865f2', color: '#fff', label: 'D' },
+  github: { bg: '#24292f', color: '#fff', label: 'GH' },
+  gdocs: { bg: '#4285F4', color: '#fff', label: 'Gd' },
   gong: { bg: '#7c3aed', color: '#fff', label: 'Go' },
   salesforce: { bg: '#0176d3', color: '#fff', label: 'SF' },
   build: { bg: '#f59e0b', color: '#fff', label: '⚡' },

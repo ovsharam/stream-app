@@ -8,7 +8,10 @@ const SOURCE: Record<StreamSource, { label: string; color: string; dot: string }
   x: { label: 'X', color: 'text-neutral-200', dot: 'bg-neutral-300' },
   monday: { label: 'Monday', color: 'text-rose-600', dot: 'bg-rose-500' },
   discord: { label: 'Discord', color: 'text-indigo-600', dot: 'bg-indigo-500' },
+  github: { label: 'GitHub', color: 'text-neutral-700', dot: 'bg-neutral-800' },
+  gdocs: { label: 'Google Docs', color: 'text-blue-600', dot: 'bg-blue-500' },
   gong: { label: 'Gong', color: 'text-fuchsia-600', dot: 'bg-fuchsia-500' },
+  meeting: { label: 'Meeting', color: 'text-orange-500', dot: 'bg-orange-500' },
   salesforce: { label: 'Salesforce', color: 'text-sky-600', dot: 'bg-sky-500' },
   build: { label: 'Build', color: 'text-amber-600', dot: 'bg-amber-500' },
   insight: { label: 'Insight', color: 'text-neutral-600', dot: 'bg-neutral-400' }

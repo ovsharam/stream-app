@@ -76,16 +76,30 @@ export const clusterApi = {
       method: 'POST',
       body: JSON.stringify(input)
     }),
-  actionHelp: () =>
-    json<{ help: { provider: string; examples: string[] }[] }>('/cluster/action/help'),
+  markSeen: (itemId: string) =>
+    json<{ ok: boolean }>(`/kb/seen/${encodeURIComponent(itemId.replace(/^ext-/, ''))}`, {
+      method: 'POST',
+      body: '{}'
+    }),
+  kbContext: (q: string) =>
+    json<import('@shared/personal-kb').GraphRagContext>(
+      `/kb/context?q=${encodeURIComponent(q)}`
+    ),
+  kbStream: (text: string) =>
+    json<{ ok: boolean; datapoint: import('@shared/personal-kb').Datapoint }>('/kb/stream', {
+      method: 'POST',
+      body: JSON.stringify({ text })
+    }),
+  kbStats: () =>
+    json<{
+      datapoints: number
+      entities: number
+      traces: number
+      recent: { id: string; excerpt: string; intention: string; ingestedAt: number }[]
+    }>('/kb/stats'),
   search: (q: string) => json<import('@shared/cluster').ClusterSearchHit[]>(`/cluster/search?q=${encodeURIComponent(q)}`),
   calendar: () =>
-    json<{
-      events: import('@shared/cluster').CalendarRailEvent[]
-      connected: boolean
-      error?: string
-      needsReconnect?: boolean
-    }>('/cluster/calendar'),
+    json<import('@shared/cluster').CalendarRailResponse>('/cluster/calendar'),
   calendars: () =>
     json<{ calendars: import('@shared/cluster').GoogleCalendarOption[]; error?: string }>(
       '/cluster/calendars'
@@ -152,8 +166,70 @@ export const integrationApi = {
       method: 'POST',
       body: JSON.stringify({ token, channelIds })
     }),
-  syncSource: (source: 'gmail' | 'slack' | 'x' | 'monday' | 'discord') =>
-    json<{ count: number }>(`/auth/${source}/sync`, { method: 'POST', body: '{}' })
+  connectPerplexity: (apiKey: string, accountEmail?: string) =>
+    json<{ ok: boolean; count: number; accountLabel?: string }>('/auth/perplexity', {
+      method: 'POST',
+      body: JSON.stringify({ apiKey, accountEmail })
+    }),
+  perplexityAuthUrl: () =>
+    json<{ signInUrl: string; portalUrl: string; accountLabel?: string }>('/auth/perplexity'),
+  connectClaude: (apiKey: string) =>
+    json<{ ok: boolean }>('/auth/claude', {
+      method: 'POST',
+      body: JSON.stringify({ apiKey })
+    }),
+  claudeAuthUrl: () =>
+    json<{ url: string; localAccount?: { label: string; subscriptionType?: string } | null }>(
+      '/auth/claude'
+    ),
+  connectClaudeCode: (code: string) =>
+    json<{ ok: boolean; count: number; accountLabel?: string }>('/auth/claude/code', {
+      method: 'POST',
+      body: JSON.stringify({ code })
+    }),
+  importClaudeLocal: () =>
+    json<{ ok: boolean; count: number; accountLabel?: string; subscriptionType?: string }>(
+      '/auth/claude/import',
+      { method: 'POST', body: '{}' }
+    ),
+  refreshClaudeApiKey: () =>
+    json<{ ok: boolean; accountLabel?: string }>('/auth/claude/refresh-key', {
+      method: 'POST',
+      body: '{}'
+    }),
+  connectGemini: (apiKey: string) =>
+    json<{ ok: boolean }>('/auth/gemini', {
+      method: 'POST',
+      body: JSON.stringify({ apiKey })
+    }),
+  connectCursor: (apiKey: string, repo?: string) =>
+    json<{ ok: boolean }>('/auth/cursor', {
+      method: 'POST',
+      body: JSON.stringify({ apiKey, repo })
+    }),
+  connectGithub: (pat: string, defaultRepo?: string) =>
+    json<{ ok: boolean; count: number }>('/auth/github', {
+      method: 'POST',
+      body: JSON.stringify({ pat, defaultRepo })
+    }),
+  connectGong: (accessKey: string, accessSecret: string) =>
+    json<{ ok: boolean; count: number }>('/auth/gong', {
+      method: 'POST',
+      body: JSON.stringify({ accessKey, accessSecret })
+    }),
+  syncSource: (
+    source:
+      | 'gmail'
+      | 'slack'
+      | 'x'
+      | 'monday'
+      | 'discord'
+      | 'github'
+      | 'gdocs'
+      | 'gong'
+      | 'claude'
+      | 'perplexity'
+  ) => json<{ count: number }>(`/auth/${source}/sync`, { method: 'POST', body: '{}' })
 }
 
 export const mobileApi = {

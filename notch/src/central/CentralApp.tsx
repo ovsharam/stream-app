@@ -157,6 +157,11 @@ export function CentralApp() {
     ? events.find((e) => streamItemId(e) === contextItemId)
     : null
 
+  const selectContext = (itemId: string) => {
+    setContextItemId(itemId)
+    void clusterApi.markSeen(itemId).catch(() => {})
+  }
+
   const submitCompose = async () => {
     if (!composeAction || composeBusy) return
     setComposeBusy(true)
@@ -170,6 +175,9 @@ export function CentralApp() {
       setCompose('')
       if (result.ok) {
         setComposeToast(result.message)
+        if (composeAction.provider === 'mind') {
+          window.dispatchEvent(new Event('notch:mind-updated'))
+        }
         if (composeAction.intent === 'send') setContextItemId(null)
       } else {
         setComposeError(result.message)
@@ -346,7 +354,7 @@ export function CentralApp() {
                           void submitCompose()
                         }
                       }}
-                      placeholder="@monday · @gmail · @slack · @discord · @x · @perplexity — e.g. @monday Fix webhook policy"
+                      placeholder="@mind · @claude · @gemini · @cursor · @github · @gdocs · @gong · @perplexity · @gmail · @monday · @slack · @discord · @x"
                       rows={3}
                       className="x-compose-input"
                     />
@@ -377,10 +385,10 @@ export function CentralApp() {
                     activeThreadId={threadTarget?.itemId ?? null}
                     onOpenWorkspace={openWorkspace}
                     onOpenThread={(itemId, day) => {
-                      setContextItemId(itemId)
+                      selectContext(itemId)
                       setThreadTarget({ itemId, day })
                     }}
-                    onSelectContext={setContextItemId}
+                    onSelectContext={selectContext}
                   />
                 ))}
 

@@ -1,5 +1,6 @@
 import type { Server as SocketServer } from 'socket.io'
 import { registerActionExecutor, type ActionRunInput, type ActionRunResult } from '../registry'
+import { createMondayFromNaturalLanguage } from '../../cluster/mondayNlpCreate'
 import { createMondayItemOnBoard, isMondayConnected } from '../../sources/monday'
 import { runMondayNaturalLanguage } from '../../cluster/mondayExecute'
 import {
@@ -11,6 +12,19 @@ import { isSlackConnected, sendSlackMessage, resolveSlackChannel } from '../../s
 import { isDiscordConnected, sendDiscordMessage, resolveDiscordChannel } from '../../sources/discord'
 import { isXConnected, postXTweet } from '../../sources/x'
 import { isPerplexityConnected, askPerplexity } from '../../sources/perplexity'
+import { isClaudeConnected, askClaude } from '../../sources/claude'
+import { parseAnthropicError } from '../../sources/claudeOAuthRequest'
+import { isGeminiConnected, askGemini } from '../../sources/gemini'
+import { isCursorConnected, askCursor } from '../../sources/cursor'
+import {
+  isGithubConnected,
+  createGithubIssue,
+  commentGithubIssue,
+  syncGithub
+} from '../../sources/github'
+import { isGdocsConnected, createGoogleDoc, appendGoogleDoc, syncGdocs } from '../../sources/gdocs'
+import { isGongConnected, addGongCallNote, syncGong } from '../../sources/gong'
+import { runMind } from '../../kb/mindExecutor'
 import type { ComposeCommand } from '../../../shared/compose'
 import { parseComposeCommand } from '../../../shared/compose'
 import { getRecentItems } from '../../db'
@@ -46,14 +60,18 @@ async function runMonday(ctx: ActionRunContext): Promise<ActionRunResult> {
     return ok('monday', result.message, result.executed)
   }
 
-  const created = await createMondayItemOnBoard({
-    name: body,
-    boardName: target
-  })
-  const msg = created.groupTitle
-    ? `Created in ${created.boardName} → ${created.groupTitle}: ${body}`
-    : `Created on ${created.boardName}: ${body}`
-  return ok('monday', msg)
+  // Explicit board path: @monday /Board Name: task title
+  if (target && intent === 'create') {
+    const created = await createMondayItemOnBoard({ name: body, boardName: target })
+    const msg = created.groupTitle
+      ? `Created in ${created.boardName} → ${created.groupTitle}: ${body}`
+      : `Created on ${created.boardName}: ${body}`
+    return ok('monday', msg)
+  }
+
+  const nlp = await createMondayFromNaturalLanguage(body.replace(/^:\s*/, ''))
+  if (!nlp.ok) return fail('monday', nlp.message)
+  return ok('monday', nlp.message)
 }
 
 async function runGmail(ctx: ActionRunContext): Promise<ActionRunResult> {
@@ -161,6 +179,106 @@ async function runPerplexity(ctx: ActionRunContext): Promise<ActionRunResult> {
   return ok('perplexity', preview.length < item.body.length ? `${preview}…` : preview)
 }
 
+const REVENUE_PROMPT =
+  'You are a concise GTM copilot for an AE/FDE team. Be direct, actionable, and brief.'
+
+async function runClaude(ctx: ActionRunContext): Promise<ActionRunResult> {
+  if (!isClaudeConnected()) return fail('claude', 'Claude not connected — add API key in Integrations')
+  try {
+    const item = await askClaude(ctx.parsed.body, REVENUE_PROMPT, ctx.io)
+    return ok('claude', item.body.slice(0, 140))
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err)
+    const message = raw.trimStart().startsWith('{') ? parseAnthropicError(raw) : raw
+    return fail('claude', message)
+  }
+}
+
+async function runGemini(ctx: ActionRunContext): Promise<ActionRunResult> {
+  if (!isGeminiConnected()) return fail('gemini', 'Gemini not connected — add API key in Integrations')
+  const item = await askGemini(ctx.parsed.body, REVENUE_PROMPT, ctx.io)
+  return ok('gemini', item.body.slice(0, 140))
+}
+
+async function runCursor(ctx: ActionRunContext): Promise<ActionRunResult> {
+  if (!isCursorConnected()) return fail('cursor', 'Cursor not connected — add API key in Integrations')
+  const item = await askCursor(ctx.parsed.body, REVENUE_PROMPT, ctx.io)
+  return ok('cursor', item.body.slice(0, 140))
+}
+
+async function runGithub(ctx: ActionRunContext): Promise<ActionRunResult> {
+  if (!isGithubConnected()) return fail('github', 'GitHub not connected')
+
+  const { intent, target, body } = ctx.parsed
+
+  if (intent === 'comment') {
+    const item =
+      streamContextItem(ctx.contextItemId) ?? getRecentItems(80).find((i) => i.source === 'github')
+    const repo = String(item?.metadata?.repo ?? '')
+    const number = Number(target ?? item?.metadata?.issueNumber)
+    if (!repo || !Number.isFinite(number)) {
+      return fail('github', 'Use @github #123 comment: text or select a GitHub issue in feed')
+    }
+    await commentGithubIssue({ repo, number, body })
+    await syncGithub(ctx.io)
+    return ok('github', `Commented on ${repo}#${number}`)
+  }
+
+  const repo = target?.includes('/') ? target : undefined
+  const slash = body.indexOf(' / ')
+  const title = slash >= 0 ? body.slice(0, slash).trim() : body.split('\n')[0]?.trim() || body
+  const issueBody =
+    slash >= 0 ? body.slice(slash + 3).trim() : body.split('\n').slice(1).join('\n').trim()
+
+  const created = await createGithubIssue({
+    repo,
+    title,
+    body: issueBody || title
+  })
+  await syncGithub(ctx.io)
+  return ok('github', `Created issue #${created.number}`)
+}
+
+async function runGdocs(ctx: ActionRunContext): Promise<ActionRunResult> {
+  if (!(await isGdocsConnected())) {
+    return fail('gdocs', 'Google Docs needs Gmail connected — reconnect Gmail for Docs scope')
+  }
+
+  const { intent, target, body } = ctx.parsed
+
+  if (intent === 'append') {
+    const item =
+      streamContextItem(ctx.contextItemId) ?? getRecentItems(80).find((i) => i.source === 'gdocs')
+    const docId = String(target ?? item?.metadata?.documentId ?? '')
+    if (!docId) return fail('gdocs', 'Use @gdocs #DOC_ID append: text')
+    await appendGoogleDoc({ documentId: docId, text: body })
+    await syncGdocs(ctx.io)
+    return ok('gdocs', 'Appended to Google Doc')
+  }
+
+  const slash = body.indexOf(' / ')
+  const title = slash >= 0 ? body.slice(0, slash).trim() : body.split('\n')[0]?.trim() || 'Untitled'
+  const docBody =
+    slash >= 0 ? body.slice(slash + 3).trim() : body.split('\n').slice(1).join('\n').trim()
+
+  const created = await createGoogleDoc({ title, body: docBody })
+  await syncGdocs(ctx.io)
+  return ok('gdocs', `Created doc: ${title}`)
+}
+
+async function runGong(ctx: ActionRunContext): Promise<ActionRunResult> {
+  if (!isGongConnected()) return fail('gong', 'Gong not connected')
+
+  const item =
+    streamContextItem(ctx.contextItemId) ?? getRecentItems(80).find((i) => i.source === 'gong')
+  const callId = String(ctx.parsed.target ?? item?.metadata?.callId ?? '')
+  if (!callId) return fail('gong', 'Use @gong #CALL_ID note: your note')
+
+  await addGongCallNote({ callId, note: ctx.parsed.body })
+  await syncGong(ctx.io)
+  return ok('gong', 'Gong note added')
+}
+
 export function registerIntegrationExecutors(): void {
   const wrap =
     (provider: ComposeCommand['provider'], fn: (ctx: ActionRunContext) => Promise<ActionRunResult>) =>
@@ -178,4 +296,11 @@ export function registerIntegrationExecutors(): void {
   registerActionExecutor('discord', wrap('discord', runDiscord))
   registerActionExecutor('x', wrap('x', runX))
   registerActionExecutor('perplexity', wrap('perplexity', runPerplexity))
+  registerActionExecutor('claude', wrap('claude', runClaude))
+  registerActionExecutor('gemini', wrap('gemini', runGemini))
+  registerActionExecutor('cursor', wrap('cursor', runCursor))
+  registerActionExecutor('github', wrap('github', runGithub))
+  registerActionExecutor('gdocs', wrap('gdocs', runGdocs))
+  registerActionExecutor('gong', wrap('gong', runGong))
+  registerActionExecutor('mind', wrap('mind', runMind))
 }

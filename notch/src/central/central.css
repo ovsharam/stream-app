@@ -4,8 +4,9 @@
 [data-theme='light'] {
   --x-nav-w: 88px;
   --x-feed-w: 600px;
-  --x-rail-w: 300px;
-  --x-gutter: 16px;
+  --x-rail-w: 320px;
+  --x-rail-inset: 20px;
+  --x-gutter: 20px;
   --x-thread-w: 360px;
   --x-titlebar-h: 0px;
   --x-shell-w: calc(var(--x-nav-w) + var(--x-feed-w) + var(--x-rail-w));
@@ -572,7 +573,7 @@ html.x-electron a {
 .x-compose {
   display: flex;
   gap: 12px;
-  padding: 4px var(--x-gutter) 0;
+  padding: 8px var(--x-gutter) 0;
   border-bottom: 1px solid var(--x-border);
 }
 
@@ -1445,7 +1446,10 @@ html.x-electron a {
   flex: 0 0 var(--x-rail-w);
   height: 100%;
   min-height: 0;
-  padding: 8px 12px 20px;
+  padding: var(--x-rail-inset);
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-rail-inset);
   overflow-y: auto;
   overflow-x: hidden;
   flex-shrink: 0;
@@ -1455,11 +1459,12 @@ html.x-electron a {
 
 .x-search {
   position: relative;
+  flex-shrink: 0;
 }
 
 .x-search-icon {
   position: absolute;
-  left: 14px;
+  left: 16px;
   top: 50%;
   transform: translateY(-50%);
   width: 18px;
@@ -1473,7 +1478,7 @@ html.x-electron a {
   border: none;
   border-radius: 9999px;
   background: var(--x-search-bg);
-  padding: 10px 16px 10px 40px;
+  padding: 12px 18px 12px 44px;
   font-size: 15px;
   outline: none;
   color: var(--x-fg);
@@ -1485,10 +1490,10 @@ html.x-electron a {
 }
 
 .x-widget {
-  margin-top: 16px;
+  margin-top: 0;
   background: var(--x-surface);
   border-radius: 16px;
-  padding: 4px 0 8px;
+  padding: 4px 0 10px;
   overflow: hidden;
 }
 
@@ -1499,26 +1504,357 @@ html.x-electron a {
   font-weight: 800;
 }
 
-.x-cal-sub {
+.x-widget-calendar {
+  background: var(--x-bg);
+  border: 1px solid var(--x-border);
+  box-shadow: 0 1px 2px rgba(15, 20, 25, 0.04);
+}
+
+.x-widget-calendar .x-cal-head {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--x-border);
+}
+
+.x-widget-calendar h2 {
   margin: 0;
-  padding: 2px 16px 12px;
-  font-size: 13px;
+  padding: 0;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.x-cal-sub {
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--x-muted);
 }
 
 .x-cal-days {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 18px;
+  padding: 14px 12px 16px;
 }
 
 .x-cal-day-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--x-muted);
+}
+
+.x-cal-day-title-today {
+  color: var(--x-accent);
+}
+
+.x-cal-day-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--x-accent);
+  flex-shrink: 0;
+}
+
+.x-cal-events {
+  list-style: none;
   margin: 0;
-  padding: 10px 16px 6px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.x-cal-event {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  border-radius: 10px;
+  border-left: 4px solid var(--cal-accent, var(--x-accent));
+  background: var(--cal-bg, var(--x-surface));
+  overflow: hidden;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.x-cal-event-clickable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(15, 20, 25, 0.08);
+}
+
+.x-cal-event-live {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cal-accent) 35%, transparent);
+}
+
+.x-cal-event-ended {
+  opacity: 0.72;
+}
+
+.x-cal-event-body {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 10px 10px 12px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: inherit;
+  font: inherit;
+  color: inherit;
+}
+
+.x-cal-event-clickable .x-cal-event-body {
+  cursor: pointer;
+}
+
+.x-cal-event-body:disabled {
+  cursor: default;
+}
+
+.x-cal-event-time {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--cal-accent, var(--x-accent));
+}
+
+.x-cal-event-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--x-fg);
+}
+
+.x-cal-event-now {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: #0b8043;
+  vertical-align: middle;
+}
+
+.x-cal-event-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--x-muted);
+}
+
+.x-cal-event-dot {
+  opacity: 0.7;
+}
+
+.x-cal-event-meet-icon {
+  width: 14px;
+  height: 14px;
+  color: #00897b;
+}
+
+.x-cal-event-meet-btn {
+  flex-shrink: 0;
+  align-self: center;
+  width: 36px;
+  height: 36px;
+  margin-right: 8px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  color: #00897b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(15, 20, 25, 0.12);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.x-cal-event-meet-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(15, 20, 25, 0.16);
+}
+
+.x-cal-event-meet-btn-icon {
+  width: 18px;
+  height: 18px;
+}
+
+[data-theme='dark'] .x-cal-event-meet-btn,
+[data-theme='gray'] .x-cal-event-meet-btn,
+[data-theme='midnight'] .x-cal-event-meet-btn {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.x-pplx-rail {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--x-border);
+}
+
+.x-pplx-head h2 {
+  color: #20b2aa;
+}
+
+.x-pplx-news-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.x-pplx-news-item {
+  border-radius: 12px;
+  background: rgba(32, 178, 170, 0.08);
+  border: 1px solid rgba(32, 178, 170, 0.18);
+}
+
+.x-pplx-news-body {
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.x-pplx-news-body:hover {
+  background: rgba(32, 178, 170, 0.06);
+}
+
+.x-pplx-news-title {
+  margin: 0;
   font-size: 13px;
   font-weight: 700;
+  line-height: 1.35;
+  color: var(--x-fg);
+}
+
+.x-pplx-news-summary {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
   color: var(--x-muted);
-  letter-spacing: 0.02em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.x-mind-rail {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--x-border);
+}
+
+.x-mind-head h2 {
+  font-size: 15px;
+}
+
+.x-mind-input {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--x-border);
+  border-radius: 12px;
+  background: var(--x-bg);
+  color: var(--x-fg);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  resize: vertical;
+  min-height: 72px;
+}
+
+.x-mind-input:focus {
+  outline: none;
+  border-color: var(--x-accent, #1d9bf0);
+}
+
+.x-mind-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.x-mind-save {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--x-accent, #1d9bf0);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.x-mind-save:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.x-mind-stats {
+  font-size: 11px;
+  color: var(--x-muted);
+}
+
+.x-mind-recent {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.x-mind-recent-item {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(128, 134, 139, 0.08);
+}
+
+.x-mind-recent-item p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--x-fg);
+}
+
+.x-mind-intent {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--x-accent, #1d9bf0);
+}
+
+.x-mind-hint {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--x-muted);
+}
+
+.x-mind-hint code {
+  font-size: 10px;
 }
 
 .x-cal-item-compact {
@@ -1763,15 +2099,16 @@ html.x-electron a {
 
 .x-cal-empty {
   margin: 0;
-  padding: 14px 16px;
+  padding: 16px;
   font-size: 14px;
   line-height: 1.45;
   color: var(--x-muted);
 }
 
 .x-cal-day + .x-cal-day {
-  border-top: 1px solid var(--x-border);
-  margin-top: 2px;
+  border-top: none;
+  margin-top: 0;
+  padding-top: 2px;
 }
 
 .x-cal-day .x-cal-item {
@@ -2192,6 +2529,41 @@ html.x-electron a {
 
 .x-int-card-discord .x-int-card-icon {
   background: #5865f2;
+  color: #fff;
+}
+
+.x-int-card-github .x-int-card-icon {
+  background: #24292f;
+  color: #fff;
+}
+
+.x-int-card-gdocs .x-int-card-icon {
+  background: #4285f4;
+  color: #fff;
+}
+
+.x-int-card-gong .x-int-card-icon {
+  background: #7c3aed;
+  color: #fff;
+}
+
+.x-int-card-claude .x-int-card-icon {
+  background: #d97757;
+  color: #fff;
+}
+
+.x-int-card-gemini .x-int-card-icon {
+  background: #4285f4;
+  color: #fff;
+}
+
+.x-int-card-cursor .x-int-card-icon {
+  background: #7b61ff;
+  color: #fff;
+}
+
+.x-int-card-perplexity .x-int-card-icon {
+  background: #20b2aa;
   color: #fff;
 }
 

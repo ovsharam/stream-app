@@ -8,15 +8,13 @@ type Props = {
   liveCapture?: boolean
   onFocusMeeting: (itemId: string) => void
   onOpenSearchHit?: (hit: ClusterSearchHit) => void
-  onSeeAllAgents?: () => void
 }
 
 export function HomeChatLayout({
   events,
   liveCapture,
   onFocusMeeting,
-  onOpenSearchHit,
-  onSeeAllAgents
+  onOpenSearchHit
 }: Props) {
   const chat = useHomeChat()
 
@@ -38,7 +36,6 @@ export function HomeChatLayout({
         onMessagesChange={chat.setMessages}
         onFocusMeeting={onFocusMeeting}
         onOpenSearchHit={onOpenSearchHit}
-        onSeeAllAgents={onSeeAllAgents}
       />
     </div>
   )

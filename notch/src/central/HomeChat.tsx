@@ -3,8 +3,19 @@ import type { AssistResult, CentralStreamEvent, ClusterSearchHit } from '@shared
 import { sanitizeDisplayText } from '../lib/displayText'
 import { clusterApi } from '../lib/api'
 import { AssistMessageBody } from './AssistMessageBody'
-import { buildRunningAgents, HOME_AGENT_VISIBLE } from './homeAgents'
+import { buildRunningAgents } from './homeAgents'
 import type { HomeChatMessage } from './homeChatStore'
+import { RunningAgentsPanel } from './RunningAgentsPanel'
+import {
+  completeAgent,
+  createAgentAbortSignal,
+  dismissRunningAgentsPanel,
+  startAgent,
+  stopAll,
+  updateAgentStatus,
+  useMergedRunningAgents,
+  useRunningAgentsPanel
+} from './runningAgentsStore'
 
 const STARTERS = [
   { id: 'today', label: 'What needs my attention today?', hint: 'Priorities & open loops' },
@@ -20,7 +31,6 @@ type Props = {
   onMessagesChange: (updater: HomeChatMessage[] | ((prev: HomeChatMessage[]) => HomeChatMessage[])) => void
   onFocusMeeting: (itemId: string) => void
   onOpenSearchHit?: (hit: ClusterSearchHit) => void
-  onSeeAllAgents?: () => void
 }
 
 function greetingForHour(h: number): string {
@@ -33,12 +43,9 @@ function newId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 }
 
-function AgentSpinner() {
-  return (
-    <span className="x-home-running-spinner" aria-hidden>
-      <span className="x-home-running-spinner-ring" />
-    </span>
-  )
+function agentTitle(text: string): string {
+  const t = text.trim()
+  return t.length > 56 ? `${t.slice(0, 55)}…` : t
 }
 
 export function HomeChat({
@@ -48,8 +55,7 @@ export function HomeChat({
   messages,
   onMessagesChange,
   onFocusMeeting,
-  onOpenSearchHit,
-  onSeeAllAgents
+  onOpenSearchHit
 }: Props) {
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -57,13 +63,13 @@ export function HomeChat({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const genRef = useRef(0)
 
-  const runningAgents = useMemo(
+  const streamAgents = useMemo(
     () => buildRunningAgents({ events, liveCapture }),
     [events, liveCapture]
   )
-
-  const visibleAgents = runningAgents.slice(0, HOME_AGENT_VISIBLE)
-  const hiddenAgentCount = Math.max(0, runningAgents.length - HOME_AGENT_VISIBLE)
+  const mergedAgents = useMergedRunningAgents(streamAgents)
+  const { panelDismissed } = useRunningAgentsPanel()
+  const showAgentsPanel = mergedAgents.length > 0 && !panelDismissed
   const hasThread = messages.length > 0
 
   useEffect(() => {
@@ -98,6 +104,9 @@ export function HomeChat({
     onMessagesChange((prev) => [...prev, userMsg, loadingMsg])
     setBusy(true)
 
+    const agentId = startAgent({ title: agentTitle(trimmed), status: 'Thinking…' })
+    const signal = createAgentAbortSignal(agentId)
+
     const history = messages
       .filter((m) => !m.loading && m.content.trim())
       .slice(-10)
@@ -108,15 +117,32 @@ export function HomeChat({
 
     let assist: AssistResult | null = null
     let error: string | undefined
+    let aborted = false
 
     try {
-      const result = await clusterApi.assist(trimmed, undefined, { chat: true, history })
+      updateAgentStatus(agentId, 'Searching context…')
+      const result = await clusterApi.assist(trimmed, undefined, { chat: true, history, signal })
+      if (signal.aborted) {
+        aborted = true
+        return
+      }
+      updateAgentStatus(agentId, 'Writing response…')
       assist = result
     } catch (err) {
+      if (signal.aborted) {
+        aborted = true
+        return
+      }
       error = err instanceof Error ? err.message : 'Could not reach assist'
+    } finally {
+      completeAgent(agentId)
+      if (gen === genRef.current) {
+        setBusy(false)
+        inputRef.current?.focus()
+      }
     }
 
-    if (gen !== genRef.current) return
+    if (aborted || gen !== genRef.current) return
 
     onMessagesChange((prev) =>
       prev.map((m) =>
@@ -131,8 +157,6 @@ export function HomeChat({
           : m
       )
     )
-    setBusy(false)
-    inputRef.current?.focus()
   }
 
   const now = new Date()
@@ -143,42 +167,14 @@ export function HomeChat({
     day: 'numeric'
   })
 
-  const agentStrip =
-    visibleAgents.length > 0 ? (
-      <section className="x-home-agents" aria-label="Running agents">
-        <ul className="x-home-running">
-          {visibleAgents.map((agent) => {
-            const meetingId = agent.meetingId
-            const inner = (
-              <>
-                <span className="x-home-running-title">{agent.title}</span>
-                <AgentSpinner />
-              </>
-            )
-            return (
-              <li key={agent.id} className="x-home-running-item">
-                {meetingId ? (
-                  <button
-                    type="button"
-                    className="x-home-running-row"
-                    onClick={() => onFocusMeeting(meetingId)}
-                  >
-                    {inner}
-                  </button>
-                ) : (
-                  <div className="x-home-running-row">{inner}</div>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-        {hiddenAgentCount > 0 && onSeeAllAgents ? (
-          <button type="button" className="x-home-running-more" onClick={onSeeAllAgents}>
-            +{hiddenAgentCount} more
-          </button>
-        ) : null}
-      </section>
-    ) : null
+  const agentsPanel = showAgentsPanel ? (
+    <RunningAgentsPanel
+      agents={mergedAgents}
+      onStopAll={stopAll}
+      onDismiss={dismissRunningAgentsPanel}
+      onFocusMeeting={onFocusMeeting}
+    />
+  ) : null
 
   return (
     <div
@@ -215,7 +211,7 @@ export function HomeChat({
                 Ask about deals, calls, and tasks — agents keep working while you chat.
               </p>
             </header>
-            {agentStrip}
+            {agentsPanel}
             <div className="x-home-starter-grid">
               {STARTERS.map((item) => (
                 <button
@@ -234,7 +230,7 @@ export function HomeChat({
           )
         ) : (
           <div className="x-home-thread">
-            {!compact ? agentStrip : null}
+            {agentsPanel}
             <div className="x-home-messages">
             {messages.map((msg) => (
               <article

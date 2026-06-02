@@ -5,10 +5,19 @@ import type { UserRole } from './user-role'
 
 const API = 'http://localhost:3131'
 
-async function json<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
-  const { timeoutMs = 120_000, ...fetchInit } = init ?? {}
+async function json<T>(
+  path: string,
+  init?: RequestInit & { timeoutMs?: number; signal?: AbortSignal }
+): Promise<T> {
+  const { timeoutMs = 120_000, signal: externalSignal, ...fetchInit } = init ?? {}
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  const onExternalAbort = () => controller.abort()
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort()
+    else externalSignal.addEventListener('abort', onExternalAbort)
+  }
 
   try {
     const res = await fetch(`${API}/api${path}`, {
@@ -46,6 +55,7 @@ async function json<T>(path: string, init?: RequestInit & { timeoutMs?: number }
     throw err
   } finally {
     clearTimeout(timer)
+    if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort)
   }
 }
 
@@ -85,10 +95,15 @@ export const clusterApi = {
     json<{ connected: boolean; target: import('@shared/cluster').MondayCreateTarget | null }>(
       '/cluster/monday/create-target'
     ),
-  runAction: (input: { text: string; contextItemId?: string }) =>
+  runAction: (
+    input: { text: string; contextItemId?: string },
+    options?: { signal?: AbortSignal; timeoutMs?: number }
+  ) =>
     json<import('@shared/cluster').ComposeActionResult>('/cluster/action', {
       method: 'POST',
-      body: JSON.stringify(input)
+      body: JSON.stringify(input),
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs
     }),
   approveMeetingAction: (input: { itemId: string; actionId: string }) =>
     json<import('@shared/cluster').ComposeActionResult & { ok: boolean }>(
@@ -169,6 +184,7 @@ export const clusterApi = {
       chat?: boolean
       history?: { role: 'user' | 'assistant'; content: string }[]
       timeoutMs?: number
+      signal?: AbortSignal
     }
   ) =>
     json<AssistResult>('/cluster/assist', {
@@ -179,7 +195,8 @@ export const clusterApi = {
         chat: options?.chat === true,
         history: options?.history
       }),
-      timeoutMs: options?.timeoutMs ?? 25_000
+      timeoutMs: options?.timeoutMs ?? 25_000,
+      signal: options?.signal
     }),
   engagements: () =>
     json<{ engagements: import('@shared/fde-engagement').FdeEngagement[] }>('/fde/engagements'),

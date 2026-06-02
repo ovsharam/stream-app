@@ -7,6 +7,7 @@ export const HOME_AGENT_VISIBLE = 4
 export type RunningAgent = {
   id: string
   title: string
+  status?: string
   /** Post-call deck — open meeting for approval */
   meetingId?: string
 }
@@ -38,6 +39,32 @@ function isRunningEvent(event: CentralStreamEvent): boolean {
   return false
 }
 
+function formatAgentStatus(raw: string): string {
+  const key = raw.trim().toLowerCase()
+  const labels: Record<string, string> = {
+    running: 'Running',
+    queued: 'Queued',
+    in_progress: 'In progress',
+    pending: 'Pending',
+    processing: 'Processing',
+    active: 'Active',
+    working: 'Working',
+    committing: 'Committing and pushing changes',
+    pushing: 'Committing and pushing changes',
+    building: 'Building',
+    thinking: 'Thinking'
+  }
+  if (labels[key]) return labels[key]
+  return raw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function taskStatus(event: CentralStreamEvent): string {
+  const raw = String(event.meta?.agentStatus ?? event.meta?.phase ?? '').trim()
+  if (raw) return formatAgentStatus(raw)
+  if (event.kind === 'build_prompt') return 'Building'
+  return 'Running'
+}
+
 function taskTitle(event: CentralStreamEvent): string {
   const agent = sourceLabel(event.source)
   const headline = sanitizeDisplayText(event.title, 72)
@@ -59,7 +86,7 @@ export function buildRunningAgents(input: {
   const rows: RunningAgent[] = []
 
   if (input.liveCapture) {
-    rows.push({ id: 'live-capture', title: 'Meeting · Live capture' })
+    rows.push({ id: 'live-capture', title: 'Meeting · Live capture', status: 'Recording' })
   }
 
   for (const event of input.events) {
@@ -69,7 +96,8 @@ export function buildRunningAgents(input: {
 
     rows.push({
       id: event.id,
-      title: taskTitle(event)
+      title: taskTitle(event),
+      status: taskStatus(event)
     })
   }
 

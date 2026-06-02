@@ -16,6 +16,12 @@ import { WorkspaceView } from './WorkspaceView'
 import { WorkspaceTabBar } from './WorkspaceTabBar'
 import { FeedSearchBar, filterFeedEvents } from './FeedSearchBar'
 import { useCentralStream } from './useCentralStream'
+import {
+  completeAgent,
+  createAgentAbortSignal,
+  startAgent,
+  updateAgentStatus
+} from './runningAgentsStore'
 import { parseComposeCommand } from '@shared/compose'
 import { clusterApi, integrationApi } from '../lib/api'
 import { tabFromCalendarEvent, tabFromUrl, toWorkspaceTab, type WorkspaceTab } from './workspace'
@@ -316,11 +322,21 @@ export function CentralApp() {
     setComposeBusy(true)
     setComposeError(null)
     setComposeToast(null)
+    const preview = compose.trim().replace(/^@\S+\s*/, '').trim() || composeAction.provider
+    const agentId = startAgent({
+      title: preview.length > 56 ? `${preview.slice(0, 55)}…` : preview,
+      status: 'Running action…'
+    })
+    const signal = createAgentAbortSignal(agentId)
     try {
-      const result = await clusterApi.runAction({
-        text: compose,
-        contextItemId: contextItemId ?? undefined
-      })
+      updateAgentStatus(agentId, 'Executing…')
+      const result = await clusterApi.runAction(
+        {
+          text: compose,
+          contextItemId: contextItemId ?? undefined
+        },
+        { signal }
+      )
       setCompose('')
       if (result.ok) {
         setComposeToast(result.message)
@@ -336,8 +352,11 @@ export function CentralApp() {
       }
       window.dispatchEvent(new Event('stream:user-role'))
     } catch (err) {
-      setComposeError(err instanceof Error ? err.message : 'Action failed')
+      if (!signal.aborted) {
+        setComposeError(err instanceof Error ? err.message : 'Action failed')
+      }
     } finally {
+      completeAgent(agentId)
       setComposeBusy(false)
     }
   }
@@ -571,7 +590,6 @@ export function CentralApp() {
                 onFocusMeeting={setFocusMeetingItemId}
                 onRefresh={refreshStream}
                 onOpenSearchHit={openSearchHit}
-                onSeeAllAgents={openAgentsFeed}
               />
             ) : (
               <>

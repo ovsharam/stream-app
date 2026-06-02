@@ -18,7 +18,6 @@ type Props = {
   onFocusMeeting: (itemId: string | null) => void
   onRefresh?: () => void
   onOpenSearchHit?: (hit: ClusterSearchHit) => void
-  onSeeAllAgents?: () => void
 }
 
 function streamItemId(event: CentralStreamEvent): string {
@@ -78,8 +77,7 @@ export function WorkView({
   focusMeetingItemId,
   onFocusMeeting,
   onRefresh,
-  onOpenSearchHit,
-  onSeeAllAgents
+  onOpenSearchHit
 }: Props) {
   const [captureLive, setCaptureLive] = useState(false)
 
@@ -172,7 +170,6 @@ export function WorkView({
         liveCapture={false}
         onFocusMeeting={openMeeting}
         onOpenSearchHit={onOpenSearchHit}
-        onSeeAllAgents={onSeeAllAgents}
       />
     </div>
   )

@@ -219,7 +219,12 @@ export async function getGmailThreadContext(input: {
     const getHeader = (name: string) =>
       headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? ''
     const from = parseFromHeader(getHeader('From'))
-    const body = extractPlainBody(msg.payload).trim() || (detail.data.snippet ?? '')
+    const rawBody = extractPlainBody(msg.payload).trim() || (detail.data.snippet ?? '')
+    const body = rawBody
+      .replace(/\[image:\s*[^\]]*\]/gi, '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
 
     return {
       id: msg.id ?? `${threadId}-${msg.internalDate ?? '0'}`,

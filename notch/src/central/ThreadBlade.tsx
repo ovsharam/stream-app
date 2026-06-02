@@ -52,7 +52,18 @@ function allMessages(thread: ClusterThread | null): ClusterThreadUpdate[] {
     .sort((a, b) => a.ts - b.ts)
 }
 
-function GmailMessage({ update, isYou }: { update: ClusterThreadUpdate; isYou?: boolean }) {
+function GmailMessage({
+  update,
+  isYou,
+  showSubject,
+  subject
+}: {
+  update: ClusterThreadUpdate
+  isYou?: boolean
+  showSubject?: boolean
+  subject?: string
+}) {
+  const when = new Date(update.ts)
   return (
     <article className={`x-thread-email${isYou ? ' x-thread-email-you' : ''}`}>
       <header className="x-thread-email-head">
@@ -60,10 +71,15 @@ function GmailMessage({ update, isYou }: { update: ClusterThreadUpdate; isYou?: 
           <span className="x-thread-email-sender">{update.actor}</span>
           {isYou ? <span className="x-thread-email-you-badge">You</span> : null}
         </div>
-        <time className="x-thread-email-time" dateTime={new Date(update.ts).toISOString()}>
-          {time(update.ts)}
+        <time
+          className="x-thread-email-time"
+          dateTime={when.toISOString()}
+          title={when.toLocaleString()}
+        >
+          {dateLabel(update.ts)} · {time(update.ts)}
         </time>
       </header>
+      {showSubject && subject ? <p className="x-thread-email-subject">{subject}</p> : null}
       <FormattedEmailBody body={update.body} />
     </article>
   )
@@ -99,6 +115,7 @@ function ActivityRow({ update }: { update: ClusterThreadUpdate }) {
 
 export function ThreadBlade({ itemId, day, contextItemId, onClose }: Props) {
   const [thread, setThread] = useState<ClusterThread | null>(null)
+  const [loading, setLoading] = useState(true)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
@@ -109,8 +126,17 @@ export function ThreadBlade({ itemId, day, contextItemId, onClose }: Props) {
   const isGmail = thread?.source === 'gmail' || itemId.startsWith('gmail-')
 
   const loadThread = useCallback(async () => {
-    setThread(await clusterApi.thread(itemId, day))
-    setPending([])
+    setLoading(true)
+    setError(null)
+    try {
+      setThread(await clusterApi.thread(itemId, day))
+      setPending([])
+    } catch (err) {
+      setThread(null)
+      setError(err instanceof Error ? err.message : 'Could not load thread')
+    } finally {
+      setLoading(false)
+    }
   }, [itemId, day])
 
   useEffect(() => {
@@ -176,7 +202,6 @@ export function ThreadBlade({ itemId, day, contextItemId, onClose }: Props) {
   }
 
   const externalLabel = isGmail ? 'Open in Gmail' : 'Open in Monday'
-  const Message = isGmail ? GmailMessage : ChatMessage
 
   return (
     <div className={`x-thread-blade${isGmail ? ' x-thread-blade-gmail' : ''}`} aria-label="Thread">
@@ -201,7 +226,9 @@ export function ThreadBlade({ itemId, day, contextItemId, onClose }: Props) {
           {isGmail ? <IconGmail className="x-thread-source-icon" /> : <IconMonday className="x-thread-source-icon" />}
           <span>{isGmail ? 'Gmail' : 'Monday'}</span>
         </div>
-        <h2 className="x-thread-subject-title">{thread?.itemTitle ?? 'Loading…'}</h2>
+        <h2 className="x-thread-subject-title">
+          {loading ? 'Loading…' : (thread?.itemTitle ?? 'Thread')}
+        </h2>
         {thread?.boardName && !isGmail ? <p className="x-thread-subject-sub">{thread.boardName}</p> : null}
         {thread?.currentStatus && !isGmail ? (
           <span className="x-thread-status-pill">{thread.currentStatus}</span>
@@ -209,8 +236,17 @@ export function ThreadBlade({ itemId, day, contextItemId, onClose }: Props) {
       </div>
 
       <div className="x-thread-body">
-        {!thread ? (
-          <p className="x-thread-placeholder">Loading…</p>
+        {loading ? (
+          <p className="x-thread-placeholder">Loading thread…</p>
+        ) : error && !thread ? (
+          <div className="x-thread-placeholder x-thread-error">
+            <p>{error}</p>
+            <button type="button" className="x-thread-retry" onClick={() => void loadThread()}>
+              Retry
+            </button>
+          </div>
+        ) : !thread ? (
+          <p className="x-thread-placeholder">Thread not found.</p>
         ) : (
           <div className="x-thread-messages">
             {activity.length > 0 ? (
@@ -248,7 +284,19 @@ export function ThreadBlade({ itemId, day, contextItemId, onClose }: Props) {
                         <span>{dateLabel(u.ts)}</span>
                       </div>
                     ) : null}
-                    <Message update={u} isYou={u.actor === 'You' || u.id.startsWith('pending-')} />
+                    {isGmail ? (
+                      <GmailMessage
+                        update={u}
+                        isYou={u.actor === 'You' || u.id.startsWith('pending-')}
+                        showSubject={i === 0}
+                        subject={thread.itemTitle}
+                      />
+                    ) : (
+                      <ChatMessage
+                        update={u}
+                        isYou={u.actor === 'You' || u.id.startsWith('pending-')}
+                      />
+                    )}
                   </div>
                 )
               })

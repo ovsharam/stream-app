@@ -63,6 +63,13 @@ export function CentralApp() {
   const themeBtnRef = useRef<HTMLButtonElement>(null)
   const [threadTarget, setThreadTarget] = useState<{ itemId: string; day?: string } | null>(null)
   const [feedQuery, setFeedQuery] = useState('')
+  const [feedRailCollapsed, setFeedRailCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('notch.feedRailCollapsed') === '1'
+    } catch {
+      return false
+    }
+  })
   const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>(persistedTabs)
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
     persistedActive ?? persistedTabs.at(-1)?.id ?? null
@@ -452,8 +459,23 @@ export function CentralApp() {
     }
   }, [page])
 
+  const toggleFeedRail = useCallback(() => {
+    setFeedRailCollapsed((v) => {
+      const next = !v
+      try {
+        localStorage.setItem('notch.feedRailCollapsed', next ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }, [])
+
   const showContextRail =
-    !threadTarget && page !== 'navapp' && !(page === 'stream' && area === 'work' && !activeWorkspace)
+    !threadTarget &&
+    page !== 'navapp' &&
+    !(page === 'stream' && area === 'work' && !activeWorkspace) &&
+    !(area === 'feed' && feedRailCollapsed)
 
   const showThreadRail = Boolean(threadTarget) && page === 'stream' && area === 'feed'
   const hasRightRail = showThreadRail || showContextRail
@@ -575,6 +597,15 @@ export function CentralApp() {
                 totalCount={filtered.length}
                 onSelectHit={openThreadFromSearch}
               />
+              <button
+                type="button"
+                className={`x-topbar-rail-toggle${feedRailCollapsed ? ' x-topbar-rail-toggle-collapsed' : ''}`}
+                aria-label={feedRailCollapsed ? 'Show context panel' : 'Hide context panel'}
+                title={feedRailCollapsed ? 'Show context panel' : 'Hide context panel'}
+                onClick={toggleFeedRail}
+              >
+                {feedRailCollapsed ? '◧ Panel' : '◨ Panel'}
+              </button>
             </header>
 
                   <div className="x-compose">

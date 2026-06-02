@@ -13,7 +13,9 @@ const COMPOSITE_SEP = '::'
 
 /** Today + next 2 days */
 const CALENDAR_RAIL_DAYS = 3
-const MAX_EVENTS_PER_DAY = 4
+const MAX_UPCOMING_PER_DAY = 4
+/** Ended meetings kept visible for today only */
+const MAX_PAST_TODAY = 6
 
 export function compositeCalendarId(accountId: string, googleCalendarId: string): string {
   return `${accountId}${COMPOSITE_SEP}${googleCalendarId}`
@@ -124,7 +126,8 @@ function toRailEvent(
 
   const live = start.getTime() <= now.getTime() && end.getTime() >= now.getTime()
   const ended = end.getTime() < now.getTime()
-  if (ended) return null
+  // Keep ended events for today so the rail can show "Earlier today"
+  if (ended && dayIndex !== 0) return null
 
   return {
     id: `${accountId}-${event.id}`,
@@ -134,7 +137,7 @@ function toRailEvent(
     kind: link?.includes('meet.google.com') ? 'meet' : 'calendar',
     link,
     live,
-    ended: false,
+    ended,
     startsAt: start.getTime(),
     endsAt: end.getTime(),
     dayIndex,
@@ -143,19 +146,28 @@ function toRailEvent(
 }
 
 function capEventsPerDay(events: CalendarRailEvent[]): CalendarRailEvent[] {
-  const counts = new Map<number, number>()
   const picked: CalendarRailEvent[] = []
+  const upcomingByDay = new Map<number, number>()
 
-  const sorted = [...events].sort((a, b) => {
-    const prio = eventPriority(a) - eventPriority(b)
-    if (prio !== 0) return prio
-    return a.startsAt - b.startsAt
-  })
+  const todayPast = events
+    .filter((e) => e.dayIndex === 0 && e.ended)
+    .sort((a, b) => b.endsAt - a.endsAt)
+    .slice(0, MAX_PAST_TODAY)
 
-  for (const evt of sorted) {
-    const count = counts.get(evt.dayIndex) ?? 0
-    if (count >= MAX_EVENTS_PER_DAY) continue
-    counts.set(evt.dayIndex, count + 1)
+  picked.push(...todayPast)
+
+  const upcoming = [...events]
+    .filter((e) => !e.ended)
+    .sort((a, b) => {
+      const prio = eventPriority(a) - eventPriority(b)
+      if (prio !== 0) return prio
+      return a.startsAt - b.startsAt
+    })
+
+  for (const evt of upcoming) {
+    const count = upcomingByDay.get(evt.dayIndex) ?? 0
+    if (count >= MAX_UPCOMING_PER_DAY) continue
+    upcomingByDay.set(evt.dayIndex, count + 1)
     picked.push(evt)
   }
 

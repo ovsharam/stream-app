@@ -28,6 +28,14 @@ export const NAV_APP_CATALOG: NavAppCatalogEntry[] = [
     miniPlayer: true,
     description: 'Watch and listen in Notch — keeps playing in a mini player when you switch to Feed.',
     brandClass: 'x-int-card-youtube'
+  },
+  {
+    id: 'cursor',
+    label: 'Cursor',
+    url: 'https://cursor.com/agents',
+    miniPlayer: false,
+    description: 'Open Cursor agent chat in Notch alongside your feed.',
+    brandClass: 'x-int-card-cursor'
   }
 ]
 
@@ -80,7 +88,7 @@ export function pinCatalogApp(catalogId: string): NavApp | null {
     id: entry.id,
     label: entry.label,
     url: entry.url,
-    miniPlayer: entry.miniPlayer ?? true
+    miniPlayer: entry.miniPlayer ?? false
   }
   saveNavApps([...apps, app])
   return app

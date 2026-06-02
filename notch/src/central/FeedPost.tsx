@@ -1,8 +1,9 @@
-import type { MouseEvent } from 'react'
+import { useState, type MouseEvent } from 'react'
 import type { CentralStreamEvent } from '@shared/cluster'
 import { parseMeetingActionsMeta } from '@shared/meeting-actions'
 import { openMeeting } from '../lib/api'
-import { IconGmail, IconLike, IconMonday, IconReply, IconRepost, IconShare, IconViews } from './Icons'
+import { getFeedVote, setFeedVote } from './feedFeedbackStore'
+import { IconGmail, IconMonday, IconReply, IconRepost, IconShare, IconViews } from './Icons'
 
 const AVATAR: Record<string, { bg: string; color: string; label: string }> = {
   notch: { bg: '#181715', color: '#cc785c', label: 'N' },
@@ -342,6 +343,13 @@ function PostActions({
   selectContext: () => void
   onOpenWorkspace?: (event: CentralStreamEvent) => void
 }) {
+  const [vote, setVote] = useState(() => getFeedVote(event.id))
+
+  const toggleVote = (e: MouseEvent, next: 'up' | 'down') => {
+    e.stopPropagation()
+    setVote(setFeedVote(event.id, next))
+  }
+
   return (
     <div className="x-actions">
       <button
@@ -361,8 +369,27 @@ function PostActions({
           <button type="button" className="x-action" aria-label="Repost" onClick={(e) => e.stopPropagation()}>
             <IconRepost className="x-action-icon" />
           </button>
-          <button type="button" className="x-action" aria-label="Like" onClick={(e) => e.stopPropagation()}>
-            <IconLike className="x-action-icon" />
+          <button
+            type="button"
+            className={`x-action x-action-vote${vote === 'up' ? ' x-action-vote-active' : ''}`}
+            aria-label="Helpful"
+            aria-pressed={vote === 'up'}
+            onClick={(e) => toggleVote(e, 'up')}
+          >
+            <span className="x-action-vote-glyph" aria-hidden>
+              ▲
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`x-action x-action-vote x-action-vote-down${vote === 'down' ? ' x-action-vote-active' : ''}`}
+            aria-label="Not helpful"
+            aria-pressed={vote === 'down'}
+            onClick={(e) => toggleVote(e, 'down')}
+          >
+            <span className="x-action-vote-glyph" aria-hidden>
+              ▼
+            </span>
           </button>
           <button type="button" className="x-action" aria-label="Views" onClick={(e) => e.stopPropagation()}>
             <IconViews className="x-action-icon" />

@@ -72,6 +72,84 @@ function splitTimeLabel(label: string): { start: string; end: string } {
   return { start: label.trim(), end: '' }
 }
 
+function minutesUntil(ts: number): number {
+  return Math.max(0, Math.round((ts - Date.now()) / 60_000))
+}
+
+function formatCountdown(event: CalendarRailEvent): string | null {
+  if (event.live) return 'Happening now'
+  if (event.ended) return null
+  const mins = minutesUntil(event.startsAt)
+  if (mins <= 0) return 'Starting now'
+  if (mins < 60) return `In ${mins} min`
+  const hours = Math.floor(mins / 60)
+  const rem = mins % 60
+  if (rem === 0) return `In ${hours}h`
+  return `In ${hours}h ${rem}m`
+}
+
+function findSpotlightEvent(events: CalendarRailEvent[]): CalendarRailEvent | null {
+  const live = events.find((e) => e.live)
+  if (live) return live
+  const upcoming = events
+    .filter((e) => !e.ended && !e.live && e.startsAt >= Date.now() - 5 * 60_000)
+    .sort((a, b) => a.startsAt - b.startsAt)
+  return upcoming[0] ?? null
+}
+
+function splitDayEvents(events: CalendarRailEvent[]): {
+  earlierToday: CalendarRailEvent[]
+  upNext: CalendarRailEvent[]
+} {
+  const earlierToday = events.filter((e) => e.ended).sort((a, b) => a.startsAt - b.startsAt)
+  const upNext = events.filter((e) => !e.ended).sort((a, b) => a.startsAt - b.startsAt)
+  return { earlierToday, upNext }
+}
+
+function buildDayStrip(dayGroups: ReturnType<typeof groupByDay>) {
+  return [0, 1, 2].map((idx) => {
+    const d = new Date()
+    d.setDate(d.getDate() + idx)
+    const count = dayGroups.find((g) => g.dayIndex === idx)?.events.length ?? 0
+    return {
+      dayIndex: idx,
+      weekday: idx === 0 ? 'Today' : d.toLocaleDateString(undefined, { weekday: 'short' }),
+      date: d.getDate(),
+      month: d.toLocaleDateString(undefined, { month: 'short' }),
+      count
+    }
+  })
+}
+
+function agendaWithNowMarker(
+  events: CalendarRailEvent[],
+  isToday: boolean
+): Array<{ type: 'event'; event: CalendarRailEvent } | { type: 'now' }> {
+  if (!isToday) return events.map((event) => ({ type: 'event', event }))
+  const now = Date.now()
+  const out: Array<{ type: 'event'; event: CalendarRailEvent } | { type: 'now' }> = []
+  let inserted = false
+  for (let i = 0; i < events.length; i += 1) {
+    const evt = events[i]
+    const prevEnd = i > 0 ? events[i - 1].endsAt : 0
+    if (!inserted && now >= prevEnd && now < evt.startsAt) {
+      out.push({ type: 'now' })
+      inserted = true
+    }
+    out.push({ type: 'event', event: evt })
+  }
+  if (!inserted && events.length > 0 && now >= events[events.length - 1].endsAt) {
+    out.push({ type: 'now' })
+  }
+  return out
+}
+
+function formatDaySectionTitle(dayIndex: number, heading: string): string {
+  if (dayIndex === 0) return 'Today'
+  if (dayIndex === 1) return 'Tomorrow'
+  return heading
+}
+
 function eventPalette(evt: CalendarRailEvent) {
   if (evt.live) {
     return { accent: '#0b8043', bg: 'rgba(11, 128, 67, 0.2)' }
@@ -273,6 +351,7 @@ function useCalendarRail() {
 
   return {
     dayGroups,
+    events: meetings,
     calendarConnected,
     calendarHint,
     pplxNews,
@@ -379,7 +458,96 @@ function RailSearch() {
   )
 }
 
-function CalendarEvent({ event }: { event: CalendarRailEvent }) {
+function CalendarDayStrip({
+  days,
+  selectedDay,
+  onSelect
+}: {
+  days: ReturnType<typeof buildDayStrip>
+  selectedDay: number | null
+  onSelect: (day: number | null) => void
+}) {
+  return (
+    <div className="x-cal-strip" role="tablist" aria-label="Calendar days">
+      {days.map((day) => (
+        <button
+          key={day.dayIndex}
+          type="button"
+          role="tab"
+          aria-selected={selectedDay === day.dayIndex}
+          className={`x-cal-strip-day ${day.dayIndex === 0 ? 'x-cal-strip-day-today' : ''} ${selectedDay === day.dayIndex ? 'x-cal-strip-day-active' : ''} ${day.count === 0 ? 'x-cal-strip-day-empty' : ''}`}
+          onClick={() => onSelect(selectedDay === day.dayIndex ? null : day.dayIndex)}
+        >
+          <span className="x-cal-strip-weekday">{day.weekday}</span>
+          <span className="x-cal-strip-date">{day.date}</span>
+          {day.count > 0 ? <span className="x-cal-strip-count">{day.count}</span> : null}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function CalendarSpotlight({ event }: { event: CalendarRailEvent }) {
+  const palette = eventPalette(event)
+  const countdown = formatCountdown(event)
+  const isMeet = event.kind === 'meet' && Boolean(event.link)
+  const open = () => {
+    if (event.link) openMeeting(event.link)
+  }
+
+  return (
+    <article
+      className={`x-cal-spotlight ${event.live ? 'x-cal-spotlight-live' : ''}`}
+      style={
+        {
+          '--cal-accent': palette.accent,
+          '--cal-bg': palette.bg
+        } as CSSProperties
+      }
+    >
+      <div className="x-cal-spotlight-head">
+        <span className="x-cal-spotlight-label">{event.live ? 'Now' : 'Up next'}</span>
+        {countdown ? <span className="x-cal-spotlight-countdown">{countdown}</span> : null}
+      </div>
+      <h3 className="x-cal-spotlight-title">{event.title}</h3>
+      <p className="x-cal-spotlight-time">
+        {event.timeLabel}
+        <span className="x-cal-spotlight-dot" aria-hidden>
+          ·
+        </span>
+        {event.durationLabel}
+      </p>
+      {isMeet ? (
+        <button type="button" className="x-cal-spotlight-join" onClick={open}>
+          <IconVideoCall className="x-cal-spotlight-join-icon" />
+          Join Meet
+        </button>
+      ) : event.link ? (
+        <button type="button" className="x-cal-spotlight-join x-cal-spotlight-open" onClick={open}>
+          Open event
+        </button>
+      ) : null}
+    </article>
+  )
+}
+
+function CalendarNowMarker() {
+  return (
+    <div className="x-cal-now-row" aria-hidden>
+      <div className="x-cal-agenda-gutter">
+        <span className="x-cal-now-time">
+          {new Date().toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+        </span>
+      </div>
+      <div className="x-cal-agenda-track">
+        <span className="x-cal-now-dot" />
+        <span className="x-cal-now-line" />
+      </div>
+    </div>
+  )
+}
+
+function CalendarAgendaRow({ event }: { event: CalendarRailEvent }) {
   const palette = eventPalette(event)
   const { start, end } = splitTimeLabel(event.timeLabel)
   const isMeet = event.kind === 'meet' && Boolean(event.link)
@@ -390,97 +558,161 @@ function CalendarEvent({ event }: { event: CalendarRailEvent }) {
   }
 
   return (
-    <li
-      className={`x-cal-event ${event.live ? 'x-cal-event-live' : ''} ${event.ended ? 'x-cal-event-ended' : ''} ${clickable ? 'x-cal-event-clickable' : ''}`}
-      style={
-        {
-          '--cal-accent': palette.accent,
-          '--cal-bg': palette.bg
-        } as CSSProperties
-      }
+    <div
+      className={`x-cal-agenda-row ${event.live ? 'x-cal-agenda-row-live' : ''} ${event.ended ? 'x-cal-agenda-row-ended' : ''}`}
     >
-      <button
-        type="button"
-        className="x-cal-event-body"
-        disabled={!clickable}
-        onClick={() => clickable && open()}
+      <div className="x-cal-agenda-gutter">
+        <span className="x-cal-agenda-start">{start}</span>
+        {end ? <span className="x-cal-agenda-end">{end}</span> : null}
+      </div>
+      <div className="x-cal-agenda-track" aria-hidden>
+        <span className="x-cal-agenda-node" style={{ background: palette.accent }} />
+        <span className="x-cal-agenda-spine" />
+      </div>
+      <article
+        className={`x-cal-agenda-block ${clickable ? 'x-cal-agenda-block-clickable' : ''}`}
+        style={
+          {
+            '--cal-accent': palette.accent,
+            '--cal-bg': palette.bg
+          } as CSSProperties
+        }
       >
-        <p className="x-cal-event-time">
-          {start}
-          {end ? ` – ${end}` : ''}
-        </p>
-        <p className="x-cal-event-title">
-          {event.live && <span className="x-cal-event-now">Now</span>}
-          {event.title}
-        </p>
-        <p className="x-cal-event-meta">
-          {event.durationLabel}
-          {isMeet && (
-            <>
-              <span className="x-cal-event-dot" aria-hidden>
-                ·
-              </span>
-              <IconVideoCall className="x-cal-event-meet-icon" />
-              <span>Meet</span>
-            </>
-          )}
-        </p>
-      </button>
-      {isMeet && (
         <button
           type="button"
-          className="x-cal-event-meet-btn"
-          aria-label={`Join ${event.title}`}
-          title="Join Google Meet"
-          onClick={(e) => {
-            e.stopPropagation()
-            open()
-          }}
+          className="x-cal-agenda-block-body"
+          disabled={!clickable}
+          onClick={() => clickable && open()}
         >
-          <IconVideoCall className="x-cal-event-meet-btn-icon" />
+          <p className="x-cal-agenda-title">
+            {event.live ? <span className="x-cal-agenda-live-pill">Live</span> : null}
+            {event.title}
+          </p>
+          <p className="x-cal-agenda-meta">
+            {event.durationLabel}
+            {isMeet ? (
+              <>
+                <span className="x-cal-agenda-meta-dot" aria-hidden>
+                  ·
+                </span>
+                <IconVideoCall className="x-cal-agenda-meet-icon" />
+                Meet
+              </>
+            ) : null}
+          </p>
         </button>
-      )}
-    </li>
+        {isMeet ? (
+          <button
+            type="button"
+            className="x-cal-agenda-join"
+            aria-label={`Join ${event.title}`}
+            title="Join Google Meet"
+            onClick={(e) => {
+              e.stopPropagation()
+              open()
+            }}
+          >
+            <IconVideoCall className="x-cal-agenda-join-icon" />
+          </button>
+        ) : null}
+      </article>
+    </div>
   )
 }
 
 function CalendarPanel({
   dayGroups,
   calendarConnected,
-  calendarHint
+  calendarHint,
+  allEvents
 }: {
   dayGroups: ReturnType<typeof groupByDay>
   calendarConnected: boolean
   calendarHint: string | null
+  allEvents: CalendarRailEvent[]
 }) {
+  const [selectedDay, setSelectedDay] = useState<number | null>(null)
+  const stripDays = useMemo(() => buildDayStrip(dayGroups), [dayGroups])
+  const spotlight = useMemo(() => findSpotlightEvent(allEvents), [allEvents])
+  const visibleGroups = useMemo(
+    () => (selectedDay == null ? dayGroups : dayGroups.filter((g) => g.dayIndex === selectedDay)),
+    [dayGroups, selectedDay]
+  )
+  const monthLabel = new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+
   return (
-    <div className="x-rail-tab-body">
+    <div className="x-rail-tab-body x-cal-panel">
       <div className="x-cal-head">
-        <h2>Calendar</h2>
-        <p className="x-cal-sub">Next 3 days</p>
+        <div className="x-cal-head-row">
+          <h2>{monthLabel}</h2>
+          {calendarConnected ? <span className="x-cal-sync-badge">Synced</span> : null}
+        </div>
+        <p className="x-cal-sub">Your schedule · next 3 days</p>
       </div>
+
       {!calendarConnected ? (
         <p className="x-cal-empty">Connect Gmail in Settings to sync Google Calendar.</p>
       ) : dayGroups.length === 0 ? (
         <p className="x-cal-empty">{calendarHint ?? 'Nothing scheduled in the next 3 days.'}</p>
       ) : (
-        <div className="x-cal-days">
-          {dayGroups.map((group) => (
-            <section key={group.dayIndex} className="x-cal-day">
-              <h3
-                className={`x-cal-day-title ${group.dayIndex === 0 ? 'x-cal-day-title-today' : ''}`}
-              >
-                {group.dayIndex === 0 && <span className="x-cal-day-dot" aria-hidden />}
-                {group.heading}
-              </h3>
-              <ul className="x-cal-events">
-                {group.events.map((m) => (
-                  <CalendarEvent key={m.id} event={m} />
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
+        <>
+          <CalendarDayStrip days={stripDays} selectedDay={selectedDay} onSelect={setSelectedDay} />
+          {spotlight && selectedDay == null ? <CalendarSpotlight event={spotlight} /> : null}
+          <div className="x-cal-days">
+            {visibleGroups.map((group) => (
+              <section key={group.dayIndex} className="x-cal-day">
+                <header className="x-cal-day-header">
+                  <h3
+                    className={`x-cal-day-title ${group.dayIndex === 0 ? 'x-cal-day-title-today' : ''}`}
+                  >
+                    {formatDaySectionTitle(group.dayIndex, group.heading)}
+                  </h3>
+                  <span className="x-cal-day-meta">
+                    {group.events.length} event{group.events.length === 1 ? '' : 's'}
+                  </span>
+                </header>
+                {(() => {
+                  const { earlierToday, upNext } =
+                    group.dayIndex === 0
+                      ? splitDayEvents(group.events)
+                      : { earlierToday: [], upNext: group.events }
+
+                  const renderAgenda = (list: CalendarRailEvent[], keyPrefix: string) =>
+                    agendaWithNowMarker(list, group.dayIndex === 0).map((item, idx) =>
+                      item.type === 'now' ? (
+                        <CalendarNowMarker key={`${keyPrefix}-now-${idx}`} />
+                      ) : (
+                        <CalendarAgendaRow key={`${keyPrefix}-${item.event.id}`} event={item.event} />
+                      )
+                    )
+
+                  return (
+                    <div className="x-cal-day-sections">
+                      {group.dayIndex === 0 && earlierToday.length > 0 ? (
+                        <section className="x-cal-subsection x-cal-subsection-past">
+                          <h4 className="x-cal-subsection-title">Earlier today</h4>
+                          <div className="x-cal-agenda">{renderAgenda(earlierToday, 'past')}</div>
+                        </section>
+                      ) : null}
+                      {upNext.length > 0 ? (
+                        <section
+                          className={`x-cal-subsection ${group.dayIndex === 0 ? 'x-cal-subsection-upcoming' : ''}`}
+                        >
+                          {group.dayIndex === 0 ? (
+                            <h4 className="x-cal-subsection-title">
+                              {earlierToday.length > 0 ? 'Up next' : 'Today'}
+                            </h4>
+                          ) : null}
+                          <div className="x-cal-agenda">{renderAgenda(upNext, 'up')}</div>
+                        </section>
+                      ) : null}
+                    </div>
+                  )
+                })()}
+              </section>
+            ))}
+          </div>
+        </>
       )}
     </div>
   )
@@ -654,6 +886,7 @@ export function ContextRail({
         {activeTab === 'calendar' && (
           <CalendarPanel
             dayGroups={calendar.dayGroups}
+            allEvents={calendar.events}
             calendarConnected={calendar.calendarConnected}
             calendarHint={calendar.calendarHint}
           />

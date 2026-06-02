@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { randomBytes } from 'crypto'
 import type { Server as SocketServer } from 'socket.io'
 import { getRecentItems, updateItemFlags } from './db'
-import { getConnections, setConnection, setNested, getNested } from './store'
+import { getConnections, setConnection, setNested, getNested, getToken } from './store'
 import { streamItemToApi } from '../shared/serialize'
 import {
   getGmailAuthUrl,
@@ -70,8 +70,18 @@ import {
 import { connectGemini, isGeminiConnected } from './sources/gemini'
 import { connectCursor, isCursorConnected } from './sources/cursor'
 import { connectGithub, isGithubConnected, syncGithub } from './sources/github'
-import { isGdocsConnected, syncGdocs } from './sources/gdocs'
+import { isGdocsConnected, syncGdocs, getLastGdocsError, gdocsNeedsApiEnable, gdocsApiEnableUrls, gdocsApiEnableUrlsForProject } from './sources/gdocs'
+import { googleOAuthProjectNumber } from './sources/googleOAuth'
 import { connectGong, isGongConnected, syncGong } from './sources/gong'
+import {
+  getCalcomAuthUrl,
+  handleCalcomCallback,
+  syncCalcom,
+  isCalcomConfigured,
+  isCalcomConnected,
+  calcomAccountLabel,
+  connectCalcomWithApiKey
+} from './sources/calcom'
 import { registerIntegrationExecutors } from './integrations/executors'
 import { runIntegrationAction } from './integrations/registry'
 import { parseComposeCommand, COMPOSE_HELP } from '../shared/compose'
@@ -88,7 +98,9 @@ import {
   getSignalsForCase
 } from './graph/store'
 import { syncGmailItemsToGraph } from './graph/gmail-ingest'
-import { ingestConsciousness, ingestRecentStream, retrieveContext } from './kb/pipeline'
+import { ingestConsciousness, ingestMobileCluster, ingestRecentStream, retrieveContext } from './kb/pipeline'
+import { loadOntology, saveOntology, ontologyPath } from './kb/ontology'
+import type { KbOntologyConfig } from '../shared/kb-ontology'
 import { recordComposeAction, markStreamItemSeen } from './kb/telemetry'
 import {
   startMeetingSession,
@@ -100,6 +112,7 @@ import {
   speculate,
   getLatestPrediction
 } from './cluster/meetingPipeline'
+import { approveMeetingAction } from './cluster/meetingActions'
 import { scoreFdeDecision } from './scoring/fde-scorer'
 import {
   setBrowserContext,
@@ -118,7 +131,9 @@ import { buildClusterContext, searchCluster } from './cluster/service'
 import { buildMobileContext, mobileAssist } from './mobile/service'
 import { startSimCall, stopSimCall } from './sim/engine'
 import { getCentralStream } from './cluster/stream'
-import type { ClusterThread } from '../shared/cluster'
+import type { ClusterThread, AssistResult } from '../shared/cluster'
+import { cleanKbExcerpt, normalizeAssistResult, normalizeChatAssistResult } from '../shared/assistText'
+import { toThreadUpdate } from './cluster/threadUtils'
 import { readSessionId, getSessionId } from './session'
 import { runWithSession } from './request-context'
 import { fetchCalendarEvents, getCachedCalendarEvents, syncCalendar, getLastCalendarError, calendarNeedsReconnect, listGoogleCalendars, setEnabledCalendarIds } from './sources/calendar'
@@ -157,6 +172,10 @@ export function createRouter(io?: SocketServer): Router {
     const calendarError = getLastCalendarError()
     const gmailConnected = demo || (await isGmailConnected())
     const gdocsConnected = demo || (await isGdocsConnected())
+    const gdocsError = getLastGdocsError()
+    const gdocsEnable = gdocsApiEnableUrls(gdocsError)
+    const gdocsProject = googleOAuthProjectNumber()
+    const gdocsDefaultEnable = gdocsProject ? gdocsApiEnableUrlsForProject(gdocsProject) : null
     res.json({
       connections: getConnections(),
       configured: {
@@ -171,7 +190,8 @@ export function createRouter(io?: SocketServer): Router {
         cursor: true,
         github: true,
         gdocs: isGmailConfigured() || demo,
-        gong: true
+        gong: true,
+        calcom: true
       },
       connected: demo
         ? {
@@ -186,7 +206,8 @@ export function createRouter(io?: SocketServer): Router {
             cursor: true,
             github: true,
             gdocs: true,
-            gong: true
+            gong: true,
+            calcom: true
           }
         : {
             gmail: gmailConnected,
@@ -200,19 +221,27 @@ export function createRouter(io?: SocketServer): Router {
             cursor: isCursorConnected(),
             github: isGithubConnected(),
             gdocs: gdocsConnected,
-            gong: isGongConnected()
+            gong: isGongConnected(),
+            calcom: isCalcomConnected()
           },
       syncErrors: demo
         ? {}
         : {
             gmail: gmailError ?? undefined,
-            calendar: calendarError ?? undefined
+            calendar: calendarError ?? undefined,
+            gdocs: gdocsError ?? undefined
           },
       googleApiEnable: demo
         ? {}
         : {
             gmail: googleApiNeedsEnable(gmailError) ? googleApiEnableUrl(gmailError) : undefined,
-            calendar: googleApiNeedsEnable(calendarError) ? googleApiEnableUrl(calendarError) : undefined
+            calendar: googleApiNeedsEnable(calendarError) ? googleApiEnableUrl(calendarError) : undefined,
+            gdocsDrive: gdocsNeedsApiEnable(gdocsError)
+              ? gdocsEnable.drive
+              : gdocsDefaultEnable?.drive,
+            gdocsDocs: gdocsNeedsApiEnable(gdocsError)
+              ? gdocsEnable.docs
+              : gdocsDefaultEnable?.docs
           },
       onboardingComplete:
         demo || (getNested<boolean>(['preferences', 'onboardingComplete']) ?? false)
@@ -340,6 +369,59 @@ export function createRouter(io?: SocketServer): Router {
     res.json({ count: items.length })
   })
 
+  // Cal.com — API key (primary) or OAuth (optional)
+  router.post('/auth/calcom', async (req, res) => {
+    const { apiKey, username, eventTypeId } = req.body as {
+      apiKey?: string
+      username?: string
+      eventTypeId?: number | string
+    }
+    const key = String(apiKey ?? process.env.CALCOM_API_KEY ?? '').trim()
+    if (!key) {
+      res.status(400).json({ error: 'API key required' })
+      return
+    }
+    try {
+      await connectCalcomWithApiKey(key, { username, eventTypeId })
+      const items = await syncCalcom(io)
+      res.json({ ok: true, count: items.length, accountLabel: calcomAccountLabel() })
+    } catch (err) {
+      res.status(400).json({ error: String(err) })
+    }
+  })
+
+  router.get('/auth/calcom/oauth', (_req, res) => {
+    if (!isCalcomConfigured()) {
+      res.status(400).json({ error: 'Cal.com OAuth not configured' })
+      return
+    }
+    const { url, state } = getCalcomAuthUrl()
+    res.json({ url, state, accountLabel: calcomAccountLabel() })
+  })
+
+  router.get('/auth/calcom/callback', async (req, res) => {
+    const code = String(req.query.code ?? '')
+    const state = String(req.query.state ?? '')
+    const oauthError = String(req.query.error ?? '')
+    if (oauthError) {
+      const desc = String(req.query.error_description ?? oauthError)
+      res.status(400).send(errorHtml(`Cal.com authorization failed: ${desc}`))
+      return
+    }
+    try {
+      await handleCalcomCallback(code, state)
+      await syncCalcom(io)
+      res.send(successHtml('Cal.com connected — bookings will sync into your feed.'))
+    } catch (err) {
+      res.status(500).send(errorHtml(String(err)))
+    }
+  })
+
+  router.post('/auth/calcom/sync', async (_req, res) => {
+    const items = await syncCalcom(io)
+    res.json({ count: items.length, accountLabel: calcomAccountLabel() })
+  })
+
   // Monday
   router.post('/auth/monday/token', async (req, res) => {
     const { token } = req.body as { token?: string }
@@ -350,7 +432,16 @@ export function createRouter(io?: SocketServer): Router {
     try {
       await connectMondayWithToken(token)
       const items = await syncMonday(io)
-      res.json({ ok: true, count: items.length })
+      const auth = getToken('monday') as { writeAccess?: boolean } | undefined
+      res.json({
+        ok: true,
+        count: items.length,
+        writeAccess: auth?.writeAccess !== false,
+        warning:
+          auth?.writeAccess === false
+            ? 'Monday connected for feed sync only. Regenerate your API token with boards:write + updates:write to create tasks from meeting approve or @monday compose.'
+            : undefined
+      })
     } catch (err) {
       setConnection('monday', false)
       res.status(401).json({ error: String(err) })
@@ -564,6 +655,25 @@ export function createRouter(io?: SocketServer): Router {
   })
 
   router.post('/sync/all', async (_req, res) => {
+    if (process.env.DEMO_MODE === '1') {
+      res.json({
+        gmail: 0,
+        slack: 0,
+        x: 0,
+        monday: 0,
+        discord: 0,
+        calendar: 0,
+        github: 0,
+        gdocs: 0,
+        gong: 0,
+        claude: 0,
+        perplexity: 0,
+        calcom: 0,
+        kbIngested: 0,
+        demo: true
+      })
+      return
+    }
     const results = await Promise.allSettled([
       syncGmail(io),
       syncSlack(io),
@@ -575,7 +685,8 @@ export function createRouter(io?: SocketServer): Router {
       syncGdocs(io),
       syncGong(io),
       syncClaude(io),
-      syncPerplexity(io)
+      syncPerplexity(io),
+      syncCalcom(io)
     ])
     res.json({
       gmail: results[0].status === 'fulfilled' ? results[0].value.length : 0,
@@ -589,6 +700,7 @@ export function createRouter(io?: SocketServer): Router {
       gong: results[8].status === 'fulfilled' ? results[8].value.length : 0,
       claude: results[9].status === 'fulfilled' ? results[9].value.length : 0,
       perplexity: results[10].status === 'fulfilled' ? results[10].value.length : 0,
+      calcom: results[11].status === 'fulfilled' ? results[11].value.length : 0,
       kbIngested: ingestRecentStream(80)
     })
   })
@@ -868,47 +980,32 @@ export function createRouter(io?: SocketServer): Router {
         const live = await getMondayItemContext(itemId)
         if (live) {
           const effectiveDay = day || new Date().toISOString().slice(0, 10)
-          const dayStart = new Date(`${effectiveDay}T00:00:00`)
-          const dayEnd = new Date(`${effectiveDay}T23:59:59.999`)
           const sorted = [...live.updates].sort(
             (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
           )
-          const sameDay = sorted.filter((u) => {
-            const ts = new Date(u.createdAt).getTime()
-            return ts >= dayStart.getTime() && ts <= dayEnd.getTime()
-          })
-          const threadUpdates = sameDay.length > 0 ? sameDay : sorted
-          const first = threadUpdates[0]
-          const rest = threadUpdates.slice(1)
-          const taskUrl = `https://monday.com/boards/${live.boardId}/pulses/${itemId}`
 
           const payload: ClusterThread = {
             itemId,
             itemTitle: live.itemTitle,
             day: effectiveDay,
+            source: 'monday',
             boardId: live.boardId,
             boardName: live.boardName,
-            taskUrl,
+            taskUrl: `https://monday.com/boards/${live.boardId}/pulses/${itemId}`,
             statusColumnId: live.statusColumnId,
             currentStatus: live.currentStatus,
             statusOptions: live.statusOptions,
             canExecute: true,
-            parent: first
-              ? {
-                  id: first.id,
-                  ts: new Date(first.createdAt).getTime(),
-                  actor: first.creatorName,
-                  body: first.body,
-                  source: 'monday'
-                }
-              : null,
-            updates: rest.map((u) => ({
-              id: u.id,
-              ts: new Date(u.createdAt).getTime(),
-              actor: u.creatorName,
-              body: u.body,
-              source: 'monday'
-            }))
+            parent: null,
+            updates: sorted.map((u) =>
+              toThreadUpdate({
+                id: u.id,
+                ts: new Date(u.createdAt).getTime(),
+                actor: u.creatorName,
+                body: u.body,
+                source: 'monday'
+              })
+            )
           }
           res.json(payload)
           return
@@ -930,12 +1027,11 @@ export function createRouter(io?: SocketServer): Router {
             const sorted = [...live.updates].sort(
               (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
             )
-            const first = sorted[0]
-            const rest = sorted.slice(1)
             res.json({
               itemId,
               itemTitle: live.itemTitle,
               day: effectiveDay,
+              source: 'monday',
               boardId: live.boardId,
               boardName: live.boardName,
               taskUrl: `https://monday.com/boards/${live.boardId}/pulses/${itemId}`,
@@ -943,22 +1039,16 @@ export function createRouter(io?: SocketServer): Router {
               currentStatus: live.currentStatus,
               statusOptions: live.statusOptions,
               canExecute: true,
-              parent: first
-                ? {
-                    id: first.id,
-                    ts: new Date(first.createdAt).getTime(),
-                    actor: first.creatorName,
-                    body: first.body,
-                    source: 'monday'
-                  }
-                : null,
-              updates: rest.map((u) => ({
-                id: u.id,
-                ts: new Date(u.createdAt).getTime(),
-                actor: u.creatorName,
-                body: u.body,
-                source: 'monday'
-              }))
+              parent: null,
+              updates: sorted.map((u) =>
+                toThreadUpdate({
+                  id: u.id,
+                  ts: new Date(u.createdAt).getTime(),
+                  actor: u.creatorName,
+                  body: u.body,
+                  source: 'monday'
+                })
+              )
             } satisfies ClusterThread)
             return
           }
@@ -971,6 +1061,7 @@ export function createRouter(io?: SocketServer): Router {
         itemId,
         itemTitle: 'Monday task',
         day: day || new Date().toISOString().slice(0, 10),
+        source: 'monday',
         canExecute,
         parent: null,
         updates: []
@@ -984,36 +1075,34 @@ export function createRouter(io?: SocketServer): Router {
       .filter((item) => new Date(item.timestamp).toISOString().slice(0, 10) === effectiveDay)
       .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
 
-    const first = sameDay[0]
-    const rest = sameDay.slice(1)
+    const first = sameDay[0] ?? mondayItems[0]
     const boardId = String(first.metadata?.boardId ?? '')
     const accountSlug = String(first.metadata?.accountSlug ?? '')
     const taskUrl = boardId
       ? `https://${accountSlug || 'monday'}.monday.com/boards/${boardId}/pulses/${itemId}`
       : undefined
 
+    const sortedDay = sameDay.map((item) =>
+        toThreadUpdate({
+          id: item.id,
+          ts: item.timestamp.getTime(),
+          actor: item.sender.name,
+          body: item.body,
+          source: 'monday'
+        })
+      )
+
     const payload: ClusterThread = {
       itemId,
       itemTitle: String(first.metadata?.itemName ?? first.title ?? 'Monday task'),
       day: effectiveDay,
+      source: 'monday',
       boardId: boardId || undefined,
       boardName: String(first.metadata?.boardName ?? ''),
       taskUrl,
       canExecute,
-      parent: {
-        id: first.id,
-        ts: first.timestamp.getTime(),
-        actor: first.sender.name,
-        body: first.body,
-        source: 'monday'
-      },
-      updates: rest.map((item) => ({
-        id: item.id,
-        ts: item.timestamp.getTime(),
-        actor: item.sender.name,
-        body: item.body,
-        source: 'monday'
-      }))
+      parent: null,
+      updates: sortedDay
     }
 
     if (canExecute) {
@@ -1027,6 +1116,17 @@ export function createRouter(io?: SocketServer): Router {
           payload.currentStatus = live.currentStatus
           payload.statusOptions = live.statusOptions
           payload.taskUrl = `https://monday.com/boards/${live.boardId}/pulses/${itemId}`
+          payload.updates = [...live.updates]
+            .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+            .map((u) =>
+              toThreadUpdate({
+                id: u.id,
+                ts: new Date(u.createdAt).getTime(),
+                actor: u.creatorName,
+                body: u.body,
+                source: 'monday'
+              })
+            )
         }
       } catch (err) {
         console.error('[monday] enrich thread failed:', err)
@@ -1191,6 +1291,33 @@ export function createRouter(io?: SocketServer): Router {
     }
   })
 
+  router.post('/cluster/meeting/approve', async (req, res) => {
+    const itemId = String(req.body.itemId ?? '')
+    const actionId = String(req.body.actionId ?? '')
+    if (!itemId || !actionId) {
+      res.status(400).json({ error: 'itemId and actionId required' })
+      return
+    }
+
+    try {
+      const result = await approveMeetingAction({ itemId, actionId, io })
+      if (!result.ok && result.message === 'Meeting feed item not found') {
+        res.status(404).json({ ...result, error: result.message })
+        return
+      }
+      if (
+        !result.ok &&
+        (result.message === 'Action proposal not found' || result.message === 'Action already approved')
+      ) {
+        res.status(400).json({ ...result, error: result.message })
+        return
+      }
+      res.json(result)
+    } catch (err) {
+      res.status(500).json({ error: String(err) })
+    }
+  })
+
   router.get('/cluster/search', (req, res) => {
     const q = String(req.query.q ?? '')
     res.json(searchCluster(q))
@@ -1217,39 +1344,186 @@ export function createRouter(io?: SocketServer): Router {
     res.json({ ok: true, count })
   })
 
+  router.get('/kb/ontology', (_req, res) => {
+    res.json({ config: loadOntology(), path: ontologyPath() })
+  })
+
+  router.put('/kb/ontology', (req, res) => {
+    const body = req.body as KbOntologyConfig
+    if (body?.version !== 1 || !Array.isArray(body.entityTypes)) {
+      res.status(400).json({ error: 'invalid ontology — need version 1, entityTypes[], relationTypes[], extractRules[]' })
+      return
+    }
+    const saved = saveOntology(body)
+    res.json({ ok: true, config: saved, path: ontologyPath() })
+  })
+
   router.post('/kb/seen/:itemId', (req, res) => {
     const itemId = req.params.itemId.replace(/^ext-/, '')
     markStreamItemSeen(itemId)
     res.json({ ok: true })
   })
 
+  router.get('/fde/engagements', (_req, res) => {
+    const { listEngagements } = require('./fde/engagementStore') as typeof import('./fde/engagementStore')
+    res.json({ engagements: listEngagements() })
+  })
+
+  router.get('/fde/engagements/:id', (req, res) => {
+    const { getEngagement } = require('./fde/engagementStore') as typeof import('./fde/engagementStore')
+    const engagement = getEngagement(req.params.id)
+    if (!engagement) {
+      res.status(404).json({ error: 'not found' })
+      return
+    }
+    res.json({ engagement })
+  })
+
+  router.post('/fde/engagements', (req, res) => {
+    const { upsertEngagement } = require('./fde/engagementStore') as typeof import('./fde/engagementStore')
+    const clientName = String(req.body?.clientName ?? '').trim()
+    if (!clientName) {
+      res.status(400).json({ error: 'clientName required' })
+      return
+    }
+    const engagement = upsertEngagement({
+      clientName,
+      company: req.body?.company ? String(req.body.company) : undefined,
+      stage: req.body?.stage,
+      scope: req.body?.scope,
+      summary: req.body?.summary ? String(req.body.summary) : undefined
+    })
+    io?.emit('cluster:refresh', { reason: 'fde-engagement' })
+    res.json({ engagement })
+  })
+
+  router.patch('/fde/engagements/:id', (req, res) => {
+    const { getEngagement, upsertEngagement } = require('./fde/engagementStore') as typeof import('./fde/engagementStore')
+    const existing = getEngagement(req.params.id)
+    if (!existing) {
+      res.status(404).json({ error: 'not found' })
+      return
+    }
+    const engagement = upsertEngagement({
+      ...existing,
+      id: existing.id,
+      clientName: req.body?.clientName ? String(req.body.clientName) : existing.clientName,
+      company: req.body?.company !== undefined ? String(req.body.company) : existing.company,
+      stage: req.body?.stage ?? existing.stage,
+      scope: req.body?.scope ?? existing.scope,
+      escalationLevel:
+        typeof req.body?.escalationLevel === 'number'
+          ? req.body.escalationLevel
+          : existing.escalationLevel
+    })
+    io?.emit('cluster:refresh', { reason: 'fde-engagement' })
+    res.json({ engagement })
+  })
+
+  router.get('/fde/mcp-agents', (_req, res) => {
+    const { listMcpAgents } = require('./fde/mcpAgents') as typeof import('./fde/mcpAgents')
+    res.json({ agents: listMcpAgents() })
+  })
+
+  router.post('/fde/mcp-agents', (req, res) => {
+    const { saveMcpAgent } = require('./fde/mcpAgents') as typeof import('./fde/mcpAgents')
+    const name = String(req.body?.name ?? '').trim()
+    if (!name) {
+      res.status(400).json({ error: 'name required' })
+      return
+    }
+    const agent = saveMcpAgent({
+      id: req.body?.id ? String(req.body.id) : undefined,
+      name,
+      description: req.body?.description ? String(req.body.description) : undefined,
+      transport: req.body?.transport ?? 'stdio',
+      command: req.body?.command ? String(req.body.command) : undefined,
+      args: Array.isArray(req.body?.args) ? req.body.args.map(String) : undefined,
+      url: req.body?.url ? String(req.body.url) : undefined,
+      composeAlias: req.body?.composeAlias ? String(req.body.composeAlias) : undefined,
+      enabled: req.body?.enabled !== false
+    })
+    res.json({ agent })
+  })
+
+  router.delete('/fde/mcp-agents/:id', (req, res) => {
+    const { deleteMcpAgent } = require('./fde/mcpAgents') as typeof import('./fde/mcpAgents')
+    if (!deleteMcpAgent(req.params.id)) {
+      res.status(404).json({ error: 'not found' })
+      return
+    }
+    res.json({ ok: true })
+  })
+
   router.get('/kb/stats', (_req, res) => {
-    const { listDatapoints, listEntities, listTraces } = require('./kb/store') as typeof import('./kb/store')
-    const recent = listDatapoints(20)
-      .filter((dp) => dp.kind === 'consciousness')
-      .slice(0, 5)
+    const { listDatapoints, listEntities, listTraces, countEdges, listEdges } =
+      require('./kb/store') as typeof import('./kb/store')
+    const { loadOntology } = require('./kb/ontology') as typeof import('./kb/ontology')
+    const recent = listDatapoints(30)
+      .slice(0, 8)
       .map((dp) => ({
         id: dp.id,
-        excerpt: dp.body.slice(0, 120),
+        excerpt: cleanKbExcerpt(dp.body, 120),
         intention: dp.intention.dominant,
+        kind: dp.kind,
+        source: dp.source,
         ingestedAt: dp.ingestedAt
       }))
+    const sampleEdges = listEdges(12).map((e) => ({
+      from: e.fromId,
+      to: e.toId,
+      relation: e.relation,
+      weight: e.weight
+    }))
     res.json({
       datapoints: listDatapoints(500).length,
       entities: listEntities(500).length,
+      edges: countEdges(),
       traces: listTraces(500).length,
-      recent
+      ontology: loadOntology().name,
+      relationTypes: loadOntology().relationTypes.length,
+      recent,
+      sampleEdges
     })
   })
 
-  router.post('/cluster/assist', (req, res) => {
+  router.post('/cluster/assist', async (req, res) => {
     const query = String(req.body.query ?? '')
     const objective = req.body.objective as 'discovery' | 'v1_ship' | undefined
-    const result = mobileAssist(query, objective)
-    if (query.trim()) {
-      result.latentContext = retrieveContext(query)
+    const chat = req.body.chat === true
+    const history = Array.isArray(req.body.history)
+      ? (req.body.history as { role?: string; content?: string }[])
+          .filter((t) => (t.role === 'user' || t.role === 'assistant') && t.content)
+          .map((t) => ({ role: t.role as 'user' | 'assistant', content: String(t.content) }))
+          .slice(-10)
+      : undefined
+    try {
+      const result = await mobileAssist(query, objective, { chat, history })
+      const cleaned = chat
+        ? normalizeChatAssistResult(result, query.trim())
+        : normalizeAssistResult(result, query.trim())
+      const payload: AssistResult = { ...result, ...cleaned }
+      if (query.trim() && !payload.latentContext && !chat) {
+        payload.latentContext = retrieveContext(query)
+      }
+      if (query.trim() && !chat) {
+        try {
+          ingestMobileCluster({
+            query,
+            headline: payload.headline,
+            response: payload.response,
+            sayThis: payload.sayThis,
+            objective,
+            sources: payload.sources
+          })
+        } catch (e) {
+          console.warn('[kb] mobile assist ingest failed:', (e as Error).message)
+        }
+      }
+      res.json(payload)
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message })
     }
-    res.json(result)
   })
 
   /* ------------------------- Meeting Intelligence ----------------------- */
@@ -1259,6 +1533,7 @@ export function createRouter(io?: SocketServer): Router {
       title: req.body?.title ? String(req.body.title) : undefined,
       dealHint: req.body?.dealHint ? String(req.body.dealHint) : undefined
     })
+    io?.emit('cluster:refresh', { reason: 'meeting-start' })
     res.json({ ok: true, session })
   })
 
@@ -1278,6 +1553,7 @@ export function createRouter(io?: SocketServer): Router {
       (s) => s.chunkIndex === session.chunks.length - 1
     )
     res.json({ ok: true, signals: newSignals })
+    io?.emit('cluster:refresh', { reason: 'meeting-chunk' })
     if (newSignals.length > 0) {
       void speculate(newSignals[newSignals.length - 1].text).catch((e) =>
         console.warn('[meeting] speculate error', (e as Error).message)
@@ -1323,6 +1599,7 @@ export function createRouter(io?: SocketServer): Router {
         res.status(400).json({ error: 'no active meeting' })
         return
       }
+      io?.emit('cluster:refresh', { reason: 'meeting-end' })
       res.json(result)
     } catch (e) {
       res.status(500).json({ error: (e as Error).message })

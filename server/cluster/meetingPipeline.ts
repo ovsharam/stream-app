@@ -14,7 +14,20 @@ import { isClaudeConnected } from '../sources/claude'
 import { createGoogleDoc, isGdocsConnected } from '../sources/gdocs'
 import { upsertItem } from '../db'
 import type { StreamItem } from '../../shared/types'
-import { ingestStreamItem } from '../kb/pipeline'
+import {
+  extractEmailFromText,
+  parseFollowUpMeeting,
+  transcriptMentionsScheduling,
+  type FollowUpMeetingIntent
+} from '../../shared/meeting-extraction'
+import { proposeMeetingActions } from './meetingActions'
+import {
+  ingestMeetingChunk,
+  ingestMeetingPrediction,
+  ingestMeetingSignal,
+  ingestMeetingStar,
+  ingestStreamItem
+} from '../kb/pipeline'
 
 export type MeetingChunk = { text: string; ts: number }
 export type MeetingSignal = { type: string; text: string; ts: number; chunkIndex: number }
@@ -50,6 +63,7 @@ export type MeetingExtraction = {
   decisions: string[]
   questions: string[]
   scopeDecision: 'quick_win' | 'big_bet' | 'unknown'
+  followUpMeeting?: FollowUpMeetingIntent
 }
 
 export type MeetingResult = {
@@ -100,6 +114,19 @@ function sanitizeTranscript(text: string): string {
     .trim()
 }
 
+function graphMeetingChunk(session: MeetingSession, idx: number): void {
+  const c = session.chunks[idx]
+  if (!c?.text.trim()) return
+  ingestMeetingChunk({
+    sessionId: session.id,
+    chunkIndex: idx,
+    text: c.text,
+    ts: c.ts,
+    title: session.title,
+    dealHint: session.dealHint
+  })
+}
+
 export function ingestChunk(chunk: { text: string; ts?: number }): MeetingSession | null {
   if (!active) return null
   const text = sanitizeTranscript(chunk.text)
@@ -112,13 +139,24 @@ export function ingestChunk(chunk: { text: string; ts?: number }): MeetingSessio
       last.text = text
       last.ts = chunk.ts ?? Date.now()
       detectSignalsForChunk(active, active.chunks.length - 1)
+      try {
+        graphMeetingChunk(active, active.chunks.length - 1)
+      } catch (e) {
+        console.warn('[meeting] kb chunk ingest failed:', (e as Error).message)
+      }
       return active
     }
     if (last.text.startsWith(text)) return active
   }
 
   active.chunks.push({ text, ts: chunk.ts ?? Date.now() })
-  detectSignalsForChunk(active, active.chunks.length - 1)
+  const idx = active.chunks.length - 1
+  detectSignalsForChunk(active, idx)
+  try {
+    graphMeetingChunk(active, idx)
+  } catch (e) {
+    console.warn('[meeting] kb chunk ingest failed:', (e as Error).message)
+  }
   return active
 }
 
@@ -131,6 +169,17 @@ export function starMoment(text?: string): MeetingStarred | null {
     predictionId: active.latestPredictionId
   }
   active.starred.push(moment)
+  try {
+    ingestMeetingStar({
+      sessionId: active.id,
+      text: moment.text,
+      ts: moment.ts,
+      title: active.title,
+      dealHint: active.dealHint
+    })
+  } catch (e) {
+    console.warn('[meeting] kb star ingest failed:', (e as Error).message)
+  }
   return moment
 }
 
@@ -159,7 +208,21 @@ function detectSignalsForChunk(session: MeetingSession, idx: number): void {
       (s) => s.type === type && s.text === text && s.chunkIndex === idx
     )
     if (!exists) {
-      session.signals.push({ type, text, ts: chunk.ts, chunkIndex: idx })
+      const signal = { type, text, ts: chunk.ts, chunkIndex: idx }
+      session.signals.push(signal)
+      try {
+        ingestMeetingSignal({
+          sessionId: session.id,
+          type: signal.type,
+          text: signal.text,
+          ts: signal.ts,
+          chunkIndex: signal.chunkIndex,
+          title: session.title,
+          dealHint: session.dealHint
+        })
+      } catch (e) {
+        console.warn('[meeting] kb signal ingest failed:', (e as Error).message)
+      }
     }
   }
 }
@@ -238,6 +301,21 @@ What is the AE about to need?`
 
   active.predictions.push(prediction)
   active.latestPredictionId = prediction.id
+  try {
+    ingestMeetingPrediction({
+      sessionId: active.id,
+      predictionId: prediction.id,
+      signalText: prediction.signalText,
+      sayThis: prediction.sayThis,
+      followUp: prediction.followUp,
+      flag: prediction.flag,
+      ts: prediction.ts,
+      title: active.title,
+      dealHint: active.dealHint
+    })
+  } catch (e) {
+    console.warn('[meeting] kb prediction ingest failed:', (e as Error).message)
+  }
   return prediction
 }
 
@@ -260,8 +338,19 @@ Output: JSON only, no prose around it.
   "flags": ["risk 1", "risk 2"],
   "decisions": ["decision 1"],
   "questions": ["open question 1"],
-  "scopeDecision": "quick_win | big_bet | unknown"
+  "scopeDecision": "quick_win | big_bet | unknown",
+  "followUpMeeting": {
+    "requested": true,
+    "title": "short meeting title for calendar",
+    "attendeeName": "name if mentioned",
+    "attendeeEmail": "email if mentioned else null",
+    "suggestedStart": "ISO-8601 UTC start if a specific time was agreed, else null",
+    "eventTypeSlug": "cal.com event slug if mentioned else null",
+    "notes": "1 line context for the booking"
+  }
 }
+
+Set followUpMeeting.requested to true only when the call explicitly discussed scheduling a follow-up call/meeting. Extract attendee email/name from the transcript when possible.
 
 scopeDecision criteria:
 - quick_win: <45 days, no custom build, clear use case
@@ -299,33 +388,67 @@ async function extractWithLLM(transcript: string): Promise<MeetingExtraction> {
   const body = (fenced?.[1] ?? raw).trim()
   try {
     const parsed = JSON.parse(body) as Partial<MeetingExtraction>
-    return {
-      summary: parsed.summary?.trim() ?? '(no summary)',
-      buildPrompt: parsed.buildPrompt?.trim() ?? '(no build prompt)',
-      nextSteps: Array.isArray(parsed.nextSteps) ? parsed.nextSteps : [],
-      flags: Array.isArray(parsed.flags) ? parsed.flags : [],
-      decisions: Array.isArray(parsed.decisions) ? parsed.decisions : [],
-      questions: Array.isArray(parsed.questions) ? parsed.questions : [],
-      scopeDecision:
-        parsed.scopeDecision === 'quick_win' || parsed.scopeDecision === 'big_bet'
-          ? parsed.scopeDecision
-          : 'unknown'
-    }
+    return enrichExtraction(
+      {
+        summary: parsed.summary?.trim() ?? '(no summary)',
+        buildPrompt: parsed.buildPrompt?.trim() ?? '(no build prompt)',
+        nextSteps: Array.isArray(parsed.nextSteps) ? parsed.nextSteps : [],
+        flags: Array.isArray(parsed.flags) ? parsed.flags : [],
+        decisions: Array.isArray(parsed.decisions) ? parsed.decisions : [],
+        questions: Array.isArray(parsed.questions) ? parsed.questions : [],
+        scopeDecision:
+          parsed.scopeDecision === 'quick_win' || parsed.scopeDecision === 'big_bet'
+            ? parsed.scopeDecision
+            : 'unknown',
+        followUpMeeting: parseFollowUpMeeting(parsed.followUpMeeting) ?? undefined
+      },
+      transcript
+    )
   } catch {
     return fallbackExtraction(transcript)
   }
 }
 
-function fallbackExtraction(transcript: string): MeetingExtraction {
-  return {
-    summary: transcript.slice(0, 400) + (transcript.length > 400 ? '…' : ''),
-    buildPrompt: 'Connect Claude or Gemini to enable post-call FDE extraction.',
-    nextSteps: [],
-    flags: ['No LLM connected — extraction skipped.'],
-    decisions: [],
-    questions: [],
-    scopeDecision: 'unknown'
+function enrichExtraction(extraction: MeetingExtraction, transcript: string): MeetingExtraction {
+  const blob = [transcript, extraction.summary, ...extraction.nextSteps].join('\n')
+  const mentionsScheduling =
+    extraction.followUpMeeting?.requested || transcriptMentionsScheduling(blob)
+
+  if (!mentionsScheduling) return extraction
+
+  const email =
+    extraction.followUpMeeting?.attendeeEmail ?? extractEmailFromText(blob)
+  const followUp: FollowUpMeetingIntent = {
+    requested: true,
+    title:
+      extraction.followUpMeeting?.title ??
+      (extraction.nextSteps.find((s) => transcriptMentionsScheduling(s))?.slice(0, 80) ||
+        'Follow-up call'),
+    attendeeName: extraction.followUpMeeting?.attendeeName,
+    attendeeEmail: email,
+    suggestedStart: extraction.followUpMeeting?.suggestedStart,
+    eventTypeSlug: extraction.followUpMeeting?.eventTypeSlug,
+    notes:
+      extraction.followUpMeeting?.notes ??
+      extraction.nextSteps.find((s) => transcriptMentionsScheduling(s))
   }
+
+  return { ...extraction, followUpMeeting: followUp }
+}
+
+function fallbackExtraction(transcript: string): MeetingExtraction {
+  return enrichExtraction(
+    {
+      summary: transcript.slice(0, 400) + (transcript.length > 400 ? '…' : ''),
+      buildPrompt: 'Connect Claude or Gemini to enable post-call FDE extraction.',
+      nextSteps: [],
+      flags: ['No LLM connected — extraction skipped.'],
+      decisions: [],
+      questions: [],
+      scopeDecision: 'unknown'
+    },
+    transcript
+  )
 }
 
 function formatDocBody(session: MeetingSession, extraction: MeetingExtraction, transcript: string): string {
@@ -394,6 +517,16 @@ function formatDocBody(session: MeetingSession, extraction: MeetingExtraction, t
     }
     lines.push('')
   }
+  if (extraction.followUpMeeting?.requested) {
+    lines.push('━━━ FOLLOW-UP MEETING ━━━')
+    const fm = extraction.followUpMeeting
+    if (fm.title) lines.push(`Title: ${fm.title}`)
+    if (fm.attendeeName) lines.push(`Guest: ${fm.attendeeName}`)
+    if (fm.attendeeEmail) lines.push(`Email: ${fm.attendeeEmail}`)
+    if (fm.suggestedStart) lines.push(`When: ${fm.suggestedStart}`)
+    if (fm.notes) lines.push(`Notes: ${fm.notes}`)
+    lines.push('')
+  }
   lines.push('━━━ FULL TRANSCRIPT ━━━')
   lines.push(transcript)
 
@@ -403,7 +536,8 @@ function formatDocBody(session: MeetingSession, extraction: MeetingExtraction, t
 function buildFeedItem(
   session: MeetingSession,
   extraction: MeetingExtraction,
-  docUrl?: string
+  docUrl?: string,
+  docError?: string
 ): StreamItem {
   const dateStr = new Date(session.startedAt).toLocaleString()
   const title = session.title
@@ -432,6 +566,7 @@ function buildFeedItem(
       sessionId: session.id,
       durationMs: (session.endedAt ?? Date.now()) - session.startedAt,
       googleDocUrl: docUrl,
+      googleDocError: docError,
       scopeDecision: extraction.scopeDecision,
       flags: extraction.flags,
       nextSteps: extraction.nextSteps,
@@ -440,7 +575,9 @@ function buildFeedItem(
       starredCount: session.starred.length,
       chunkCount: session.chunks.length,
       signalCount: session.signals.length,
-      buildPrompt: extraction.buildPrompt
+      buildPrompt: extraction.buildPrompt,
+      followUpMeeting: extraction.followUpMeeting,
+      proposedActions: proposeMeetingActions(session, extraction)
     }
   }
 }
@@ -500,12 +637,25 @@ export async function endMeetingSession(
       'Google Docs not connected — open Integrations → Gmail, reconnect with Docs scope, then enable Drive + Docs APIs in your GCP project.'
   }
 
-  const feedItem = buildFeedItem(session, extraction, docUrl)
+  const feedItem = buildFeedItem(session, extraction, docUrl, docError)
   upsertItem(feedItem)
   try {
     ingestStreamItem(feedItem)
   } catch (e) {
     console.warn('[meeting] kb ingest failed:', (e as Error).message)
+  }
+  try {
+    const { upsertEngagementFromMeeting } = require('../fde/engagementStore') as typeof import('../fde/engagementStore')
+    upsertEngagementFromMeeting({
+      sessionId: session.id,
+      feedItemId: feedItem.id,
+      title: session.title,
+      dealHint: session.dealHint,
+      extraction,
+      googleDocUrl: docUrl
+    })
+  } catch (e) {
+    console.warn('[meeting] engagement upsert failed:', (e as Error).message)
   }
   input.io?.emit('stream:item', feedItem)
 

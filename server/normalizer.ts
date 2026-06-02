@@ -359,6 +359,64 @@ export function normalizeGongCall(call: {
   }
 }
 
+export function normalizeCalcomBooking(booking: Record<string, unknown>): StreamItem | null {
+  const uid = String(booking.uid ?? booking.id ?? '').trim()
+  if (!uid) return null
+
+  const eventType =
+    booking.eventType && typeof booking.eventType === 'object'
+      ? (booking.eventType as { title?: string; slug?: string })
+      : undefined
+  const title = String(booking.title ?? eventType?.title ?? 'Cal.com booking').trim()
+
+  const startRaw =
+    booking.startTime ?? booking.start ?? booking.startTimeUtc ?? booking.createdAt
+  const endRaw = booking.endTime ?? booking.end ?? booking.endTimeUtc
+  const start = startRaw ? new Date(String(startRaw)) : new Date()
+  const end = endRaw ? new Date(String(endRaw)) : undefined
+
+  const attendees = Array.isArray(booking.attendees)
+    ? (booking.attendees as { name?: string; email?: string }[])
+    : []
+  const guest = attendees[0]
+  const guestLabel = guest?.name
+    ? guest.email
+      ? `${guest.name} (${guest.email})`
+      : guest.name
+    : guest?.email
+
+  const status = String(booking.status ?? 'scheduled')
+  const bodyParts = [
+    guestLabel,
+    start.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }),
+    end ? `→ ${end.toLocaleTimeString(undefined, { timeStyle: 'short' })}` : undefined,
+    `Status: ${status}`
+  ].filter(Boolean)
+
+  const body = bodyParts.join(' · ')
+
+  return {
+    id: `calcom-${uid}`,
+    source: 'calcom',
+    sender: { name: 'Cal.com', handle: 'calcom' },
+    timestamp: start,
+    title,
+    body: truncate(body),
+    bodyFull: body,
+    isUnread: true,
+    isStarred: false,
+    metadata: {
+      itemId: `calcom-${uid}`,
+      bookingUid: uid,
+      status,
+      startTime: start.toISOString(),
+      endTime: end?.toISOString(),
+      attendeeEmail: guest?.email,
+      eventTypeSlug: eventType?.slug
+    }
+  }
+}
+
 export function normalizeNote(text: string, title?: string): StreamItem {
   return {
     id: `note-${uuidv4()}`,
@@ -403,6 +461,8 @@ export function normalizeRaw(
       return normalizeGdocsItem(payload as Parameters<typeof normalizeGdocsItem>[0])
     case 'gong':
       return normalizeGongCall(payload as Parameters<typeof normalizeGongCall>[0])
+    case 'calcom':
+      return normalizeCalcomBooking(payload)
     case 'meeting':
       return null
     case 'note':

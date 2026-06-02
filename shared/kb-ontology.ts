@@ -1,0 +1,186 @@
+/**
+ * Declarative ontology — entity types, relationship types, extraction rules.
+ * Edit config/kb-ontology.json (or ~/.stream-app/kb-ontology.json override).
+ */
+
+export type OntologyEntityType = {
+  id: string
+  label: string
+  description?: string
+  /** Coarse storage bucket for legacy filters */
+  mapsTo?: 'person' | 'company' | 'term' | 'topic' | 'project' | 'concept'
+  color?: string
+}
+
+export type OntologyRelationType = {
+  id: string
+  label: string
+  description?: string
+  /** Allowed source entity type ids (empty = any) */
+  from: string[]
+  /** Allowed target entity type ids (empty = any) */
+  to: string[]
+  symmetric?: boolean
+  weight?: number
+}
+
+export type OntologyAnchor =
+  | 'deal'
+  | 'meeting'
+  | 'sender'
+  | 'company'
+  | 'session'
+  | 'datapoint'
+
+export type OntologyExtractRule = {
+  id: string
+  /** Regex; capture group 1 = entity label when present, else full match */
+  pattern: string
+  flags?: string
+  entityType: string
+  /** Fixed label instead of regex capture */
+  label?: string
+  relation?: {
+    type: string
+    anchor: OntologyAnchor
+  }
+}
+
+export type OntologyCoOccurrence = {
+  relation: string
+  /** When both types appear in same datapoint, link them */
+  types: [string, string]
+  weight?: number
+}
+
+export type KbOntologyConfig = {
+  version: 1
+  name?: string
+  entityTypes: OntologyEntityType[]
+  relationTypes: OntologyRelationType[]
+  extractRules: OntologyExtractRule[]
+  coOccurrence?: OntologyCoOccurrence[]
+}
+
+export const DEFAULT_ONTOLOGY: KbOntologyConfig = {
+  version: 1,
+  name: 'FDE intake',
+  entityTypes: [
+    { id: 'customer', label: 'Customer', mapsTo: 'company', description: 'Account / prospect org' },
+    { id: 'deal', label: 'Deal', mapsTo: 'project', description: 'Active sales or delivery engagement' },
+    { id: 'meeting', label: 'Meeting', mapsTo: 'project' },
+    { id: 'stakeholder', label: 'Stakeholder', mapsTo: 'person' },
+    { id: 'requirement', label: 'Requirement', mapsTo: 'concept' },
+    { id: 'product_feature', label: 'Product Feature', mapsTo: 'concept' },
+    { id: 'blocker', label: 'Blocker', mapsTo: 'concept' },
+    { id: 'compliance_rule', label: 'Compliance Rule', mapsTo: 'concept' },
+    { id: 'integration', label: 'Integration', mapsTo: 'topic' },
+    { id: 'timeline', label: 'Timeline', mapsTo: 'concept' },
+    { id: 'budget_signal', label: 'Budget Signal', mapsTo: 'concept' }
+  ],
+  relationTypes: [
+    {
+      id: 'has_requirement',
+      label: 'Has Requirement',
+      from: ['customer', 'deal'],
+      to: ['requirement']
+    },
+    {
+      id: 'requires_feature',
+      label: 'Requires Feature',
+      from: ['requirement', 'customer', 'deal'],
+      to: ['product_feature']
+    },
+    {
+      id: 'blocked_by',
+      label: 'Blocked By',
+      from: ['deal', 'requirement'],
+      to: ['blocker']
+    },
+    {
+      id: 'subject_to',
+      label: 'Subject To',
+      from: ['customer', 'deal', 'requirement'],
+      to: ['compliance_rule']
+    },
+    {
+      id: 'integrates_with',
+      label: 'Integrates With',
+      from: ['customer', 'deal', 'requirement'],
+      to: ['integration']
+    },
+    {
+      id: 'owned_by',
+      label: 'Owned By',
+      from: ['deal', 'requirement'],
+      to: ['stakeholder']
+    },
+    {
+      id: 'part_of_deal',
+      label: 'Part Of Deal',
+      from: ['meeting', 'requirement', 'blocker'],
+      to: ['deal']
+    },
+    {
+      id: 'targets_launch',
+      label: 'Targets Launch',
+      from: ['deal', 'requirement'],
+      to: ['timeline']
+    },
+    {
+      id: 'budget_for',
+      label: 'Budget For',
+      from: ['budget_signal'],
+      to: ['deal', 'requirement']
+    }
+  ],
+  extractRules: [
+    {
+      id: 'compliance',
+      pattern: '\\b(GDPR|CCPA|HIPAA|SOC ?2|ISO ?27001|SCC|EU residency|Frankfurt)\\b',
+      flags: 'i',
+      entityType: 'compliance_rule',
+      relation: { type: 'subject_to', anchor: 'deal' }
+    },
+    {
+      id: 'blocker',
+      pattern: '\\b(blocked|blocker|legal review|procurement|sign.?off|approval needed)\\b',
+      flags: 'i',
+      entityType: 'blocker',
+      relation: { type: 'blocked_by', anchor: 'deal' }
+    },
+    {
+      id: 'budget',
+      pattern: '(\\$[\\d,]+(?:k|K)?|\\d+k budget|budget of \\$[\\d,]+)',
+      flags: 'i',
+      entityType: 'budget_signal',
+      relation: { type: 'budget_for', anchor: 'deal' }
+    },
+    {
+      id: 'timeline',
+      pattern: '\\b(Q[1-4] 20\\d{2}|go.?live|launch by|deadline|within \\d+ (?:days|weeks|months))\\b',
+      flags: 'i',
+      entityType: 'timeline',
+      relation: { type: 'targets_launch', anchor: 'deal' }
+    },
+    {
+      id: 'integrations',
+      pattern: '\\b(Shopify|HubSpot|Salesforce|Stripe|Monday|Slack|Zendesk|NetSuite|QuickBooks)\\b',
+      flags: 'i',
+      entityType: 'integration',
+      relation: { type: 'integrates_with', anchor: 'company' }
+    },
+    {
+      id: 'requirements_lang',
+      pattern: '\\b(need to|must|require[sd]?|looking for|want to build|custom integration)\\b',
+      flags: 'i',
+      entityType: 'requirement',
+      label: 'Stated requirement',
+      relation: { type: 'has_requirement', anchor: 'deal' }
+    }
+  ],
+  coOccurrence: [
+    { relation: 'requires_feature', types: ['requirement', 'integration'] },
+    { relation: 'blocked_by', types: ['requirement', 'compliance_rule'] }
+  ]
+}

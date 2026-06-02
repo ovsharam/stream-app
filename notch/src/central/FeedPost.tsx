@@ -1,11 +1,13 @@
 import type { MouseEvent } from 'react'
 import type { CentralStreamEvent } from '@shared/cluster'
+import { parseMeetingActionsMeta } from '@shared/meeting-actions'
 import { openMeeting } from '../lib/api'
 import { IconGmail, IconLike, IconMonday, IconReply, IconRepost, IconShare, IconViews } from './Icons'
 
 const AVATAR: Record<string, { bg: string; color: string; label: string }> = {
   notch: { bg: '#0f1419', color: '#fff', label: 'N' },
   meet: { bg: '#00897b', color: '#fff', label: '▶' },
+  meeting: { bg: '#00897b', color: '#fff', label: '✦' },
   slack: { bg: '#611f69', color: '#fff', label: 'S' },
   x: { bg: '#111', color: '#fff', label: 'X' },
   discord: { bg: '#5865f2', color: '#fff', label: 'D' },
@@ -53,6 +55,7 @@ type Props = {
   isContext?: boolean
   activeThreadId?: string | null
   onOpenWorkspace?: (event: CentralStreamEvent) => void
+  onOpenInWork?: (itemId: string) => void
   onOpenThread?: (itemId: string, day?: string) => void
   onSelectContext?: (itemId: string) => void
 }
@@ -77,6 +80,7 @@ export function FeedPost({
   isContext,
   activeThreadId,
   onOpenWorkspace,
+  onOpenInWork,
   onOpenThread,
   onSelectContext
 }: Props) {
@@ -100,6 +104,15 @@ export function FeedPost({
   const threadActive = isThreadable && threadItemId && activeThreadId === threadItemId
   const parentTs = isMondayThread ? Number(event.meta?.parentTs ?? event.ts) : event.ts
   const latestUpdateAgo = isMondayThread ? timeAgo(event.ts) : ''
+
+  const googleDocUrl =
+    event.source === 'meeting' && event.meta?.googleDocUrl
+      ? String(event.meta.googleDocUrl)
+      : undefined
+  const googleDocError =
+    event.source === 'meeting' && event.meta?.googleDocError
+      ? String(event.meta.googleDocError)
+      : undefined
 
   const openThread = (e?: MouseEvent) => {
     e?.stopPropagation()
@@ -171,6 +184,38 @@ export function FeedPost({
           </button>
         )}
 
+        {googleDocUrl ? (
+          <button
+            type="button"
+            className="x-action-btn x-action-btn-primary x-meeting-doc-btn"
+            onClick={(e) => {
+              e.stopPropagation()
+              window.notchDesktop?.openExternal?.(googleDocUrl)
+            }}
+          >
+            Open Google Doc
+          </button>
+        ) : null}
+
+        {googleDocError && !googleDocUrl ? (
+          <p className="x-int-alert x-meeting-doc-error">{googleDocError}</p>
+        ) : null}
+
+        {event.source === 'meeting' &&
+        parseMeetingActionsMeta(event.meta)?.proposedActions.length &&
+        onOpenInWork ? (
+          <button
+            type="button"
+            className="x-action-btn x-meeting-work-link"
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenInWork(threadItemId)
+            }}
+          >
+            Review post-call tasks in Work →
+          </button>
+        ) : null}
+
         {event.joinable && event.meetingLink && (
           <div className="x-action-card x-action-card-meet">
             <div className="x-meet-thumb">
@@ -193,7 +238,7 @@ export function FeedPost({
               className="x-action-btn x-action-btn-primary"
               onClick={(e) => {
                 e.stopPropagation()
-                openMeeting(event.meetingLink!)
+                openMeeting(event.meetingLink!, event.title)
               }}
             >
               Join Meet

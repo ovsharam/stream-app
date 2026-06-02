@@ -15,6 +15,82 @@ type MondayToken = {
   defaultBoardName?: string
   defaultGroupId?: string
   defaultGroupTitle?: string
+  /** false when token can sync but not create items */
+  writeAccess?: boolean
+}
+
+export function formatMondayWriteError(message: string): string {
+  if (/unauthorized|403|forbidden|permission|scope/i.test(message)) {
+    return (
+      'Monday API token is read-only — it can sync the feed but cannot create tasks. ' +
+      'Go to monday.com → profile → Developers → My access tokens, create a token with ' +
+      'boards:write and updates:write, then Integrations → Monday → paste the new token.'
+    )
+  }
+  return message
+}
+
+async function probeMondayWriteAccess(apiToken: string): Promise<boolean> {
+  try {
+    const catalog = await mondayApiWithToken<{
+      boards: { id: string; name: string; groups: { id: string }[] }[]
+    }>(
+      apiToken,
+      `
+        query NotchMondayWriteProbe {
+          boards(limit: 50) {
+            id
+            name
+            groups { id title }
+          }
+        }
+      `
+    )
+    const targets: MondayBoardTarget[] = catalog.boards
+      .filter((b) => !isSubitemsBoard(b.name))
+      .map((b) => ({
+        boardId: b.id,
+        boardName: b.name,
+        groupId: pickCreateGroup(b.groups)?.id,
+        groupTitle: pickCreateGroup(b.groups)?.title
+      }))
+    const board = resolveDefaultCreateBoard(targets, null)
+    const catalogBoard = catalog.boards.find((b) => b.id === board.boardId)
+    const groupId = board.groupId ?? catalogBoard?.groups[0]?.id
+    if (!groupId) return false
+
+    const created = await mondayApiWithToken<{ create_item: { id: string } | null }>(
+      apiToken,
+      `
+        mutation NotchMondayWriteProbe($boardId: ID!, $groupId: String!, $itemName: String!) {
+          create_item(board_id: $boardId, group_id: $groupId, item_name: $itemName) {
+            id
+          }
+        }
+      `,
+      { boardId: board.boardId, groupId, itemName: '__notch_write_check__' }
+    )
+    const itemId = created.create_item?.id
+    if (!itemId) return false
+
+    try {
+      await mondayApiWithToken(
+        apiToken,
+        `mutation NotchMondayWriteProbeDelete($itemId: ID!) { delete_item(item_id: $itemId) { id } }`,
+        { itemId }
+      )
+    } catch {
+      // Probe succeeded; cleanup is best-effort (delete the row in Monday if it remains).
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function mondayHasWriteAccess(): boolean {
+  const token = getMondayToken()
+  return token?.writeAccess !== false
 }
 
 function getMondayToken(): MondayToken | null {
@@ -39,12 +115,17 @@ async function mondayApiWithToken<T>(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: apiToken
+      Authorization: apiToken,
+      'API-Version': '2024-10'
     },
-    body: JSON.stringify({ query, variables })
+    body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(25_000)
   })
   const json = (await res.json()) as { data?: T; errors?: { message: string }[] }
-  if (!res.ok || !json.data) {
+  if (json.errors?.length) {
+    throw new Error(json.errors.map((e) => e.message).join('; '))
+  }
+  if (!res.ok || json.data == null) {
     const err = json.errors?.[0]?.message ?? `Monday API error (${res.status})`
     throw new Error(err)
   }
@@ -67,12 +148,14 @@ export async function connectMondayWithToken(apiToken: string): Promise<void> {
     `
   )
   if (!me.me?.id) throw new Error('Unable to resolve Monday user from token')
+  const writeAccess = await probeMondayWriteAccess(apiToken)
   setToken('monday', {
     apiToken,
     userId: me.me.id,
     userName: me.me.name ?? '',
     userEmail: me.me.email ?? '',
-    lastSyncMs: Date.now() - 1000 * 60 * 60 * 12
+    lastSyncMs: Date.now() - 1000 * 60 * 60 * 12,
+    writeAccess
   })
   setConnection('monday', true)
 }
@@ -565,7 +648,8 @@ export type MondayBoardCatalogEntry = {
   groups: { id: string; title: string }[]
 }
 
-const CREATE_GROUP_PREFER = ['new ideas', 'new features', 'backlog', 'to do', 'todo', 'open', 'planned', 'in progress']
+const CREATE_BOARD_PREFER = ['fde', 'development kanban', 'dev kanban', 'tasks']
+const CREATE_GROUP_PREFER = ['to-do', 'to do', 'todo', 'new ideas', 'new features', 'backlog', 'open', 'planned', 'in progress']
 const CREATE_GROUP_AVOID = ['completed', 'done', 'archive', 'archived', 'closed', 'won', 'lost']
 
 function pickCreateGroup(groups: { id: string; title: string }[]): { id: string; title: string } | undefined {
@@ -584,21 +668,29 @@ function pickCreateGroup(groups: { id: string; title: string }[]): { id: string;
   )
 }
 
+function isSubitemsBoard(name: string): boolean {
+  return /\bsubitems?\s+of\b/i.test(name)
+}
+
 function resolveDefaultCreateBoard(
   boards: MondayBoardTarget[],
   token: MondayToken | null
 ): MondayBoardTarget {
+  const eligible = boards.filter((b) => !isSubitemsBoard(b.boardName))
+
   if (token?.defaultBoardId) {
-    const saved = boards.find((b) => b.boardId === token.defaultBoardId)
+    const saved = eligible.find((b) => b.boardId === token.defaultBoardId)
     if (saved) return saved
   }
 
-  const preferred =
-    boards.find((b) => b.boardName.toLowerCase() === 'development kanban') ??
-    boards.find((b) => b.boardName.toLowerCase().includes('development kanban')) ??
-    boards.find((b) => b.boardName.toLowerCase().includes('dev kanban'))
+  for (const label of CREATE_BOARD_PREFER) {
+    const hit =
+      eligible.find((b) => b.boardName.toLowerCase() === label) ??
+      eligible.find((b) => b.boardName.toLowerCase().includes(label))
+    if (hit) return hit
+  }
 
-  return preferred ?? boards[0]
+  return eligible[0] ?? boards[0]
 }
 
 function persistMondayCreateDefaults(board: MondayBoardTarget): void {
@@ -672,48 +764,88 @@ export async function createMondayItem(input: {
   groupId?: string
   name: string
 }): Promise<{ id: string; boardId: string; boardName: string }> {
-  const title = input.name.trim()
+  const title = input.name.trim().slice(0, 255)
   if (!title) throw new Error('Task name cannot be empty')
 
-  const data = await mondayApi<{ create_item: { id: string } }>(
-    `
-      mutation NotchCreateItem($boardId: ID!, $groupId: String, $itemName: String!) {
-        create_item(board_id: $boardId, group_id: $groupId, item_name: $itemName) {
-          id
+  const catalog = await listMondayBoardCatalog()
+  const boardEntry = catalog.find((b) => b.boardId === input.boardId)
+  const groupCandidates: string[] = []
+
+  for (const id of [input.groupId, boardEntry ? pickCreateGroup(boardEntry.groups)?.id : undefined]) {
+    if (id && !groupCandidates.includes(id)) groupCandidates.push(id)
+  }
+  if (boardEntry) {
+    for (const group of boardEntry.groups) {
+      if (!groupCandidates.includes(group.id)) groupCandidates.push(group.id)
+    }
+  }
+
+  let lastError = 'Monday did not return item id — check board permissions and default group in Integrations'
+
+  for (let i = 0; i <= groupCandidates.length; i += 1) {
+    const groupId = i < groupCandidates.length ? groupCandidates[i] : undefined
+    try {
+      const data = groupId
+        ? await mondayApi<{ create_item: { id: string } | null }>(
+            `
+              mutation NotchCreateItem($boardId: ID!, $groupId: String!, $itemName: String!) {
+                create_item(board_id: $boardId, group_id: $groupId, item_name: $itemName) {
+                  id
+                }
+              }
+            `,
+            { boardId: input.boardId, groupId, itemName: title }
+          )
+        : await mondayApi<{ create_item: { id: string } | null }>(
+            `
+              mutation NotchCreateItem($boardId: ID!, $itemName: String!) {
+                create_item(board_id: $boardId, item_name: $itemName) {
+                  id
+                }
+              }
+            `,
+            { boardId: input.boardId, itemName: title }
+          )
+
+      if (data.create_item?.id) {
+        const boards = await listMondayBoardTargets()
+        const board = boards.find((b) => b.boardId === input.boardId)
+        return {
+          id: data.create_item.id,
+          boardId: input.boardId,
+          boardName: board?.boardName ?? boardEntry?.boardName ?? 'Monday board'
         }
       }
-    `,
-    {
-      boardId: input.boardId,
-      groupId: input.groupId ?? null,
-      itemName: title
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err)
     }
-  )
-
-  if (!data.create_item?.id) throw new Error('Monday did not return item id')
-
-  const boards = await listMondayBoardTargets()
-  const board = boards.find((b) => b.boardId === input.boardId)
-
-  return {
-    id: data.create_item.id,
-    boardId: input.boardId,
-    boardName: board?.boardName ?? 'Monday board'
   }
+
+  throw new Error(formatMondayWriteError(lastError))
 }
 
 export async function createMondayItemOnBoard(input: {
   name: string
   boardName?: string
 }): Promise<{ id: string; boardId: string; boardName: string; groupTitle?: string }> {
-  const boards = await listMondayBoardTargets()
-  if (boards.length === 0) throw new Error('No Monday boards available')
+  const catalog = await listMondayBoardCatalog()
+  if (catalog.length === 0) throw new Error('No Monday boards available')
+
+  const targets: MondayBoardTarget[] = catalog.map((board) => {
+    const group = pickCreateGroup(board.groups)
+    return {
+      boardId: board.boardId,
+      boardName: board.boardName,
+      groupId: group?.id,
+      groupTitle: group?.title
+    }
+  })
 
   const needle = input.boardName?.trim().toLowerCase()
   const board = needle
-    ? boards.find((b) => b.boardName.toLowerCase() === needle) ??
-      boards.find((b) => b.boardName.toLowerCase().includes(needle))
-    : resolveDefaultCreateBoard(boards, getMondayToken())
+    ? targets.find((b) => b.boardName.toLowerCase() === needle) ??
+      targets.find((b) => b.boardName.toLowerCase().includes(needle))
+    : resolveDefaultCreateBoard(targets, getMondayToken())
 
   if (!board) throw new Error('Monday board not found')
 

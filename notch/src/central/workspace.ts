@@ -1,15 +1,52 @@
-import type { CentralStreamEvent } from '@shared/cluster'
+import type { CalendarRailEvent, CentralStreamEvent } from '@shared/cluster'
 
 export type WorkspaceTab = {
   id: string
   title: string
-  source: CentralStreamEvent['source']
+  source: CentralStreamEvent['source'] | 'calendar' | 'meet'
   url: string
   summary: string
+  autoOpened?: boolean
+}
+
+export function workspaceTabId(url: string): string {
+  try {
+    const u = new URL(url)
+    const slug = `${u.hostname}${u.pathname}`.replace(/[^a-zA-Z0-9-_]/g, '-')
+    return `ws-${slug}`.slice(0, 96)
+  } catch {
+    return `ws-${url.replace(/[^a-zA-Z0-9-_]/g, '-').slice(0, 80)}`
+  }
+}
+
+export function tabFromUrl(
+  url: string,
+  opts: { title: string; source?: WorkspaceTab['source']; summary?: string; id?: string }
+): WorkspaceTab {
+  return {
+    id: opts.id ?? workspaceTabId(url),
+    title: opts.title,
+    source: opts.source ?? 'meet',
+    url,
+    summary: opts.summary ?? url
+  }
+}
+
+export function tabFromCalendarEvent(evt: CalendarRailEvent): WorkspaceTab | null {
+  if (!evt.link) return null
+  return tabFromUrl(evt.link, {
+    id: `cal-${evt.id}`,
+    title: evt.title,
+    source: evt.kind === 'meet' ? 'meet' : 'calendar',
+    summary: evt.timeLabel
+  })
 }
 
 function sourceUrl(event: CentralStreamEvent): string | null {
   if (event.meetingLink) return event.meetingLink
+  if (event.source === 'meeting' && event.meta?.googleDocUrl) {
+    return String(event.meta.googleDocUrl)
+  }
 
   switch (event.source) {
     case 'slack':
@@ -42,9 +79,14 @@ export function toWorkspaceTab(event: CentralStreamEvent): WorkspaceTab | null {
   const url = sourceUrl(event)
   if (!url) return null
 
+  const title =
+    event.meetingLink || event.source === 'meet'
+      ? event.title || 'Google Meet'
+      : event.source.charAt(0).toUpperCase() + event.source.slice(1)
+
   return {
     id: `${event.source}-${event.id}`,
-    title: event.source.charAt(0).toUpperCase() + event.source.slice(1),
+    title,
     source: event.source,
     url,
     summary: event.title || event.body

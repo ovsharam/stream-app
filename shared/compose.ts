@@ -13,7 +13,8 @@ export const COMPOSE_PROVIDERS = [
   'gemini',
   'gdocs',
   'gong',
-  'mind'
+  'mind',
+  'calcom'
 ] as const
 
 export type ComposeProvider = (typeof COMPOSE_PROVIDERS)[number]
@@ -48,7 +49,9 @@ const PROVIDER_ALIASES: Record<string, ComposeProvider> = {
   gong: 'gong',
   mind: 'mind',
   kb: 'mind',
-  think: 'mind'
+  think: 'mind',
+  calcom: 'calcom',
+  cal: 'calcom'
 }
 
 export function parseComposeCommand(raw: string): ComposeCommand | null {
@@ -69,6 +72,16 @@ export function parseComposeCommand(raw: string): ComposeCommand | null {
       target: mondayItem[1],
       intent: mondayItem[2].toLowerCase() === 'update' ? 'move' : mondayItem[2].toLowerCase(),
       body: mondayItem[3].trim(),
+      raw: text
+    }
+  }
+
+  const calcomBook = rest.match(/^book\s*:\s*(.+)$/is)
+  if (provider === 'calcom' && calcomBook) {
+    return {
+      provider,
+      intent: 'book',
+      body: calcomBook[1].trim(),
       raw: text
     }
   }
@@ -140,7 +153,7 @@ export function parseComposeCommand(raw: string): ComposeCommand | null {
     }
   }
 
-  const intentMatch = rest.match(/^(reply|send|post|ask|comment|create|move|append|note|draft|issue)\s*(?:to|:)\s*(.+)$/is)
+  const intentMatch = rest.match(/^(reply|send|post|ask|comment|create|move|append|note|draft|issue|book)\s*(?:to|:)\s*(.+)$/is)
   if (intentMatch) {
     return {
       provider,
@@ -192,8 +205,8 @@ export const COMPOSE_HELP: { provider: ComposeProvider; examples: string[] }[] =
   {
     provider: 'monday',
     examples: [
-      '@monday: Add to new ideas section — Phase 1 sim calls, Phase 2 agency network',
-      '@monday Fix Frankfurt webhook policy',
+      'Click a Monday item, then @monday: comment or move to Done on that ticket',
+      '@monday create: brand new task (always creates, even with context selected)',
       '@monday/Development Kanban: Spike OAuth',
       '@monday #123456789 comment: shipped v1'
     ]
@@ -220,6 +233,13 @@ export const COMPOSE_HELP: { provider: ComposeProvider; examples: string[] }[] =
     examples: [
       '@mind GraphRAG velocity should weight intention not just semantic similarity',
       '@mind #learning [[ontology]] plan: ingest feed traces with time-to-action'
+    ]
+  },
+  {
+    provider: 'calcom',
+    examples: [
+      '@calcom book: 30min / client@co.com / Jane Doe / auto / Follow-up on webhook scope',
+      '@calcom book: discovery / lead@acme.com / Alex / 2026-06-05T15:00:00Z / Technical deep-dive'
     ]
   }
 ]

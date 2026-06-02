@@ -127,6 +127,9 @@ export type ClusterSearchHit = {
   snippet: string
   source: string
   score: number
+  /** Stream item id for navigation */
+  itemId?: string
+  day?: string
 }
 
 export type StreamSource =
@@ -176,6 +179,8 @@ export type ClusterThreadUpdate = {
   actor: string
   body: string
   source: string
+  /** Monday board automation vs human comment */
+  kind?: 'activity' | 'comment'
 }
 
 export type MondayStatusOption = {

@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import type { GmailAccount, GoogleCalendarOption, MondayAccount } from '@shared/cluster'
 import { clusterApi, integrationApi, type IntegrationConnections } from '../lib/api'
 import { IconGmail, IconMonday } from './Icons'
+import { McpAgentsSection } from './McpAgentsSection'
 
 type IntegrationId =
   | 'gmail'
   | 'monday'
+  | 'agents'
+  | 'calcom'
   | 'x'
   | 'discord'
   | 'perplexity'
@@ -36,12 +39,29 @@ const INTEGRATIONS: IntegrationDef[] = [
     icon: <IconGmail className="x-int-brand-icon" />
   },
   {
+    id: 'calcom',
+    name: 'Cal.com',
+    tagline: 'Scheduling — upcoming & past bookings',
+    feeds: 'Feed',
+    brandClass: 'x-int-card-calcom',
+    icon: <span className="x-int-brand-letter">Cal</span>
+  },
+  {
     id: 'monday',
     name: 'Monday.com',
     tagline: 'Board updates and item threads',
     feeds: 'Feed',
     brandClass: 'x-int-card-monday',
     icon: <IconMonday className="x-int-brand-icon" />
+  },
+  {
+    id: 'agents',
+    name: 'MCP Agents',
+    tagline: 'Register your agency MCP servers for custom compose dispatch',
+    feeds: 'Compose',
+    brandClass: 'x-int-card-agents',
+    icon: <span className="x-int-brand-letter">MCP</span>,
+    compose: '@alias ask: … (when executor wired)'
   },
   {
     id: 'github',
@@ -156,6 +176,9 @@ export function IntegrationsPanel() {
   const [githubRepo, setGithubRepo] = useState('')
   const [gongKey, setGongKey] = useState('')
   const [gongSecret, setGongSecret] = useState('')
+  const [calcomKey, setCalcomKey] = useState('')
+  const [calcomUsername, setCalcomUsername] = useState('')
+  const [calcomEventTypeId, setCalcomEventTypeId] = useState('')
   const [calendars, setCalendars] = useState<GoogleCalendarOption[]>([])
   const [calendarsLoading, setCalendarsLoading] = useState(false)
   const [calendarsError, setCalendarsError] = useState<string | null>(null)
@@ -166,6 +189,16 @@ export function IntegrationsPanel() {
     boardName: string
     groupTitle?: string
   } | null>(null)
+  const [mcpAgentCount, setMcpAgentCount] = useState(0)
+
+  const loadMcpAgents = useCallback(async () => {
+    try {
+      const data = await clusterApi.mcpAgents()
+      setMcpAgentCount(data.agents.length)
+    } catch {
+      setMcpAgentCount(0)
+    }
+  }, [])
 
   const refreshConnections = useCallback(async () => {
     const data = await integrationApi.connections()
@@ -226,7 +259,12 @@ export function IntegrationsPanel() {
 
   useEffect(() => {
     void refreshConnections()
-  }, [refreshConnections])
+    void loadMcpAgents()
+  }, [refreshConnections, loadMcpAgents])
+
+  useEffect(() => {
+    if (selected === 'agents') void loadMcpAgents()
+  }, [selected, loadMcpAgents])
 
   useEffect(() => {
     if (selected !== 'claude') return
@@ -361,10 +399,18 @@ export function IntegrationsPanel() {
       const calCount = gmailAccounts.filter((a) => a.calendarEnabled).length
       return `${gmailAccounts.length} account${gmailAccounts.length === 1 ? '' : 's'} · ${feedCount} in feed · ${calCount} calendar`
     }
+    if (id === 'calcom' && connections.connected.calcom) {
+      return 'Bookings sync to feed'
+    }
     if (id === 'monday' && connections.connected.monday) {
       if (mondayAccount?.email) return mondayAccount.email
       if (mondayAccount?.name) return mondayAccount.name
       return 'Connected · active in stream'
+    }
+    if (id === 'agents') {
+      return mcpAgentCount > 0
+        ? `${mcpAgentCount} agent${mcpAgentCount === 1 ? '' : 's'} registered`
+        : 'Register stdio or HTTP MCP servers'
     }
     if (connections.connected[id]) return 'Active in stream'
     return 'Tap to connect'
@@ -423,6 +469,70 @@ export function IntegrationsPanel() {
                   </button>
                 </>
               ) : null}
+            </p>
+          ) : null}
+          {connections?.syncErrors?.gdocs ? (
+            <p className="x-int-alert">
+              {connections.syncErrors.gdocs}
+              {connections.googleApiEnable?.gdocsDrive ? (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className="x-settings-link"
+                    onClick={() =>
+                      window.notchDesktop?.openExternal?.(connections.googleApiEnable!.gdocsDrive!)
+                    }
+                  >
+                    Enable Drive API
+                  </button>
+                </>
+              ) : null}
+              {connections.googleApiEnable?.gdocsDocs ? (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className="x-settings-link"
+                    onClick={() =>
+                      window.notchDesktop?.openExternal?.(connections.googleApiEnable!.gdocsDocs!)
+                    }
+                  >
+                    Enable Docs API
+                  </button>
+                </>
+              ) : null}
+            </p>
+          ) : connections?.connected.gdocs &&
+            (connections.googleApiEnable?.gdocsDrive || connections.googleApiEnable?.gdocsDocs) ? (
+            <p className="x-int-muted">
+              First-time setup: enable{' '}
+              {connections.googleApiEnable?.gdocsDocs ? (
+                <button
+                  type="button"
+                  className="x-settings-link"
+                  onClick={() =>
+                    window.notchDesktop?.openExternal?.(connections.googleApiEnable!.gdocsDocs!)
+                  }
+                >
+                  Google Docs API
+                </button>
+              ) : null}
+              {connections.googleApiEnable?.gdocsDrive && connections.googleApiEnable?.gdocsDocs
+                ? ' and '
+                : null}
+              {connections.googleApiEnable?.gdocsDrive ? (
+                <button
+                  type="button"
+                  className="x-settings-link"
+                  onClick={() =>
+                    window.notchDesktop?.openExternal?.(connections.googleApiEnable!.gdocsDrive!)
+                  }
+                >
+                  Google Drive API
+                </button>
+              ) : null}{' '}
+              in your GCP OAuth project, then reconnect Gmail.
             </p>
           ) : null}
 
@@ -512,6 +622,23 @@ export function IntegrationsPanel() {
       )
     }
 
+    if (selected === 'agents') {
+      return (
+        <div className="x-int-detail">
+          <div className="x-int-detail-head">
+            <div>
+              <h3>MCP Agents</h3>
+              <p>
+                Register MCP servers your agency already runs. Config persists in{' '}
+                <code>~/.stream-app/mcp-agents.json</code>.
+              </p>
+            </div>
+          </div>
+          <McpAgentsSection />
+        </div>
+      )
+    }
+
     if (selected === 'monday') {
       return (
         <div className="x-int-detail">
@@ -559,6 +686,11 @@ export function IntegrationsPanel() {
 
           <div className="x-int-block x-int-block-first">
             <h4>{connections?.connected.monday ? 'Update token' : 'Connect'}</h4>
+            <p className="x-int-muted">
+              Use a token with <strong>boards:write</strong> and <strong>updates:write</strong>{' '}
+              scopes so meeting approve and <code>@monday</code> compose can create tasks. Read-only
+              tokens sync the feed but cannot create items.
+            </p>
             <div className="x-int-token-row">
               <input
                 className="x-int-input"
@@ -574,9 +706,14 @@ export function IntegrationsPanel() {
                 disabled={!mondayToken.trim()}
                 onClick={async () => {
                   try {
-                    await integrationApi.connectMondayToken(mondayToken.trim())
+                    const result = await integrationApi.connectMondayToken(mondayToken.trim())
                     setMondayToken('')
-                    setStatus('Monday connected and synced.')
+                    setStatus(
+                      result.warning ??
+                        (result.writeAccess === false
+                          ? 'Monday connected (read-only) — regenerate token with write scopes to create tasks.'
+                          : 'Monday connected and synced.')
+                    )
                     await refreshConnections()
                     await loadMondayAccount()
                     await loadMondayCreateTarget()
@@ -677,6 +814,7 @@ export function IntegrationsPanel() {
                   try {
                     const res = await integrationApi.syncSource('gdocs')
                     setStatus(`Google Docs synced (${res.count} items).`)
+                    void refreshConnections()
                   } catch (err) {
                     setStatus(`Docs sync failed: ${String(err)}`)
                   }
@@ -684,6 +822,69 @@ export function IntegrationsPanel() {
               >
                 Sync docs now
               </button>
+            ) : null}
+            {connections?.syncErrors?.gdocs ? (
+              <p className="x-int-alert">
+                {connections.syncErrors.gdocs}
+                {connections.googleApiEnable?.gdocsDrive ? (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      className="x-settings-link"
+                      onClick={() =>
+                        window.notchDesktop?.openExternal?.(connections.googleApiEnable!.gdocsDrive!)
+                      }
+                    >
+                      Enable Drive API
+                    </button>
+                  </>
+                ) : null}
+                {connections.googleApiEnable?.gdocsDocs ? (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      className="x-settings-link"
+                      onClick={() =>
+                        window.notchDesktop?.openExternal?.(connections.googleApiEnable!.gdocsDocs!)
+                      }
+                    >
+                      Enable Docs API
+                    </button>
+                  </>
+                ) : null}
+              </p>
+            ) : connections?.googleApiEnable?.gdocsDrive || connections?.googleApiEnable?.gdocsDocs ? (
+              <p className="x-int-muted">
+                Enable{' '}
+                {connections.googleApiEnable?.gdocsDocs ? (
+                  <button
+                    type="button"
+                    className="x-settings-link"
+                    onClick={() =>
+                      window.notchDesktop?.openExternal?.(connections.googleApiEnable!.gdocsDocs!)
+                    }
+                  >
+                    Docs API
+                  </button>
+                ) : null}
+                {connections.googleApiEnable?.gdocsDrive && connections.googleApiEnable?.gdocsDocs
+                  ? ' + '
+                  : null}
+                {connections.googleApiEnable?.gdocsDrive ? (
+                  <button
+                    type="button"
+                    className="x-settings-link"
+                    onClick={() =>
+                      window.notchDesktop?.openExternal?.(connections.googleApiEnable!.gdocsDrive!)
+                    }
+                  >
+                    Drive API
+                  </button>
+                ) : null}{' '}
+                in GCP project {connections.googleApiEnable?.gdocsDrive?.match(/project=(\d+)/)?.[1] ?? 'from your OAuth client'}.
+              </p>
             ) : null}
           </div>
         </div>
@@ -1167,41 +1368,190 @@ export function IntegrationsPanel() {
       )
     }
 
+    if (selected === 'calcom') {
+      const connectCalcomOAuth = async () => {
+        try {
+          const { url } = await integrationApi.calcomAuthUrl()
+          if (window.notchDesktop?.openExternal) {
+            window.notchDesktop.openExternal(url)
+          } else {
+            window.open(url, '_blank', 'noopener,noreferrer')
+          }
+          setStatus('Complete Cal.com sign-in in your browser, then return here and sync.')
+        } catch (err) {
+          setStatus(`Cal.com OAuth failed: ${String(err)}`)
+        }
+      }
+
+      return (
+        <div className="x-int-detail">
+          <div className="x-int-detail-head">
+            <div>
+              <h3>Cal.com</h3>
+              <p>
+                API key syncs bookings and powers post-call follow-up scheduling. OAuth is optional
+                if your client is approved.
+              </p>
+            </div>
+          </div>
+          <div className="x-int-block x-int-block-first">
+            <h4>{connections?.connected.calcom ? 'Update API key' : 'Connect'}</h4>
+            <div className="x-int-token-stack">
+              <input
+                className="x-int-input"
+                value={calcomKey}
+                onChange={(e) => setCalcomKey(e.target.value)}
+                placeholder="Cal.com API key (cal_live_…)"
+                type="password"
+                autoComplete="off"
+              />
+              <input
+                className="x-int-input"
+                value={calcomUsername}
+                onChange={(e) => setCalcomUsername(e.target.value)}
+                placeholder="Cal.com username (optional)"
+              />
+              <input
+                className="x-int-input"
+                value={calcomEventTypeId}
+                onChange={(e) => setCalcomEventTypeId(e.target.value)}
+                placeholder="Event type ID (optional — skips slug lookup)"
+              />
+              <button
+                type="button"
+                className="x-int-btn x-int-btn-wide"
+                disabled={!calcomKey.trim()}
+                onClick={async () => {
+                  try {
+                    const res = await integrationApi.connectCalcom(
+                      calcomKey.trim(),
+                      calcomUsername.trim() || undefined,
+                      calcomEventTypeId.trim() || undefined
+                    )
+                    setCalcomKey('')
+                    const label = res.accountLabel ? ` (${res.accountLabel})` : ''
+                    setStatus(
+                      `Cal.com connected${label} — synced ${res.count} booking${res.count === 1 ? '' : 's'}.`
+                    )
+                    await refreshConnections()
+                  } catch (err) {
+                    setStatus(`Cal.com connect failed: ${String(err)}`)
+                  }
+                }}
+              >
+                {connections?.connected.calcom ? 'Update' : 'Connect'}
+              </button>
+            </div>
+            <p className="x-int-muted">
+              Create a key at{' '}
+              <a
+                href="https://app.cal.com/settings/developer/api-keys"
+                target="_blank"
+                rel="noreferrer"
+              >
+                app.cal.com/settings/developer/api-keys
+              </a>
+              . Set <code>CALCOM_DEFAULT_EVENT_TYPE_SLUG</code> in <code>.env.local</code> for
+              post-call booking. Post-call routing proposes a <strong>Cal.com follow-up</strong>{' '}
+              action when the call mentions scheduling the next meeting.
+            </p>
+          </div>
+          {connections?.connected.calcom ? (
+            <div className="x-int-block">
+              <h4>Sync bookings</h4>
+              <p className="x-int-muted">Pull upcoming and recent past bookings into the stream.</p>
+              <button
+                type="button"
+                className="x-int-btn x-int-btn-secondary"
+                onClick={async () => {
+                  try {
+                    const res = await integrationApi.syncSource('calcom')
+                    setStatus(`Synced ${res.count} Cal.com booking${res.count === 1 ? '' : 's'}`)
+                    await refreshConnections()
+                  } catch (err) {
+                    setStatus(`Cal.com sync failed: ${String(err)}`)
+                  }
+                }}
+              >
+                Sync now
+              </button>
+            </div>
+          ) : null}
+          <div className="x-int-block">
+            <h4>OAuth (optional)</h4>
+            <p className="x-int-muted">
+              Requires <code>CALCOM_CLIENT_ID</code> / <code>CALCOM_CLIENT_SECRET</code> in{' '}
+              <code>.env.local</code> and Cal.com admin approval.
+            </p>
+            <button type="button" className="x-int-btn x-int-btn-ghost" onClick={() => void connectCalcomOAuth()}>
+              Connect via OAuth
+            </button>
+          </div>
+        </div>
+      )
+    }
+
     if (selected === 'x') {
+      const connectXOAuth = async () => {
+        try {
+          const { url } = await integrationApi.xAuthUrl()
+          if (window.notchDesktop?.openExternal) {
+            window.notchDesktop.openExternal(url)
+          } else {
+            window.open(url, '_blank', 'noopener,noreferrer')
+          }
+          setStatus('Complete X sign-in in your browser, then return here.')
+        } catch (err) {
+          setStatus(`X OAuth failed: ${String(err)}`)
+        }
+      }
+
       return (
         <div className="x-int-detail">
           <div className="x-int-detail-head">
             <div>
               <h3>X</h3>
-              <p>Paste a bearer token to ingest timeline posts into your feed.</p>
+              <p>Connect with OAuth to sync your timeline into the feed.</p>
             </div>
-          </div>
-          <div className="x-int-token-row">
-            <input
-              className="x-int-input"
-              value={xToken}
-              onChange={(e) => setXToken(e.target.value)}
-              placeholder="X bearer token"
-              type="password"
-              autoComplete="off"
-            />
-            <button
-              type="button"
-              className="x-int-btn"
-              disabled={!xToken.trim()}
-              onClick={async () => {
-                try {
-                  await integrationApi.connectXToken(xToken.trim())
-                  setXToken('')
-                  setStatus('X connected and synced.')
-                  await refreshConnections()
-                } catch (err) {
-                  setStatus(`X connect failed: ${String(err)}`)
-                }
-              }}
-            >
-              {connections?.connected.x ? 'Update token' : 'Connect'}
+            <button type="button" className="x-int-btn" onClick={() => void connectXOAuth()}>
+              {connections?.connected.x ? 'Reconnect X' : 'Connect X'}
             </button>
+          </div>
+          <p className="x-int-muted">
+            Requires <code>X_CLIENT_ID</code> / <code>X_CLIENT_SECRET</code> in{' '}
+            <code>.env.local</code> and callback{' '}
+            <code>http://localhost:3131/api/auth/x/callback</code> in the X developer portal.
+          </p>
+          <div className="x-int-block">
+            <h4>Or paste bearer token</h4>
+            <p className="x-int-muted">App-only bearer tokens cannot read your home timeline — prefer OAuth above.</p>
+            <div className="x-int-token-row">
+              <input
+                className="x-int-input"
+                value={xToken}
+                onChange={(e) => setXToken(e.target.value)}
+                placeholder="X bearer token"
+                type="password"
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                className="x-int-btn"
+                disabled={!xToken.trim()}
+                onClick={async () => {
+                  try {
+                    await integrationApi.connectXToken(xToken.trim())
+                    setXToken('')
+                    setStatus('X connected and synced.')
+                    await refreshConnections()
+                  } catch (err) {
+                    setStatus(`X connect failed: ${String(err)}`)
+                  }
+                }}
+              >
+                Save token
+              </button>
+            </div>
           </div>
         </div>
       )
@@ -1278,7 +1628,10 @@ export function IntegrationsPanel() {
       <div className="x-int-body">
         <div className="x-int-grid">
           {INTEGRATIONS.map((item) => {
-            const connected = connections?.connected[item.id] ?? false
+            const connected =
+              item.id === 'agents'
+                ? mcpAgentCount > 0
+                : (connections?.connected[item.id] ?? false)
             const isSelected = selected === item.id
             return (
               <button

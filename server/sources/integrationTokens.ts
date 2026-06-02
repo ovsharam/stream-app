@@ -12,7 +12,8 @@ const CONNECTION_SOURCES = new Set([
   'github',
   'gemini',
   'gdocs',
-  'gong'
+  'gong',
+  'calcom'
 ])
 
 export function connectWithToken(

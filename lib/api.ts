@@ -50,6 +50,13 @@ export const api = {
   authGmail: () => request<{ url: string }>('/auth/gmail'),
   authSlack: () => request<{ url: string }>('/auth/slack'),
   authX: () => request<{ url: string; state: string }>('/auth/x'),
+  authCalcom: () =>
+    request<{ url: string; state: string; accountLabel?: string }>('/auth/calcom/oauth'),
+  connectCalcom: (apiKey: string, username?: string, eventTypeId?: string) =>
+    request<{ ok: boolean; count: number; accountLabel?: string }>('/auth/calcom', {
+      method: 'POST',
+      body: JSON.stringify({ apiKey, username, eventTypeId })
+    }),
 
   connectPerplexity: (apiKey: string) =>
     request<{ ok: boolean }>('/auth/perplexity', {

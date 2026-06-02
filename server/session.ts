@@ -97,6 +97,7 @@ type SessionMeta = {
     gemini: boolean
     gdocs: boolean
     gong: boolean
+    calcom: boolean
   }
   preferences: { xMinEngagement: number; onboardingComplete: boolean }
 }
@@ -114,7 +115,8 @@ const DEFAULT_META: SessionMeta = {
     github: false,
     gemini: false,
     gdocs: false,
-    gong: false
+    gong: false,
+    calcom: false
   },
   preferences: { xMinEngagement: 0, onboardingComplete: false }
 }

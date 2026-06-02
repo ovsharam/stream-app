@@ -16,6 +16,7 @@ import { syncDiscord } from './sources/discord'
 import { syncGithub } from './sources/github'
 import { syncGdocs } from './sources/gdocs'
 import { syncGong } from './sources/gong'
+import { syncCalcom } from './sources/calcom'
 import { syncClaude } from './sources/claude'
 import { syncPerplexity } from './sources/perplexity'
 import { bootstrapSimGraph } from './sim/engine'
@@ -76,10 +77,11 @@ async function main(): Promise<void> {
       syncGdocs(io),
       syncGong(io),
       syncClaude(io),
-      syncPerplexity(io)
+      syncPerplexity(io),
+      syncCalcom(io)
     ])
     try {
-      ingestRecentStream(80)
+      ingestRecentStream(200)
     } catch (e) {
       console.warn('[kb] ingest skipped:', e instanceof Error ? e.message : e)
     }

@@ -1,10 +1,21 @@
 import type { AssistResult, ClusterContext, ClusterSearchHit } from '../../shared/cluster'
+import { cleanAssistField, cleanKbExcerpt, formatChatAssistBody } from '../../shared/assistText'
+import { buildAttentionDigest } from '../../shared/attentionDigest'
+import { sanitizeDisplayText } from '../../shared/displayText'
 import { getGraphSignals, getSimSignals, isSimCallActive } from '../sim/engine'
 import { getConnections } from '../store'
 import { getCachedCalendarEvents } from '../sources/calendar'
+import { getRecentItems } from '../db'
 
 const SAY_PATTERNS = /wtf|what do i say|how do i respond|help me answer|what should i say/i
 const AGENDA_PATTERNS = /next step|agenda|where do i go|pilot|close/i
+const ATTENTION_PATTERNS = /attention|priorit|today|open loops|what needs/i
+
+function bodyFromSearchHit(hit: ClusterSearchHit): string {
+  const item = getRecentItems(400).find((i) => i.id === hit.id)
+  const body = item ? String(item.bodyFull ?? item.body ?? item.title ?? '') : hit.snippet
+  return formatChatAssistBody(body)
+}
 
 export function buildClusterContext(): ClusterContext {
   const live = isSimCallActive()
@@ -108,63 +119,50 @@ export function buildClusterContext(): ClusterContext {
 }
 
 export function searchCluster(q: string): ClusterSearchHit[] {
-  const corpus: ClusterSearchHit[] = [
-    {
-      id: 'h1',
-      title: 'EU data residency — cross-case pattern',
-      snippet: 'NovaBank resolved in 48h with SCC. Pineapple stalled 3 weeks without IT sign-off.',
-      source: 'graph',
-      score: 0.96
-    },
-    {
-      id: 'h2',
-      title: 'Redwood HQ reference',
-      snippet: 'Similar scale, Frankfurt isolation, legal cleared SCC in 9 days. CISO: Dana Chen.',
-      source: 'gong',
-      score: 0.91
-    },
-    {
-      id: 'h3',
-      title: 'SCC template + DPA addendum',
-      snippet: 'Pre-signed SCC addendum — legal typically clears in under 10 days.',
-      source: 'drive',
-      score: 0.89
-    },
-    {
-      id: 'h4',
-      title: 'Pilot success criteria',
-      snippet: 'Ask: what does a successful 30-day pilot look like? Close on that before timeline.',
-      source: 'prep',
-      score: 0.87
-    },
-    {
-      id: 'h5',
-      title: 'Sarah Kim — champion notes',
-      snippet: 'Technically sharp. Prefers directness. Budget confirmed, needs legal/IT sign-off.',
-      source: 'email',
-      score: 0.85
-    },
-    {
-      id: 'h6',
-      title: 'Mark O\'Brien — economic buyer',
-      snippet: 'Added late. Likely pressure on cost/timeline. Confirm pilot scope before budget talk.',
-      source: 'calendar',
-      score: 0.82
+  const query = q.trim().toLowerCase()
+  if (!query) return []
+
+  const terms = query.split(/\s+/).filter((w) => w.length > 1)
+  const wantsMonday = /\bmonday\b/i.test(query)
+  const wantsTasks = /\btasks?\b/i.test(query)
+  const items = getRecentItems(400)
+  const hits: ClusterSearchHit[] = []
+
+  for (const item of items) {
+    const title = String(item.title ?? '')
+    const body = String(item.body ?? '')
+    const sender = String(item.sender?.name ?? '')
+    const hay = `${title} ${body} ${sender} ${item.source}`.toLowerCase()
+
+    const matches =
+      hay.includes(query) ||
+      (terms.length > 0 && terms.every((t) => hay.includes(t)))
+    if (!matches) continue
+
+    let score = 0.5
+    if (title.toLowerCase().includes(query)) score += 1.5
+    if (body.toLowerCase().includes(query)) score += 1
+    for (const t of terms) {
+      if (title.toLowerCase().includes(t)) score += 0.4
+      if (body.toLowerCase().includes(t)) score += 0.25
     }
-  ]
+    if (item.source === 'monday' || item.source === 'gmail') score += 0.15
+    if (wantsMonday && item.source === 'monday') score += 1.2
+    if (wantsTasks && (item.source === 'monday' || /task|item|todo/i.test(`${title} ${body}`))) score += 0.6
 
-  if (!q.trim()) return corpus.slice(0, 4)
+    const itemId = String(item.metadata?.itemId ?? item.id).replace(/^ext-/, '')
+    hits.push({
+      id: item.id,
+      title: sanitizeDisplayText(title.trim() || body.slice(0, 72).trim() || item.source, 120),
+      snippet: sanitizeDisplayText(body.slice(0, 160).trim() || title, 160),
+      source: item.source,
+      score,
+      itemId,
+      day: item.metadata?.day ? String(item.metadata.day) : undefined
+    })
+  }
 
-  const lower = q.toLowerCase()
-  return corpus
-    .filter(
-      (h) =>
-        h.title.toLowerCase().includes(lower) ||
-        h.snippet.toLowerCase().includes(lower) ||
-        lower.split(/\s+/).some((w) => w.length > 2 && h.snippet.toLowerCase().includes(w))
-    )
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 6)
+  return hits.sort((a, b) => b.score - a.score).slice(0, 14)
 }
 
 export function assistCluster(
@@ -252,31 +250,52 @@ export function assistCluster(
     }
   }
 
-  if (isAgenda) {
+  if (isAgenda || ATTENTION_PATTERNS.test(q)) {
+    const digest = buildAttentionDigest(getRecentItems(40))
+    if (digest) {
+      return {
+        query: q,
+        intent: 'agenda',
+        headline: 'Today',
+        response: digest,
+        sayThis:
+          '"Let me walk through the top items on your plate — we can knock out the quick ones first."',
+        sources: [...new Set(getRecentItems(8).map((i) => i.source))],
+        agendaNext: 'Review tasks → confirm calendar → skim FYI inbox',
+        trustNote: 'Prioritize items with external deadlines or waiting stakeholders.'
+      }
+    }
+
     return {
       query: q,
       intent: 'agenda',
-      headline: 'Next step on agenda',
+      headline: 'Today',
       response:
-        'You have two open loops: (1) pilot success criteria not defined — Mark will stall on timeline without it, (2) SCC template promised to Jen. Close the pilot definition first, then confirm SCC follow-up.',
+        'Nothing urgent flagged yet — connect Gmail or Monday in Apps, or start a meeting to capture context.',
       sayThis:
-        '"Before we talk timeline, I want to make sure we\'re aligned on what success looks like in the first 30 days — can we define that together now? Then I\'ll get the SCC template to Jen today."',
-      sources: ['prep', 'transcript', 'load-bearing-gaps'],
-      agendaNext: 'Define 30-day pilot success → confirm SCC send → schedule IT sign-off criteria in writing',
-      trustNote: 'Mark cares about commitment scope — frame pilot as bounded, not open-ended.'
+        '"Once your integrations sync, I can surface priorities here — want to connect email or calendar now?"',
+      sources: [],
+      agendaNext: 'Review top inbox items → confirm meeting prep → close one open loop before EOD',
+      trustNote: 'Prioritize items with external deadlines or waiting stakeholders.'
     }
   }
 
   const hits = searchCluster(q)
   const top = hits[0]
+  const responseBody = top
+    ? bodyFromSearchHit(top)
+    : 'No direct match — try asking "what do I say about GDPR?" during live calls.'
 
   return {
     query: q,
     intent: 'search',
     headline: top?.title ?? 'Context search',
-    response: top?.snippet ?? 'No direct match — try asking "what do I say about GDPR?" during live calls.',
+    response: responseBody,
     sayThis: top
-      ? `"Based on what we've seen with similar customers — ${top.snippet.split('.')[0]}. Happy to walk through specifics."`
+      ? (() => {
+          const first = cleanKbExcerpt(top.snippet.split(/[.!?]/)[0] ?? top.snippet, 120)
+          return first ? `"${first}."` : ''
+        })()
       : '"Let me make sure I give you a precise answer — can you help me understand the specific concern?"',
     sources: hits.slice(0, 3).map((h) => h.source),
     trustNote: 'When uncertain, ask a clarifying question — preserves CSAT better than guessing.'

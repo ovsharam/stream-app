@@ -118,13 +118,16 @@ function heuristicPlan(request: string): MondayNlpCreatePlan {
   if (addTo) {
     const groupHint = addTo[1].trim()
     const body = addTo[2].trim()
-    const titleLine = body.split('\n')[0]?.trim() ?? body
-    const shortTitle =
-      titleLine.length > 90 ? `${titleLine.slice(0, 87)}…` : titleLine.split(/[.!?]/)[0]?.trim() || titleLine
-    return {
-      itemTitle: shortTitle,
-      itemDescription: body,
-      groupHint
+    // Datetimes in meeting titles (e.g. "5/30/2026, 10:37 PM — follow-up") are not group names.
+    if (!/^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(groupHint)) {
+      const titleLine = body.split('\n')[0]?.trim() ?? body
+      const shortTitle =
+        titleLine.length > 90 ? `${titleLine.slice(0, 87)}…` : titleLine.split(/[.!?]/)[0]?.trim() || titleLine
+      return {
+        itemTitle: shortTitle,
+        itemDescription: body,
+        groupHint
+      }
     }
   }
 

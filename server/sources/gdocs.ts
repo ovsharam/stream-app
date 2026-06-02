@@ -4,7 +4,45 @@ import { normalizeGdocsItem } from '../normalizer'
 import { upsertItems, itemExists } from '../db'
 import type { StreamItem } from '../../shared/types'
 import { feedEnabledAccounts, feedEnabledAccountsAnySession } from './gmailAccounts'
-import { authClientForTokens, getGoogleApiKey } from './googleOAuth'
+import { authClientForTokens, googleOAuthProjectNumber } from './googleOAuth'
+
+let lastGdocsError: string | null = null
+
+export function getLastGdocsError(): string | null {
+  return lastGdocsError
+}
+
+/** Parse GCP project id from Google API error text. */
+export function gdocsProjectIdFromError(error: string | null): string | null {
+  if (!error) return null
+  const m = error.match(/project[=\s](\d+)/i)
+  return m?.[1] ?? null
+}
+
+export function gdocsApiEnableUrlsForProject(project?: string | null): {
+  drive: string
+  docs: string
+} {
+  const q = project ? `?project=${project}` : ''
+  return {
+    drive: `https://console.developers.google.com/apis/api/drive.googleapis.com/overview${q}`,
+    docs: `https://console.developers.google.com/apis/api/docs.googleapis.com/overview${q}`
+  }
+}
+
+export function gdocsApiEnableUrls(error: string | null): {
+  drive?: string
+  docs?: string
+} {
+  const project = gdocsProjectIdFromError(error) ?? googleOAuthProjectNumber()
+  if (!project) return {}
+  return gdocsApiEnableUrlsForProject(project)
+}
+
+export function gdocsNeedsApiEnable(error: string | null): boolean {
+  if (!error) return false
+  return /has not been used|is disabled|accessNotConfigured|403/i.test(error)
+}
 
 export async function isGdocsConnected(): Promise<boolean> {
   return (await feedEnabledAccountsAnySession()).length > 0
@@ -15,10 +53,9 @@ async function docsClient() {
   const account = accounts[0] ?? (await feedEnabledAccountsAnySession())[0]
   if (!account) throw new Error('Connect Gmail with Docs scope first')
   const auth = authClientForTokens(account.tokens)
-  const apiKey = getGoogleApiKey()
   return {
-    drive: google.drive({ version: 'v3', auth, ...(apiKey ? { apiKey } : {}) }),
-    docs: google.docs({ version: 'v1', auth, ...(apiKey ? { apiKey } : {}) }),
+    drive: google.drive({ version: 'v3', auth }),
+    docs: google.docs({ version: 'v1', auth }),
     accountEmail: account.email
   }
 }
@@ -50,6 +87,8 @@ export async function syncGdocs(io?: SocketServer): Promise<StreamItem[]> {
       )
     }
 
+    lastGdocsError = null
+
     if (items.length > 0) {
       const fresh = items.filter((i) => !itemExists(i.id))
       upsertItems(items)
@@ -57,6 +96,8 @@ export async function syncGdocs(io?: SocketServer): Promise<StreamItem[]> {
     }
     return items
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    lastGdocsError = message
     console.error('[gdocs] sync failed:', err)
     return []
   }
@@ -66,36 +107,39 @@ export async function createGoogleDoc(input: {
   title: string
   body?: string
 }): Promise<{ id: string; url: string }> {
-  const { drive, docs } = await docsClient()
-  const created = await drive.files.create({
-    requestBody: {
-      name: input.title,
-      mimeType: 'application/vnd.google-apps.document'
-    },
-    fields: 'id,webViewLink'
-  })
-  const id = created.data.id
-  if (!id) throw new Error('Google Docs did not return file id')
-
-  if (input.body?.trim()) {
-    await docs.documents.batchUpdate({
-      documentId: id,
-      requestBody: {
-        requests: [
-          {
-            insertText: {
-              location: { index: 1 },
-              text: input.body.trim()
-            }
-          }
-        ]
-      }
+  const { docs } = await docsClient()
+  try {
+    const created = await docs.documents.create({
+      requestBody: { title: input.title }
     })
-  }
+    const id = created.data.documentId
+    if (!id) throw new Error('Google Docs did not return document id')
 
-  return {
-    id,
-    url: created.data.webViewLink ?? `https://docs.google.com/document/d/${id}`
+    if (input.body?.trim()) {
+      await docs.documents.batchUpdate({
+        documentId: id,
+        requestBody: {
+          requests: [
+            {
+              insertText: {
+                location: { index: 1 },
+                text: input.body.trim()
+              }
+            }
+          ]
+        }
+      })
+    }
+
+    lastGdocsError = null
+    return {
+      id,
+      url: `https://docs.google.com/document/d/${id}/edit`
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    lastGdocsError = message
+    throw err
   }
 }
 

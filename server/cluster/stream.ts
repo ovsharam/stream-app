@@ -1,5 +1,7 @@
 import type { CentralStreamEvent } from '../../shared/cluster'
 import { getRecentItems } from '../db'
+import { getActiveMeeting } from './meetingPipeline'
+import { prototypeRealEnabled } from '../prototype'
 import { getSimIntel, getSimSignals, getSimTranscript, isSimCallActive } from '../sim/engine'
 
 type UserRole = 'ae' | 'am' | 'csm' | 'fde'
@@ -16,8 +18,13 @@ type ExternalSource =
   | 'github'
   | 'gdocs'
   | 'gong'
+  | 'calcom'
   | 'meeting'
   | 'note'
+
+function isDemoStreamMode(): boolean {
+  return process.env.DEMO_MODE === '1' || process.env.SIMULATION_MODE === 'true'
+}
 
 function hash(input: string): string {
   let h = 0
@@ -108,6 +115,7 @@ function externalEvents(now: number): CentralStreamEvent[] {
       'github',
       'gdocs',
       'gong',
+      'calcom',
       'meeting',
       'note'
     ].includes(item.source)
@@ -213,7 +221,10 @@ function externalEvents(now: number): CentralStreamEvent[] {
       meta: {
         sender: item.sender.name,
         source: item.source,
-        itemId: item.id,
+        itemId:
+          item.source === 'monday' && item.metadata?.itemId
+            ? String(item.metadata.itemId)
+            : item.id,
         ...(item.metadata?.threadId ? { threadId: String(item.metadata.threadId) } : {}),
         ...(item.metadata?.accountId ? { accountId: String(item.metadata.accountId) } : {}),
         ...(item.metadata?.accountEmail
@@ -232,6 +243,27 @@ function externalEvents(now: number): CentralStreamEvent[] {
         ...(item.metadata?.documentId ? { documentId: String(item.metadata.documentId) } : {}),
         ...(item.metadata?.callId ? { callId: String(item.metadata.callId) } : {}),
         ...(item.metadata?.sessionId ? { sessionId: String(item.metadata.sessionId) } : {}),
+        ...(item.metadata?.googleDocUrl
+          ? { googleDocUrl: String(item.metadata.googleDocUrl) }
+          : {}),
+        ...(item.metadata?.googleDocError
+          ? { googleDocError: String(item.metadata.googleDocError) }
+          : {}),
+        ...(item.source === 'meeting' && item.metadata?.nextSteps
+          ? { nextSteps: JSON.stringify(item.metadata.nextSteps) }
+          : {}),
+        ...(item.source === 'meeting' && item.metadata?.buildPrompt
+          ? { buildPrompt: String(item.metadata.buildPrompt) }
+          : {}),
+        ...(item.source === 'meeting' && item.metadata?.scopeDecision
+          ? { scopeDecision: String(item.metadata.scopeDecision) }
+          : {}),
+        ...(item.source === 'meeting' && item.metadata?.proposedActions
+          ? { proposedActions: JSON.stringify(item.metadata.proposedActions) }
+          : {}),
+        ...(item.source === 'meeting' && item.metadata?.approvedActions
+          ? { approvedActions: JSON.stringify(item.metadata.approvedActions) }
+          : {}),
         ...(item.metadata?.projectLabel ? { projectLabel: String(item.metadata.projectLabel) } : {})
       }
     }))
@@ -243,20 +275,55 @@ function externalEvents(now: number): CentralStreamEvent[] {
   return nonMondayEvents.sort((a, b) => b.ts - a.ts)
 }
 
-export function getCentralStream(role: UserRole = 'ae'): CentralStreamEvent[] {
-  const live = isSimCallActive()
-  const now = Date.now()
-  const external = externalEvents(now)
+function realMeetingEvents(now: number): CentralStreamEvent[] {
+  const session = getActiveMeeting()
+  if (!session) return []
 
+  const transcriptEvents: CentralStreamEvent[] = session.chunks
+    .slice(-14)
+    .reverse()
+    .map((chunk, idx) => ({
+      id: `meet-tx-${session.id}-${chunk.ts}-${idx}`,
+      ts: chunk.ts || now - idx * 2000,
+      source: 'notch',
+      kind: 'transcript_live',
+      title: session.title ?? session.dealHint ?? 'Live call',
+      body: chunk.text,
+      speaker: 'Call'
+    }))
+
+  const signalEvents: CentralStreamEvent[] = session.signals
+    .slice(-8)
+    .reverse()
+    .map((sig, idx) => ({
+      id: `meet-sig-${session.id}-${sig.ts}-${idx}`,
+      ts: sig.ts || now - 30000 - idx * 2000,
+      source: 'notch',
+      kind: 'signal',
+      title: 'Signal extracted',
+      body: `${sig.type} · ${sig.text}`,
+      meta: { confidence: '0.8' }
+    }))
+
+  return [...transcriptEvents, ...signalEvents]
+}
+
+function dedupeSort(events: CentralStreamEvent[]): CentralStreamEvent[] {
+  const unique = new Map<string, CentralStreamEvent>()
+  for (const e of events) if (!unique.has(e.id)) unique.set(e.id, e)
+  return [...unique.values()].sort((a, b) => b.ts - a.ts)
+}
+
+function simLiveEvents(role: UserRole, now: number): CentralStreamEvent[] {
   const transcriptEvents: CentralStreamEvent[] = getSimTranscript()
     .slice(-14)
     .reverse()
     .map((line, idx) => ({
       id: `tx-${hash(`${line.speaker}:${line.text}`)}`,
       ts: now - idx * 3000,
-      source: 'notch',
-      kind: 'transcript_live',
-      title: 'Transcribing…',
+      source: 'notch' as const,
+      kind: 'transcript_live' as const,
+      title: 'Acme Corp · Discovery',
       body: line.text,
       speaker: line.speaker
     }))
@@ -267,8 +334,8 @@ export function getCentralStream(role: UserRole = 'ae'): CentralStreamEvent[] {
     .map((sig, idx) => ({
       id: `sig-${hash(`${sig.type}:${sig.content}`)}`,
       ts: now - 45000 - idx * 3000,
-      source: 'notch',
-      kind: 'signal',
+      source: 'notch' as const,
+      kind: 'signal' as const,
       title: 'Signal extracted',
       body: `${sig.type} · ${sig.content}`,
       meta: { confidence: String(sig.confidence) }
@@ -304,15 +371,23 @@ export function getCentralStream(role: UserRole = 'ae'): CentralStreamEvent[] {
   const gongEvent = gongRoleEvent(role, now)
   if (gongEvent) intelEvents.push(gongEvent)
 
-  if (!live) {
-    const mergedIdle = gongEvent
-      ? [gongEvent, ...external]
-      : [...external]
-    return mergedIdle.sort((a, b) => b.ts - a.ts)
+  return dedupeSort([...transcriptEvents, ...signalEvents, ...intelEvents])
+}
+
+export function getCentralStream(role: UserRole = 'ae'): CentralStreamEvent[] {
+  const now = Date.now()
+  const external = externalEvents(now)
+
+  if (prototypeRealEnabled() && !isDemoStreamMode()) {
+    const realSession = getActiveMeeting()
+    if (realSession) {
+      return dedupeSort([...realMeetingEvents(now), ...external])
+    }
   }
 
-  const merged = [...transcriptEvents, ...signalEvents, ...intelEvents, ...external]
-  const unique = new Map<string, CentralStreamEvent>()
-  for (const e of merged) if (!unique.has(e.id)) unique.set(e.id, e)
-  return [...unique.values()].sort((a, b) => b.ts - a.ts)
+  if (isSimCallActive()) {
+    return dedupeSort([...simLiveEvents(role, now), ...external])
+  }
+
+  return external.sort((a, b) => b.ts - a.ts)
 }

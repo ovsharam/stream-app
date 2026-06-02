@@ -20,10 +20,14 @@ export async function initDb(dataDir: string): Promise<void> {
 }
 
 export function upsertItem(item: StreamItem): void {
-  if (useMemory()) return memoryStore.upsertItem(item)
-  // sync init path — local dev initializes before calls
-  const mod = require('./db-sqlite') as typeof import('./db-sqlite')
-  mod.upsertItem(item)
+  if (useMemory()) {
+    memoryStore.upsertItem(item)
+  } else {
+    const mod = require('./db-sqlite') as typeof import('./db-sqlite')
+    mod.upsertItem(item)
+  }
+  const { autoIngestStreamItem } = require('./kb/ingestHook') as typeof import('./kb/ingestHook')
+  autoIngestStreamItem(item)
 }
 
 export function upsertItems(items: StreamItem[]): void {

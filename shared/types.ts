@@ -11,6 +11,7 @@ export type StreamSource =
   | 'gemini'
   | 'gdocs'
   | 'gong'
+  | 'calcom'
   | 'meeting'
   | 'note'
 

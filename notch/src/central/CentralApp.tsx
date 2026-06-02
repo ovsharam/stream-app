@@ -1,70 +1,32 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ClusterSearchHit } from '@shared/cluster'
 import { FeedPost } from './FeedPost'
-import { RailWidgets } from './RailWidgets'
+import { WorkView } from './WorkView'
+import { ContextRail } from './ContextRail'
 import { IntegrationsPanel } from './IntegrationsPanel'
+import { SideNav, type NavTarget } from './SideNav'
 import { SettingsPanel } from './SettingsPanel'
 import { ThemeMenu } from './ThemeMenu'
 import { ThreadBlade } from './ThreadBlade'
 import { WorkspaceView } from './WorkspaceView'
+import { WorkspaceTabBar } from './WorkspaceTabBar'
+import { FeedSearchBar, filterFeedEvents } from './FeedSearchBar'
 import { useCentralStream } from './useCentralStream'
 import { parseComposeCommand } from '@shared/compose'
-import { clusterApi } from '../lib/api'
-import { toWorkspaceTab, type WorkspaceTab } from './workspace'
+import { clusterApi, integrationApi } from '../lib/api'
+import { tabFromCalendarEvent, tabFromUrl, toWorkspaceTab, type WorkspaceTab } from './workspace'
 import {
-  IconBell,
-  IconBookmark,
   IconEmoji,
   IconGif,
-  IconHome,
-  IconIntegrations,
-  IconMedia,
-  IconNotch,
-  IconSearch,
-  IconSettings,
-  IconSpark,
-  IconUser
+  IconMedia
 } from './Icons'
 
-type Tab = 'foryou' | 'live' | 'signals'
+type Tab = 'foryou' | 'signals'
+type Area = 'work' | 'feed'
 type Page = 'stream' | 'settings' | 'integrations'
-
-const NAV: {
-  id: string
-  label: string
-  tab?: Tab
-  page?: Page
-  badge?: boolean
-}[] = [
-  { id: 'foryou', label: 'Home', tab: 'foryou' },
-  { id: 'live', label: 'Live', tab: 'live', badge: true },
-  { id: 'signals', label: 'Signals', tab: 'signals' },
-  { id: 'bookmarks', label: 'Graph' },
-  { id: 'integrations', label: 'Integrations', page: 'integrations' },
-  { id: 'settings', label: 'Settings', page: 'settings' }
-]
 
 function streamItemId(event: { id: string; meta?: Record<string, unknown> }): string {
   return String(event.meta?.itemId ?? event.id.replace(/^ext-/, ''))
-}
-
-function NavIcon({ id }: { id: string }) {
-  const cls = 'x-nav-icon'
-  switch (id) {
-    case 'foryou':
-      return <IconHome className={cls} />
-    case 'live':
-      return <IconBell className={cls} />
-    case 'signals':
-      return <IconSpark className={cls} />
-    case 'bookmarks':
-      return <IconBookmark className={cls} />
-    case 'integrations':
-      return <IconIntegrations className={cls} />
-    case 'settings':
-      return <IconSettings className={cls} />
-    default:
-      return <IconUser className={cls} />
-  }
 }
 
 export function CentralApp() {
@@ -84,9 +46,11 @@ export function CentralApp() {
     }
   })()
 
-  const { events, live } = useCentralStream()
+  const { events, live, syncing } = useCentralStream()
+  const [area, setArea] = useState<Area>('work')
   const [tab, setTab] = useState<Tab>('foryou')
   const [page, setPage] = useState<Page>('stream')
+  const [focusMeetingItemId, setFocusMeetingItemId] = useState<string | null>(null)
   const [compose, setCompose] = useState('')
   const [composeBusy, setComposeBusy] = useState(false)
   const [composeToast, setComposeToast] = useState<string | null>(null)
@@ -95,52 +59,107 @@ export function CentralApp() {
   const [themeOpen, setThemeOpen] = useState(false)
   const themeBtnRef = useRef<HTMLButtonElement>(null)
   const [threadTarget, setThreadTarget] = useState<{ itemId: string; day?: string } | null>(null)
+  const [feedQuery, setFeedQuery] = useState('')
   const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>(persistedTabs)
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
     persistedActive ?? persistedTabs.at(-1)?.id ?? null
   )
+  const [homeChatRail, setHomeChatRail] = useState(false)
+  const autoShadedRef = useRef(new Set<string>())
 
   const filtered =
-    tab === 'live'
-      ? events.filter((e) =>
-          ['transcript_live', 'assist', 'transcript_done'].includes(e.kind)
+    tab === 'signals'
+      ? events.filter((e) => ['signal', 'insight', 'build_prompt'].includes(e.kind))
+      : events.filter(
+          (e) =>
+            e.kind !== 'transcript_live' &&
+            e.kind !== 'signal' &&
+            e.kind !== 'assist' &&
+            !(e.kind === 'insight' && e.source === 'gong') &&
+            !(e.source === 'meet' && e.joinable && e.meta?.live === 'true')
         )
-      : tab === 'signals'
-        ? events.filter((e) => ['signal', 'insight', 'build_prompt'].includes(e.kind))
-        : events.filter(
-            (e) =>
-              e.kind !== 'transcript_live' &&
-              !(e.source === 'meet' && e.joinable && e.meta?.live === 'true')
-          )
+
+  const feedFiltered = useMemo(
+    () => filterFeedEvents(filtered, feedQuery),
+    [filtered, feedQuery]
+  )
+
+  const openThreadFromSearch = (hit: import('@shared/cluster').ClusterSearchHit) => {
+    const itemId = hit.itemId ?? hit.id.replace(/^ext-/, '')
+    const threadable = hit.source === 'monday' || hit.source === 'gmail'
+    if (threadable && itemId) {
+      setThreadTarget({ itemId, day: hit.day })
+      setContextItemId(itemId)
+    }
+    setFeedQuery(hit.title.slice(0, 80))
+  }
 
   const feedTabs: { id: Tab; label: string }[] = [
     { id: 'foryou', label: 'For you' },
-    { id: 'live', label: 'Live' },
     { id: 'signals', label: 'Signals' }
   ]
 
-  const onNav = (item: (typeof NAV)[0]) => {
+  const refreshStream = () => window.dispatchEvent(new Event('notch:stream-push'))
+
+  const openSearchHit = (hit: ClusterSearchHit) => {
+    setPage('stream')
+    setArea('feed')
+    const itemId = hit.itemId ?? hit.id.replace(/^ext-/, '')
+    if (hit.source === 'monday' || hit.source === 'gmail') {
+      setThreadTarget({ itemId, day: hit.day })
+      setContextItemId(itemId)
+    }
+  }
+
+  const openMeetingInWork = (itemId: string) => {
+    setPage('stream')
+    setArea('work')
+    setFocusMeetingItemId(itemId)
+  }
+
+  const onNav = (item: NavTarget) => {
     if (item.page) {
       setPage(item.page)
       return
     }
     setPage('stream')
+    if (item.area) setArea(item.area)
     if (item.tab) setTab(item.tab)
+    setActiveWorkspaceId(null)
+  }
+
+  const openAgentsFeed = () => {
+    setPage('stream')
+    setArea('feed')
+    setTab('signals')
+    setActiveWorkspaceId(null)
+    setFocusMeetingItemId(null)
+  }
+
+  const goHome = () => {
+    setPage('stream')
+    setArea('work')
+    setTab('foryou')
+    setActiveWorkspaceId(null)
+    setFocusMeetingItemId(null)
+  }
+
+  const openWorkspaceTab = (tab: WorkspaceTab, opts?: { activate?: boolean }) => {
+    setWorkspaceTabs((prev) => {
+      const existing = prev.find((t) => t.id === tab.id)
+      if (existing) {
+        if (opts?.activate !== false) setActiveWorkspaceId(existing.id)
+        return prev
+      }
+      if (opts?.activate !== false) setActiveWorkspaceId(tab.id)
+      return [...prev, tab]
+    })
   }
 
   const openWorkspace = (event: (typeof events)[number]) => {
     const tab = toWorkspaceTab(event)
     if (!tab) return
-
-    setWorkspaceTabs((prev) => {
-      const existing = prev.find((t) => t.id === tab.id)
-      if (existing) {
-        setActiveWorkspaceId(existing.id)
-        return prev
-      }
-      setActiveWorkspaceId(tab.id)
-      return [...prev, tab]
-    })
+    openWorkspaceTab(tab)
   }
 
   const closeWorkspace = (id: string) => {
@@ -156,6 +175,7 @@ export function CentralApp() {
   const contextEvent = contextItemId
     ? events.find((e) => streamItemId(e) === contextItemId)
     : null
+  const mondayContext = contextEvent?.source === 'monday'
 
   const selectContext = (itemId: string) => {
     setContextItemId(itemId)
@@ -178,6 +198,9 @@ export function CentralApp() {
         if (composeAction.provider === 'mind') {
           window.dispatchEvent(new Event('notch:mind-updated'))
         }
+        if (composeAction.provider === 'monday') {
+          void integrationApi.syncSource('monday').catch(() => undefined)
+        }
         if (composeAction.intent === 'send') setContextItemId(null)
       } else {
         setComposeError(result.message)
@@ -197,6 +220,35 @@ export function CentralApp() {
   }, [composeToast])
 
   useEffect(() => {
+    return window.notch?.onSimRefresh?.(() => {
+      setPage('stream')
+      setArea('work')
+    })
+  }, [])
+
+  useEffect(() => {
+    const onStarted = window.notch?.meeting?.onStarted?.(() => {
+      setPage('stream')
+      setArea('work')
+      setFocusMeetingItemId(null)
+    })
+    const onEnded = window.notch?.meeting?.onEnded?.((result: unknown) => {
+      const payload = result as { feedItemId?: string } | null
+      setPage('stream')
+      setArea('work')
+      if (payload?.feedItemId) {
+        setFocusMeetingItemId(String(payload.feedItemId).replace(/^ext-/, ''))
+      }
+      refreshStream()
+      window.dispatchEvent(new Event('notch:engagements-updated'))
+    })
+    return () => {
+      onStarted?.()
+      onEnded?.()
+    }
+  }, [])
+
+  useEffect(() => {
     localStorage.setItem('stream.central.workspaceTabs', JSON.stringify(workspaceTabs))
   }, [workspaceTabs])
 
@@ -205,62 +257,111 @@ export function CentralApp() {
     else localStorage.removeItem('stream.central.activeWorkspaceId')
   }, [activeWorkspaceId])
 
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const detail = (e as CustomEvent<{
+        url: string
+        title?: string
+        source?: WorkspaceTab['source']
+        summary?: string
+        id?: string
+        activate?: boolean
+      }>).detail
+      if (!detail?.url) return
+      openWorkspaceTab(
+        tabFromUrl(detail.url, {
+          title: detail.title ?? 'Tab',
+          source: detail.source,
+          summary: detail.summary,
+          id: detail.id
+        }),
+        { activate: detail.activate !== false }
+      )
+    }
+    window.addEventListener('notch:open-workspace', onOpen)
+    return () => window.removeEventListener('notch:open-workspace', onOpen)
+  }, [])
+
+  useEffect(() => {
+    if (page !== 'stream') return
+
+    const shadeUpcoming = async () => {
+      try {
+        const data = await clusterApi.calendar()
+        const now = Date.now()
+        let focusTab: WorkspaceTab | null = null
+
+        for (const evt of data.events ?? []) {
+          const tab = tabFromCalendarEvent(evt)
+          if (!tab) continue
+
+          const startsIn = evt.startsAt - now
+          const isLive = evt.live || (startsIn <= 0 && !evt.ended)
+          const startsSoon = startsIn > 0 && startsIn <= 15 * 60_000
+          const morningPrep =
+            evt.dayIndex === 0 && startsIn > 15 * 60_000 && startsIn <= 4 * 3_600_000
+
+          if (!isLive && !startsSoon && !morningPrep) continue
+          if (autoShadedRef.current.has(tab.id)) {
+            if (isLive || startsSoon) focusTab = tab
+            continue
+          }
+
+          autoShadedRef.current.add(tab.id)
+          openWorkspaceTab({ ...tab, autoOpened: true }, { activate: false })
+          if (isLive || startsSoon) focusTab = tab
+        }
+
+        if (focusTab) {
+          setActiveWorkspaceId(focusTab.id)
+        }
+      } catch {
+        /* calendar optional */
+      }
+    }
+
+    void shadeUpcoming()
+    const interval = window.setInterval(() => void shadeUpcoming(), 60_000)
+    const onCalendarsUpdated = () => void shadeUpcoming()
+    window.addEventListener('notch:calendars-updated', onCalendarsUpdated)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('notch:calendars-updated', onCalendarsUpdated)
+    }
+  }, [page])
+
+  const showContextRail = !threadTarget && !(page === 'stream' && area === 'work' && !activeWorkspace)
+
+  const homeChatCompactNav =
+    page === 'stream' && area === 'work' && !activeWorkspace && !focusMeetingItemId && homeChatRail
+
   return (
     <div
-      className={`x-app ${threadTarget ? 'x-app-thread-open' : ''} ${page !== 'stream' ? 'x-app-utility' : 'x-app-stream'}`}
+      className={`x-app ${threadTarget ? 'x-app-thread-open' : ''} ${page !== 'stream' ? 'x-app-utility' : 'x-app-stream'} ${!showContextRail ? 'x-app-no-rail' : ''}${homeChatCompactNav ? ' x-app-home-chat' : ''}`}
     >
       {typeof window !== 'undefined' &&
       (window.notchDesktop != null || /Electron/i.test(navigator.userAgent)) ? (
         <div className="x-macos-titlebar" aria-hidden="true" />
       ) : null}
       <div className="x-shell">
-        <aside className="x-nav x-nav-compact">
-        <div className="x-logo" title="Notch">
-          <IconNotch className="x-logo-icon" />
-        </div>
-
-        <nav className="x-nav-list">
-          {NAV.map((item) => {
-            const active =
-              item.page != null
-                ? page === item.page
-                : page === 'stream' && item.tab === tab
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={`x-nav-item x-nav-item-compact ${active ? 'active' : ''}`}
-                onClick={() => onNav(item)}
-                title={item.label}
-              >
-                <NavIcon id={item.id} />
-                {item.badge && live && <span className="x-nav-badge" />}
-              </button>
-            )
-          })}
-          <button
-            ref={themeBtnRef}
-            type="button"
-            className="x-nav-item x-nav-item-compact"
-            onClick={() => setThemeOpen((v) => !v)}
-            title="Theme"
-            aria-expanded={themeOpen}
-            aria-haspopup="dialog"
-          >
-            <span className="x-nav-theme-dot" />
-          </button>
-        </nav>
+        <SideNav
+          page={page}
+          area={area}
+          tab={tab}
+          live={live}
+          compact={homeChatCompactNav}
+          onNavigate={onNav}
+          onGoHome={goHome}
+          themeOpen={themeOpen}
+          onThemeToggle={() => setThemeOpen((v) => !v)}
+          themeBtnRef={themeBtnRef}
+        />
 
         <ThemeMenu
           open={themeOpen}
           anchorRef={themeBtnRef}
           onClose={() => setThemeOpen(false)}
         />
-
-        <div className="x-nav-user x-nav-user-compact" title="Apoorva @ae">
-          <div className="x-avatar x-avatar-user">A</div>
-        </div>
-      </aside>
 
       {page === 'settings' ? (
         <main className="x-main x-main-utility">
@@ -273,7 +374,36 @@ export function CentralApp() {
       ) : (
           <>
           <div className={`x-channel ${threadTarget ? 'x-channel-thread' : ''}`}>
-          <main className={`x-main x-col-feed ${threadTarget ? 'x-col-feed-in-thread' : ''}`}>
+          <div className="x-channel-main">
+          {workspaceTabs.length > 0 && (
+            <WorkspaceTabBar
+              homeLabel={area === 'work' ? 'Home' : 'Feed'}
+              tabs={workspaceTabs}
+              activeWorkspaceId={activeWorkspaceId}
+              onSelectHome={() => setActiveWorkspaceId(null)}
+              onSelectTab={setActiveWorkspaceId}
+              onCloseTab={closeWorkspace}
+            />
+          )}
+          <main
+            className={`x-main x-col-feed ${threadTarget ? 'x-col-feed-in-thread' : ''} ${area === 'work' ? 'x-main-work x-main-home' : ''} ${activeWorkspace ? 'x-main-workspace' : ''}`}
+          >
+            {activeWorkspace ? (
+              <WorkspaceView tab={activeWorkspace} />
+            ) : area === 'work' ? (
+              <WorkView
+                events={events}
+                live={live}
+                syncing={syncing}
+                focusMeetingItemId={focusMeetingItemId}
+                onFocusMeeting={setFocusMeetingItemId}
+                onRefresh={refreshStream}
+                onOpenSearchHit={openSearchHit}
+                onSeeAllAgents={openAgentsFeed}
+                onHomeChatRailChange={setHomeChatRail}
+              />
+            ) : (
+              <>
             <header className="x-topbar">
               <div className="x-topbar-tabs" role="tablist" aria-label="Feed filters">
                 {feedTabs.map((t) => (
@@ -289,118 +419,101 @@ export function CentralApp() {
                   </button>
                 ))}
               </div>
+              <FeedSearchBar
+                query={feedQuery}
+                onQueryChange={setFeedQuery}
+                matchCount={feedFiltered.length}
+                totalCount={filtered.length}
+                onSelectHit={openThreadFromSearch}
+              />
             </header>
-            {workspaceTabs.length > 0 && (
-            <div className="x-workspace-tabs">
-              <button
-                type="button"
-                className={`x-workspace-tab x-workspace-tab-feed ${!activeWorkspaceId ? 'active' : ''}`}
-                onClick={() => setActiveWorkspaceId(null)}
-              >
-                Feed
-              </button>
-              {workspaceTabs.map((t) => (
-                <div
-                  key={t.id}
-                  className={`x-workspace-tab ${activeWorkspaceId === t.id ? 'active' : ''}`}
-                >
-                  <button type="button" onClick={() => setActiveWorkspaceId(t.id)}>
-                    {t.title}
-                  </button>
-                  <button type="button" className="x-workspace-close" onClick={() => closeWorkspace(t.id)}>
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-            )}
 
-            {activeWorkspace ? (
-              <WorkspaceView tab={activeWorkspace} />
-            ) : (
-              <>
-                <div className="x-compose">
-                  <div className="x-avatar x-avatar-user">A</div>
-                  <div className="x-compose-body">
-                    {contextEvent && (
-                      <div className="x-compose-context">
-                        <span>
-                          Replying to:{' '}
-                          {contextEvent.title || contextEvent.body.slice(0, 72)}
-                        </span>
+                  <div className="x-compose">
+                    <div className="x-avatar x-avatar-user">A</div>
+                    <div className="x-compose-body">
+                      {contextEvent && (
+                        <div className="x-compose-context">
+                          <span>
+                            {mondayContext ? 'Updating Monday item:' : 'Replying to:'}{' '}
+                            {contextEvent.title || contextEvent.body.slice(0, 72)}
+                          </span>
+                          <button
+                            type="button"
+                            className="x-compose-context-clear"
+                            onClick={() => setContextItemId(null)}
+                            aria-label="Clear reply context"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )}
+                      {composeToast && <p className="x-compose-toast">{composeToast}</p>}
+                      {composeError && (
+                        <p className="x-compose-note x-compose-note-error">{composeError}</p>
+                      )}
+                      <textarea
+                        value={compose}
+                        onChange={(e) => {
+                          setCompose(e.target.value)
+                          if (composeError) setComposeError(null)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                            e.preventDefault()
+                            void submitCompose()
+                          }
+                        }}
+                        placeholder={
+                          mondayContext
+                            ? '@monday: comment or move to Done · @monday create: new ticket'
+                            : '@mind · @claude · @gemini · @cursor · @github · @gdocs · @gong · @perplexity · @gmail · @monday · @slack · @discord · @x'
+                        }
+                        rows={3}
+                        className="x-compose-input"
+                      />
+                      <div className="x-compose-toolbar">
+                        <div className="x-compose-icons">
+                          <button type="button" aria-label="Media"><IconMedia className="x-compose-icon" /></button>
+                          <button type="button" aria-label="GIF"><IconGif className="x-compose-icon" /></button>
+                          <button type="button" aria-label="Emoji"><IconEmoji className="x-compose-icon" /></button>
+                        </div>
                         <button
                           type="button"
-                          className="x-compose-context-clear"
-                          onClick={() => setContextItemId(null)}
-                          aria-label="Clear reply context"
+                          className="x-compose-post"
+                          disabled={!composeAction || composeBusy}
+                          onClick={() => void submitCompose()}
                         >
-                          ×
+                          {composeBusy ? 'Running…' : composeAction ? 'Run action' : 'Post'}
                         </button>
                       </div>
-                    )}
-                    {composeToast && <p className="x-compose-toast">{composeToast}</p>}
-                    {composeError && (
-                      <p className="x-compose-note x-compose-note-error">{composeError}</p>
-                    )}
-                    <textarea
-                      value={compose}
-                      onChange={(e) => {
-                        setCompose(e.target.value)
-                        if (composeError) setComposeError(null)
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                          e.preventDefault()
-                          void submitCompose()
-                        }
-                      }}
-                      placeholder="@mind · @claude · @gemini · @cursor · @github · @gdocs · @gong · @perplexity · @gmail · @monday · @slack · @discord · @x"
-                      rows={3}
-                      className="x-compose-input"
-                    />
-                    <div className="x-compose-toolbar">
-                      <div className="x-compose-icons">
-                        <button type="button" aria-label="Media"><IconMedia className="x-compose-icon" /></button>
-                        <button type="button" aria-label="GIF"><IconGif className="x-compose-icon" /></button>
-                        <button type="button" aria-label="Emoji"><IconEmoji className="x-compose-icon" /></button>
-                      </div>
-                      <button
-                        type="button"
-                        className="x-compose-post"
-                        disabled={!composeAction || composeBusy}
-                        onClick={() => void submitCompose()}
-                      >
-                        {composeBusy ? 'Running…' : composeAction ? 'Run action' : 'Post'}
-                      </button>
                     </div>
                   </div>
-                </div>
 
-                {filtered.map((e, i) => (
-                  <FeedPost
-                    key={e.id}
-                    event={e}
-                    isNew={live && i === 0}
-                    isContext={contextItemId === streamItemId(e)}
-                    activeThreadId={threadTarget?.itemId ?? null}
-                    onOpenWorkspace={openWorkspace}
-                    onOpenThread={(itemId, day) => {
-                      selectContext(itemId)
-                      setThreadTarget({ itemId, day })
-                    }}
-                    onSelectContext={selectContext}
-                  />
-                ))}
+                  {feedFiltered.length === 0 && feedQuery.trim() ? (
+                    <p className="x-feed-search-no-results">No posts match “{feedQuery.trim()}”</p>
+                  ) : null}
 
-                {live && (
-                  <div className="x-loading">
-                    <span /><span /><span />
-                  </div>
-                )}
+                  {feedFiltered.map((e, i) => (
+                    <FeedPost
+                      key={e.id}
+                      event={e}
+                      isNew={live && i === 0}
+                      isContext={contextItemId === streamItemId(e)}
+                      activeThreadId={threadTarget?.itemId ?? null}
+                      onOpenWorkspace={openWorkspace}
+                      onOpenInWork={openMeetingInWork}
+                      onOpenThread={(itemId, day) => {
+                        selectContext(itemId)
+                        setThreadTarget({ itemId, day })
+                      }}
+                      onSelectContext={selectContext}
+                    />
+                  ))}
               </>
             )}
 
           </main>
+          </div>
 
           {threadTarget && (
             <ThreadBlade
@@ -412,13 +525,9 @@ export function CentralApp() {
           )}
           </div>
 
-          {!threadTarget && (
+          {!showContextRail ? null : (
             <aside className="x-rail x-col-rail">
-              <div className="x-search">
-                <IconSearch className="x-search-icon" />
-                <input placeholder="Search" readOnly />
-              </div>
-              <RailWidgets />
+              <ContextRail />
             </aside>
           )}
         </>

@@ -5,7 +5,13 @@
 
 import type { EngagementOutcome } from './operator-telemetry'
 
-export type DatapointKind = 'integration_event' | 'consciousness' | 'action' | 'note'
+export type DatapointKind =
+  | 'integration_event'
+  | 'consciousness'
+  | 'action'
+  | 'note'
+  | 'meeting_live'
+  | 'mobile_cluster'
 
 export type IntentionKind = 'explore' | 'plan' | 'execute' | 'reflect' | 'defer'
 
@@ -22,6 +28,8 @@ export interface IntentionVector {
 export interface KbEntity {
   id: string
   kind: 'person' | 'company' | 'term' | 'topic' | 'project' | 'concept'
+  /** Ontology type id from config/kb-ontology.json — e.g. customer, requirement */
+  ontologyType?: string
   label: string
   normalized: string
   createdAt: number
@@ -33,7 +41,8 @@ export interface KbEdge {
   id: string
   fromId: string
   toId: string
-  relation: 'mentions' | 'relates_to' | 'caused_by' | 'part_of' | 'action_on' | 'co_action'
+  /** Core edges or custom ids from ontology relationTypes */
+  relation: string
   weight: number
   createdAt: number
 }

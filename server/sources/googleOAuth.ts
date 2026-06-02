@@ -1,6 +1,13 @@
 import { google } from 'googleapis'
 import { calendarEnabledAccounts } from './gmailAccounts'
 
+export function googleOAuthProjectNumber(): string | null {
+  const id = process.env.GMAIL_CLIENT_ID?.trim()
+  if (!id) return null
+  const m = id.match(/^(\d+)-/)
+  return m?.[1] ?? null
+}
+
 export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.modify',

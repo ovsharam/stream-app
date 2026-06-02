@@ -94,9 +94,11 @@ function ensureCallSession(): CallSessionManager {
     })
     callSession.on('signal', (signal) => {
       mobileWindow?.webContents.send('meeting:signal', signal)
+      centralWindow?.webContents.send('meeting:signal', signal)
     })
     callSession.on('chunk-sent', (chunk) => {
       mobileWindow?.webContents.send('meeting:chunk', chunk)
+      centralWindow?.webContents.send('meeting:chunk', chunk)
     })
     callSession.on('error', (msg) => console.warn('[meeting]', msg))
   }
@@ -175,10 +177,11 @@ function registerShortcuts(): void {
   if (SIM) {
     globalShortcut.register('CommandOrControl+Shift+D', () => void simPost('/sim/start-call'))
     globalShortcut.register('CommandOrControl+Shift+E', () => void simPost('/sim/end-call'))
-    console.log('[notch] sim shortcuts: ⌘⇧D start call · ⌘⇧E end call')
+    console.log('[notch] sim shortcuts: ⌘⇧D start Acme sim · ⌘⇧E end sim')
+    return
   }
 
-  // Meeting capture hotkeys (live calls)
+  // Meeting capture hotkeys (live calls — disabled in demo/sim)
   globalShortcut.register('CommandOrControl+Shift+L', () => {
     void ensureCallSession().start().catch((e) => console.warn('[meeting] start failed', e))
   })
@@ -350,15 +353,18 @@ app.whenReady().then(() => {
     return { ok: true }
   })
   ipcMain.handle('meeting:start', async (_e, args?: { title?: string; dealHint?: string }) => {
+    if (SIM) throw new Error('Meeting capture is disabled in demo mode — use ⌘⇧D for the Acme sim call.')
     return ensureCallSession().start(args ?? {})
   })
   ipcMain.handle('meeting:end', async () => {
+    if (SIM) return null
     return ensureCallSession().end()
   })
   ipcMain.handle('meeting:star', async (_e, text?: string) => {
+    if (SIM) return { ok: false }
     return ensureCallSession().starMoment(text)
   })
-  ipcMain.handle('meeting:status', () => ensureCallSession().status())
+  ipcMain.handle('meeting:status', () => (SIM ? { active: false, chunkCount: 0, signalCount: 0, starredCount: 0, autoEnd: false } : ensureCallSession().status()))
   ipcMain.on('shell:open', (_e, url: string) => {
     if (typeof url === 'string' && url.startsWith('http')) void shell.openExternal(url)
   })
@@ -367,7 +373,7 @@ app.whenReady().then(() => {
 })
 
 app.on('will-quit', () => {
-  void callSession?.end().catch(() => {})
+  if (!SIM) void callSession?.end().catch(() => {})
   audioTap?.stop()
   globalShortcut.unregisterAll()
 })

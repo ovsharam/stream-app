@@ -24,6 +24,7 @@ import {
 } from '../../sources/github'
 import { isGdocsConnected, createGoogleDoc, appendGoogleDoc, syncGdocs } from '../../sources/gdocs'
 import { isGongConnected, addGongCallNote, syncGong } from '../../sources/gong'
+import { executeCalcomCompose, isCalcomConnected } from '../../sources/calcom'
 import { runMind } from '../../kb/mindExecutor'
 import type { ComposeCommand } from '../../../shared/compose'
 import { parseComposeCommand } from '../../../shared/compose'
@@ -48,15 +49,41 @@ function streamContextItem(contextItemId?: string) {
   return getRecentItems(500).find((i) => i.id === bare || i.id === contextItemId) ?? null
 }
 
+/** Resolve a feed/context id to a Monday pulse id. */
+function resolveMondayItemId(contextItemId?: string): string | null {
+  if (!contextItemId) return null
+  const bare = contextItemId.replace(/^ext-/, '')
+  if (/^\d+$/.test(bare)) return bare
+
+  const item = streamContextItem(contextItemId)
+  if (item?.source === 'monday' && item.metadata?.itemId) {
+    return String(item.metadata.itemId)
+  }
+  return null
+}
+
+function mondayExplicitNewItem(raw: string, intent: string): boolean {
+  if (intent !== 'create') return false
+  return /\b(?:create|new\s+item|new\s+task)\s*:/i.test(raw) || /^\/[^:\n]+\s*:/.test(raw.replace(/^@?monday\b\s*:?\s*/i, ''))
+}
+
 async function runMonday(ctx: ActionRunContext): Promise<ActionRunResult> {
   if (!isMondayConnected()) return fail('monday', 'Monday not connected')
 
-  const { intent, target, body } = ctx.parsed
+  const { intent, target, body, raw } = ctx.parsed
+  const contextItemId = resolveMondayItemId(ctx.contextItemId)
+
   if (intent === 'comment' || intent === 'move') {
-    if (!target) return fail('monday', 'Use @monday #ITEM_ID comment: … or move to …')
+    const itemId = target ?? contextItemId
+    if (!itemId) {
+      return fail(
+        'monday',
+        'Select a Monday item in the feed, or use @monday #ITEM_ID comment: … / move to Done'
+      )
+    }
     const cmd =
       intent === 'comment' ? `comment: ${body}` : body.toLowerCase().startsWith('move') ? body : `move to ${body}`
-    const result = await runMondayNaturalLanguage(target, cmd)
+    const result = await runMondayNaturalLanguage(itemId, cmd)
     return ok('monday', result.message, result.executed)
   }
 
@@ -69,9 +96,14 @@ async function runMonday(ctx: ActionRunContext): Promise<ActionRunResult> {
     return ok('monday', msg)
   }
 
-  const nlp = await createMondayFromNaturalLanguage(body.replace(/^:\s*/, ''))
-  if (!nlp.ok) return fail('monday', nlp.message)
-  return ok('monday', nlp.message)
+  if (mondayExplicitNewItem(raw, intent) || !contextItemId) {
+    const nlp = await createMondayFromNaturalLanguage(body.replace(/^:\s*/, ''))
+    if (!nlp.ok) return fail('monday', nlp.message)
+    return ok('monday', nlp.message)
+  }
+
+  const result = await runMondayNaturalLanguage(contextItemId, body)
+  return ok('monday', result.message, result.executed)
 }
 
 async function runGmail(ctx: ActionRunContext): Promise<ActionRunResult> {
@@ -279,6 +311,16 @@ async function runGong(ctx: ActionRunContext): Promise<ActionRunResult> {
   return ok('gong', 'Gong note added')
 }
 
+async function runCalcom(ctx: ActionRunContext): Promise<ActionRunResult> {
+  if (!isCalcomConnected()) return fail('calcom', 'Cal.com not connected — Apps → Cal.com')
+  if (ctx.parsed.intent !== 'book') {
+    return fail('calcom', 'Use @calcom book: slug / email / name / auto / notes')
+  }
+  const result = await executeCalcomCompose(ctx.raw)
+  if (!result.ok) return fail('calcom', result.message)
+  return ok('calcom', result.message)
+}
+
 export function registerIntegrationExecutors(): void {
   const wrap =
     (provider: ComposeCommand['provider'], fn: (ctx: ActionRunContext) => Promise<ActionRunResult>) =>
@@ -302,5 +344,6 @@ export function registerIntegrationExecutors(): void {
   registerActionExecutor('github', wrap('github', runGithub))
   registerActionExecutor('gdocs', wrap('gdocs', runGdocs))
   registerActionExecutor('gong', wrap('gong', runGong))
+  registerActionExecutor('calcom', wrap('calcom', runCalcom))
   registerActionExecutor('mind', wrap('mind', runMind))
 }

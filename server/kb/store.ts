@@ -80,12 +80,21 @@ function getDb(): Database.Database {
   db = new Database(path)
   db.pragma('journal_mode = WAL')
   db.exec(SCHEMA)
+  migrateEntityColumns(db)
   return db
+}
+
+function migrateEntityColumns(d: Database.Database): void {
+  const cols = d.prepare(`PRAGMA table_info(kb_entities)`).all() as { name: string }[]
+  if (!cols.some((c) => c.name === 'ontology_type')) {
+    d.exec(`ALTER TABLE kb_entities ADD COLUMN ontology_type TEXT`)
+  }
 }
 
 export function upsertEntity(input: {
   kind: KbEntity['kind']
   label: string
+  ontologyType?: string
 }): KbEntity {
   const d = getDb()
   const normalized = input.label.toLowerCase().replace(/\s+/g, ' ').trim()
@@ -95,6 +104,14 @@ export function upsertEntity(input: {
 
   const now = Date.now()
   if (existing) {
+    if (input.ontologyType && existing.ontology_type !== input.ontologyType) {
+      d.prepare('UPDATE kb_entities SET ontology_type = ?, updated_at = ? WHERE id = ?').run(
+        input.ontologyType,
+        now,
+        existing.id
+      )
+      existing.ontology_type = input.ontologyType
+    }
     d.prepare('UPDATE kb_entities SET mention_count = mention_count + 1, updated_at = ? WHERE id = ?').run(
       now,
       existing.id
@@ -104,13 +121,14 @@ export function upsertEntity(input: {
 
   const id = `ent-${randomUUID()}`
   d.prepare(
-    `INSERT INTO kb_entities (id, kind, label, normalized, mention_count, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 1, ?, ?)`
-  ).run(id, input.kind, input.label.trim(), normalized, now, now)
+    `INSERT INTO kb_entities (id, kind, label, normalized, ontology_type, mention_count, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 1, ?, ?)`
+  ).run(id, input.kind, input.label.trim(), normalized, input.ontologyType ?? null, now, now)
 
   return {
     id,
     kind: input.kind,
+    ontologyType: input.ontologyType,
     label: input.label.trim(),
     normalized,
     mentionCount: 1,
@@ -197,6 +215,21 @@ export function listEntities(limit = 100): KbEntity[] {
   ).map(rowEntity)
 }
 
+export function listEdges(limit = 200): KbEdge[] {
+  const d = getDb()
+  return (
+    d.prepare('SELECT * FROM kb_edges ORDER BY created_at DESC LIMIT ?').all(limit) as Record<
+      string,
+      unknown
+    >[]
+  ).map(rowEdge)
+}
+
+export function countEdges(): number {
+  const row = getDb().prepare('SELECT COUNT(*) AS n FROM kb_edges').get() as { n: number }
+  return Number(row?.n ?? 0)
+}
+
 export function listTraces(limit = 80): ActionTrace[] {
   const d = getDb()
   return (
@@ -230,11 +263,23 @@ function rowEntity(r: Record<string, unknown>): KbEntity {
   return {
     id: String(r.id),
     kind: r.kind as KbEntity['kind'],
+    ontologyType: r.ontology_type ? String(r.ontology_type) : undefined,
     label: String(r.label),
     normalized: String(r.normalized),
     mentionCount: Number(r.mention_count ?? 1),
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at)
+  }
+}
+
+function rowEdge(r: Record<string, unknown>): KbEdge {
+  return {
+    id: String(r.id),
+    fromId: String(r.from_id),
+    toId: String(r.to_id),
+    relation: String(r.relation),
+    weight: Number(r.weight ?? 1),
+    createdAt: Number(r.created_at)
   }
 }
 

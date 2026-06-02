@@ -112,6 +112,10 @@ export function startSimCall(callId = 'acme-discovery-2'): void {
 export function stopSimCall(): void {
   getEngine().stopCallReplay()
   callActive = false
+  transcript = []
+  signals = []
+  lastTechnical = null
+  lastGap = null
 }
 
 export { getEngine }

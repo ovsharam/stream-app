@@ -187,6 +187,50 @@ export function IconEmoji({ className }: IconProps) {
   )
 }
 
+export function IconPortal({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <path
+        fill="currentColor"
+        d="M5 4h6v6H5V4zm8 0h6v6h-6V4zM5 14h6v6H5v-6zm8 3h6v3h-6v-3zM14 14h6v2h-6v-2z"
+      />
+    </svg>
+  )
+}
+
+export function IconStream({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <path
+        fill="currentColor"
+        d="M4 6.5a1.5 1.5 0 0 1 1.5-1.5h13A1.5 1.5 0 0 1 20 6.5v1.75H4V6.5zm0 4.75h16v1.75H4v-1.75zm0 4.75h10V19H4v-2.75z"
+      />
+    </svg>
+  )
+}
+
+export function IconRadar({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <path
+        fill="currentColor"
+        d="M12 3a9 9 0 1 0 9 9h-2a7 7 0 1 1-7-7V3zm0 4a5 5 0 1 0 5 5h-2a3 3 0 1 1-3-3V7zm0 4a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"
+      />
+    </svg>
+  )
+}
+
+export function IconApps({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <path
+        fill="currentColor"
+        d="M6 3a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H6zm10 0a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-2zM6 13a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2H6zm10 0a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-2z"
+      />
+    </svg>
+  )
+}
+
 export function IconIntegrations({ className }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden>

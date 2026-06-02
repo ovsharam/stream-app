@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ClusterSearchHit } from '@shared/cluster'
 import { FeedPost } from './FeedPost'
 import { HomeChatProvider } from './homeChatContext'
@@ -10,6 +10,7 @@ import { NavAppPlayer } from './NavAppPlayer'
 import { getNavApp, useNavApps } from './navAppsStore'
 import { SettingsPanel } from './SettingsPanel'
 import { ThemeMenu } from './ThemeMenu'
+import { useTheme } from './useTheme'
 import { ThreadBlade } from './ThreadBlade'
 import { WorkspaceView } from './WorkspaceView'
 import { WorkspaceTabBar } from './WorkspaceTabBar'
@@ -67,7 +68,8 @@ export function CentralApp() {
     persistedActive ?? persistedTabs.at(-1)?.id ?? null
   )
   const [homeChatRail, setHomeChatRail] = useState(false)
-  const { apps: navApps, add: addNavApp, remove: removeNavApp } = useNavApps()
+  const { theme, setTheme } = useTheme()
+  const { apps: navApps, add: addNavApp, remove: removeNavApp, pinCatalog: pinNavApp } = useNavApps()
   const [activeNavAppId, setActiveNavAppId] = useState<string | null>(null)
   const [navAppMini, setNavAppMini] = useState(false)
   const autoShadedRef = useRef(new Set<string>())
@@ -76,8 +78,23 @@ export function CentralApp() {
 
   const dockNavAppMini = () => {
     const app = activeNavAppId ? getNavApp(activeNavAppId, navApps) : null
-    if (app?.miniPlayer) setNavAppMini(true)
+    if (!app?.miniPlayer) return
+
+    // Stay mounted as mini immediately — async playback check used to run too late
+    // and unmount destroyed the BrowserView (full YouTube reload on remount).
+    setNavAppMini(true)
+
+    void window.notchDesktop?.getNavAppPlayback?.().then((state) => {
+      if (state?.playing) return
+      setActiveNavAppId(null)
+      setNavAppMini(false)
+      void window.notchDesktop?.hideNavApp?.()
+    })
   }
+
+  useEffect(() => {
+    void window.notchDesktop?.setNavAppTheme?.(theme)
+  }, [theme])
 
   const openNavApp = (appId: string) => {
     setPage('navapp')
@@ -90,7 +107,30 @@ export function CentralApp() {
   const closeNavApp = () => {
     setActiveNavAppId(null)
     setNavAppMini(false)
+    void window.notchDesktop?.hideNavApp?.()
   }
+
+  const resetToHomeChat = useCallback(() => {
+    setActiveNavAppId(null)
+    setNavAppMini(false)
+    void window.notchDesktop?.hideNavApp?.()
+    setThreadTarget(null)
+    setFeedQuery('')
+    setContextItemId(null)
+    setFocusMeetingItemId(null)
+    setActiveWorkspaceId(null)
+    setPage('stream')
+    setArea('work')
+    setTab('foryou')
+  }, [])
+
+  useEffect(() => {
+    resetToHomeChat()
+  }, [resetToHomeChat])
+
+  useEffect(() => {
+    return window.notchDesktop?.onNavAppRendererReady?.(() => resetToHomeChat())
+  }, [resetToHomeChat])
 
   const filtered =
     tab === 'signals'
@@ -127,6 +167,7 @@ export function CentralApp() {
   const refreshStream = () => window.dispatchEvent(new Event('notch:stream-push'))
 
   const openSearchHit = (hit: ClusterSearchHit) => {
+    if (page === 'navapp' && activeNavAppId) dockNavAppMini()
     setPage('stream')
     setArea('feed')
     const itemId = hit.itemId ?? hit.id.replace(/^ext-/, '')
@@ -170,11 +211,7 @@ export function CentralApp() {
 
   const goHome = () => {
     if (page === 'navapp' && activeNavAppId) dockNavAppMini()
-    setPage('stream')
-    setArea('work')
-    setTab('foryou')
-    setActiveWorkspaceId(null)
-    setFocusMeetingItemId(null)
+    resetToHomeChat()
   }
 
   const openWorkspaceTab = (tab: WorkspaceTab, opts?: { activate?: boolean }) => {
@@ -364,7 +401,10 @@ export function CentralApp() {
   }, [page])
 
   const showContextRail =
-    page !== 'navapp' && !threadTarget && !(page === 'stream' && area === 'work' && !activeWorkspace)
+    !threadTarget && page !== 'navapp' && !(page === 'stream' && area === 'work' && !activeWorkspace)
+
+  const showThreadRail = Boolean(threadTarget) && page === 'stream' && area === 'feed'
+  const hasRightRail = showThreadRail || showContextRail
 
   const homeChatCompactNav =
     page === 'stream' && area === 'work' && !activeWorkspace && !focusMeetingItemId && homeChatRail
@@ -374,7 +414,7 @@ export function CentralApp() {
 
   return (
     <div
-      className={`x-app ${threadTarget ? 'x-app-thread-open' : ''} ${page === 'navapp' ? 'x-app-nav-app' : page !== 'stream' ? 'x-app-utility' : 'x-app-stream'} ${!showContextRail ? 'x-app-no-rail' : ''}${homeChatCompactNav ? ' x-app-home-chat' : ''}${navAppMini ? ' x-app-nav-app-mini' : ''}`}
+      className={`x-app ${showThreadRail ? 'x-app-thread-open' : ''} ${page === 'navapp' ? 'x-app-nav-app' : page !== 'stream' ? 'x-app-utility' : 'x-app-stream'} ${!hasRightRail ? 'x-app-no-rail' : ''}${homeChatCompactNav ? ' x-app-home-chat' : ''}${navAppMini ? ' x-app-nav-app-mini' : ''}`}
     >
       {typeof window !== 'undefined' &&
       (window.notchDesktop != null || /Electron/i.test(navigator.userAgent)) ? (
@@ -404,6 +444,8 @@ export function CentralApp() {
 
         <ThemeMenu
           open={themeOpen}
+          theme={theme}
+          setTheme={setTheme}
           anchorRef={themeBtnRef}
           onClose={() => setThemeOpen(false)}
         />
@@ -414,14 +456,22 @@ export function CentralApp() {
         </main>
       ) : page === 'integrations' ? (
         <main className="x-main x-main-utility">
-          <IntegrationsPanel />
+          <IntegrationsPanel
+            navApps={navApps}
+            onOpenNavApp={openNavApp}
+            onPinNavApp={(id) => pinNavApp(id)}
+            onUnpinNavApp={(id) => {
+              if (activeNavAppId === id) closeNavApp()
+              removeNavApp(id)
+            }}
+          />
         </main>
       ) : page === 'navapp' ? (
         <main className="x-main x-main-nav-app" aria-hidden="true" />
       ) : (
         <HomeChatProvider onRailChange={setHomeChatRail}>
           <>
-          <div className={`x-channel ${threadTarget ? 'x-channel-thread' : ''}`}>
+          <div className={`x-channel ${showThreadRail ? 'x-channel-has-thread' : ''}`}>
           <div className="x-channel-main">
           {workspaceTabs.length > 0 && (
             <WorkspaceTabBar
@@ -560,32 +610,67 @@ export function CentralApp() {
             )}
 
           </main>
-          </div>
-
-          {threadTarget && (
-            <ThreadBlade
-              itemId={threadTarget.itemId}
-              day={threadTarget.day}
-              contextItemId={contextItemId ?? threadTarget.itemId}
-              onClose={() => setThreadTarget(null)}
+          {activeNavApp && navAppPlayerMode === 'mini' ? (
+            <NavAppPlayer
+              app={activeNavApp}
+              mode="mini"
+              hasRail={false}
+              onMinimize={() => {
+                setNavAppMini(true)
+                setPage('stream')
+                setArea('feed')
+              }}
+              onExpand={() => {
+                setNavAppMini(false)
+                setPage('navapp')
+              }}
+              onClose={closeNavApp}
             />
-          )}
+          ) : null}
+          </div>
           </div>
 
-          {!showContextRail ? null : (
+          {showThreadRail && threadTarget ? (
+            <aside className="x-rail x-col-rail x-rail-thread">
+              <ThreadBlade
+                itemId={threadTarget.itemId}
+                day={threadTarget.day}
+                contextItemId={contextItemId ?? threadTarget.itemId}
+                onClose={() => setThreadTarget(null)}
+              />
+            </aside>
+          ) : showContextRail ? (
             <aside className="x-rail x-col-rail">
               <ContextRail events={events} onOpenHome={goHome} />
             </aside>
-          )}
+          ) : null}
         </>
         </HomeChatProvider>
       )}
 
-      {activeNavApp && navAppPlayerMode !== 'off' ? (
+      </div>
+
+      {activeNavApp && navAppPlayerMode === 'full' ? (
         <NavAppPlayer
           app={activeNavApp}
-          mode={navAppPlayerMode}
-          hasRail={showContextRail && page !== 'navapp'}
+          mode="full"
+          hasRail={hasRightRail}
+          onMinimize={() => {
+            setNavAppMini(true)
+            setPage('stream')
+            setArea('feed')
+          }}
+          onExpand={() => {
+            setNavAppMini(false)
+            setPage('navapp')
+          }}
+          onClose={closeNavApp}
+        />
+      ) : activeNavApp && navAppPlayerMode === 'mini' && page !== 'stream' ? (
+        <NavAppPlayer
+          app={activeNavApp}
+          mode="mini"
+          hasRail={hasRightRail}
           onMinimize={() => {
             setNavAppMini(true)
             setPage('stream')
@@ -598,7 +683,6 @@ export function CentralApp() {
           onClose={closeNavApp}
         />
       ) : null}
-      </div>
     </div>
   )
 }

@@ -362,6 +362,20 @@ export function openExternal(url: string): void {
 
 declare global {
   interface Window {
-    notchDesktop?: { openExternal: (url: string) => void }
+    notchDesktop?: {
+      openExternal: (url: string) => void
+      showNavApp?: (args: {
+        partition: string
+        url: string
+        bounds: { x: number; y: number; width: number; height: number }
+      }) => Promise<{ ok: boolean }>
+      hideNavApp?: () => Promise<{ ok: boolean }>
+      reloadNavApp?: () => Promise<{ ok: boolean }>
+      getNavAppPlayback?: () => Promise<{ playing: boolean }>
+      setNavAppTheme?: (theme: string) => Promise<{ ok: boolean }>
+      openAuthWindow?: (args: { partition: string; url: string; title?: string }) => Promise<{ ok: boolean }>
+      onAuthClosed?: (cb: (partition: string) => void) => () => void
+      onNavAppRendererReady?: (cb: () => void) => () => void
+    }
   }
 }

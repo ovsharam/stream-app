@@ -11,7 +11,7 @@ export const THEMES: { id: ThemeId; label: string }[] = [
   { id: 'midnight', label: 'Midnight' }
 ]
 
-function readStored(): ThemeId {
+export function readStoredTheme(): ThemeId {
   try {
     const v = localStorage.getItem(STORAGE_KEY) as ThemeId | null
     if (v && THEMES.some((t) => t.id === v)) return v
@@ -21,8 +21,12 @@ function readStored(): ThemeId {
   return 'dark'
 }
 
+export function applyThemeToDocument(theme: ThemeId): void {
+  document.documentElement.dataset.theme = theme
+}
+
 export function useTheme() {
-  const [theme, setThemeState] = useState<ThemeId>(readStored)
+  const [theme, setThemeState] = useState<ThemeId>(readStoredTheme)
 
   const setTheme = useCallback((id: ThemeId) => {
     setThemeState(id)
@@ -34,7 +38,7 @@ export function useTheme() {
   }, [])
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme
+    applyThemeToDocument(theme)
   }, [theme])
 
   return { theme, setTheme }

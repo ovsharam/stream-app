@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { GmailAccount, GoogleCalendarOption, MondayAccount } from '@shared/cluster'
 import { clusterApi, integrationApi, type IntegrationConnections } from '../lib/api'
-import { IconGmail, IconMonday } from './Icons'
+import { IconGmail, IconMonday, IconYoutube } from './Icons'
 import { McpAgentsSection } from './McpAgentsSection'
+import { isNavAppDesktop, NAV_APP_CATALOG, type NavApp } from './navAppsStore'
 
 type IntegrationId =
   | 'gmail'
@@ -152,7 +153,18 @@ function StatusBadge({ connected }: { connected: boolean }) {
   )
 }
 
-export function IntegrationsPanel() {
+export function IntegrationsPanel({
+  navApps,
+  onOpenNavApp,
+  onPinNavApp,
+  onUnpinNavApp
+}: {
+  navApps: NavApp[]
+  onOpenNavApp?: (id: string) => void
+  onPinNavApp?: (id: string) => void
+  onUnpinNavApp?: (id: string) => void
+}) {
+  const desktop = isNavAppDesktop()
   const [connections, setConnections] = useState<IntegrationConnections | null>(null)
   const [selected, setSelected] = useState<IntegrationId>('gmail')
   const [status, setStatus] = useState('')
@@ -1615,9 +1627,10 @@ export function IntegrationsPanel() {
     <div className="x-int-page">
       <header className="x-int-header">
         <div>
-          <h1>Integrations</h1>
+          <h1>Apps</h1>
           <p>
-            {connectedCount} of {INTEGRATIONS.length} connected · sources flow into your Central feed
+            {desktop ? 'Pin desktop apps to the sidebar · ' : ''}
+            {connectedCount} of {INTEGRATIONS.length} feed integrations connected
           </p>
         </div>
         <button type="button" className="x-int-btn" onClick={() => void syncAll()}>
@@ -1626,7 +1639,79 @@ export function IntegrationsPanel() {
       </header>
 
       <div className="x-int-body">
-        <div className="x-int-grid">
+        {desktop ? (
+          <section className="x-int-section x-int-desktop-apps">
+            <div className="x-int-section-head">
+              <h2>Desktop apps</h2>
+              <p>Open inside Notch — pin to the sidebar for quick access. Mini player keeps playing when you switch to Feed.</p>
+            </div>
+            <div className="x-int-grid x-int-grid-desktop">
+              {NAV_APP_CATALOG.map((entry) => {
+                const pinned = navApps.some((a) => a.id === entry.id)
+                return (
+                  <div key={entry.id} className={`x-int-card x-int-card-static ${entry.brandClass}`}>
+                    <div className={`x-int-card-icon ${entry.brandClass}`}>
+                      {entry.id === 'youtube' ? (
+                        <IconYoutube className="x-int-brand-icon" />
+                      ) : (
+                        <span className="x-int-brand-letter">{entry.label.slice(0, 2)}</span>
+                      )}
+                    </div>
+                    <div className="x-int-card-body">
+                      <div className="x-int-card-top">
+                        <strong>{entry.label}</strong>
+                        <span className={`x-int-status ${pinned ? 'x-int-status-on' : 'x-int-status-off'}`}>
+                          {pinned ? 'Pinned' : 'Available'}
+                        </span>
+                      </div>
+                      <p>{entry.description}</p>
+                      <span className="x-int-card-meta">Sidebar · Mini player</span>
+                      <div className="x-int-desktop-actions">
+                        {pinned ? (
+                          <>
+                            <button
+                              type="button"
+                              className="x-int-btn"
+                              onClick={() => onOpenNavApp?.(entry.id)}
+                            >
+                              Open
+                            </button>
+                            <button
+                              type="button"
+                              className="x-int-btn x-int-btn-ghost"
+                              onClick={() => onUnpinNavApp?.(entry.id)}
+                            >
+                              Unpin
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="x-int-btn"
+                            onClick={() => {
+                              onPinNavApp?.(entry.id)
+                              onOpenNavApp?.(entry.id)
+                            }}
+                          >
+                            Pin to sidebar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        ) : null}
+
+        <div className="x-int-feed-layout">
+          <div className="x-int-feed-col">
+            <div className="x-int-section-head x-int-section-head-col">
+              <h2>Feed integrations</h2>
+              <p>Connect tools — sources flow into your Central feed.</p>
+            </div>
+            <div className="x-int-grid">
           {INTEGRATIONS.map((item) => {
             const connected =
               item.id === 'agents'
@@ -1652,9 +1737,11 @@ export function IntegrationsPanel() {
               </button>
             )
           })}
-        </div>
+            </div>
+          </div>
 
-        <div className="x-int-detail-wrap">{renderDetail()}</div>
+          <div className="x-int-detail-wrap">{renderDetail()}</div>
+        </div>
       </div>
 
       {status ? <p className="x-int-toast">{status}</p> : null}

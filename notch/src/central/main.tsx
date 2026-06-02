@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { CentralApp } from './CentralApp'
+import { applyThemeToDocument, readStoredTheme } from './useTheme'
 import './central.css'
 
 if (
@@ -8,5 +9,7 @@ if (
 ) {
   document.documentElement.classList.add('x-electron')
 }
+
+applyThemeToDocument(readStoredTheme())
 
 createRoot(document.getElementById('root')!).render(<CentralApp />)

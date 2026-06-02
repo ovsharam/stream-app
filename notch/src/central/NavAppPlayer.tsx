@@ -1,8 +1,8 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useRef } from 'react'
 import { openExternal } from '../lib/api'
 import type { NavApp } from './navAppsStore'
 import { isNavAppDesktop } from './navAppsStore'
-import { useWebviewPopups } from './useWebviewPopups'
+import { useNavAppBrowserView } from './useNavAppBrowserView'
 
 export type NavAppPlayerMode = 'full' | 'mini' | 'off'
 
@@ -17,16 +17,9 @@ type Props = {
 
 export function NavAppPlayer({ app, mode, hasRail, onMinimize, onExpand, onClose }: Props) {
   const desktop = isNavAppDesktop()
-  const webviewRef = useRef<HTMLElement>(null)
-  useWebviewPopups(webviewRef, desktop && mode !== 'off')
+  const surfaceRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!desktop || mode === 'off') return
-    const el = webviewRef.current as HTMLElement & { src?: string }
-    if (el && !el.getAttribute('src')) {
-      el.setAttribute('src', app.url)
-    }
-  }, [app.url, desktop, mode])
+  useNavAppBrowserView(surfaceRef, app, mode)
 
   if (mode === 'off') return null
 
@@ -64,14 +57,7 @@ export function NavAppPlayer({ app, mode, hasRail, onMinimize, onExpand, onClose
       </header>
       <div className="x-nav-app-player-body">
         {desktop ? (
-          <webview
-            ref={webviewRef as RefObject<HTMLElement>}
-            className="x-nav-app-player-webview"
-            src={app.url}
-            partition={`persist:nav-app-${app.id}`}
-            allowpopups="true"
-            webpreferences="contextIsolation=yes,nativeWindowOpen=yes,javascript=yes"
-          />
+          <div ref={surfaceRef} className="x-nav-app-player-surface" aria-hidden="true" />
         ) : (
           <div className="x-nav-app-player-fallback">
             <p>In-app apps run in the Notch desktop app (Electron).</p>

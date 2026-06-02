@@ -21,7 +21,7 @@
   --x-rail-w: 320px;
   --x-rail-inset: 20px;
   --x-gutter: 20px;
-  --x-thread-w: 360px;
+  --x-thread-w: 400px;
   --x-titlebar-h: 0px;
   --x-shell-w: calc(var(--x-nav-w) + var(--x-feed-w) + var(--x-rail-w));
   --x-shell-thread-w: calc(var(--x-nav-w) + var(--x-feed-w) + var(--x-thread-w));
@@ -222,6 +222,7 @@ body,
   width: 100%;
   overflow: hidden;
   background: var(--x-bg);
+  position: relative;
 }
 
 .x-app-stream {
@@ -232,7 +233,26 @@ body,
   align-items: stretch;
 }
 
-/* macOS hiddenInset traffic lights — Electron desktop only */
+.x-app-nav-app {
+  align-items: stretch;
+}
+
+.x-app-nav-app .x-shell {
+  flex: 1;
+  max-width: none;
+  width: 100%;
+}
+
+html.x-electron .x-app-nav-app .x-shell {
+  max-width: none;
+  border-right: none;
+}
+
+.x-app-nav-app .x-side-nav {
+  position: relative;
+  z-index: 100;
+}
+
 html.x-electron {
   --x-titlebar-h: 48px;
   height: 100%;
@@ -281,19 +301,35 @@ html.x-electron .x-app-stream .x-shell {
   width: 100%;
   max-width: none;
   flex: 1;
+  min-height: 0;
   border-right: none;
 }
 
 html.x-electron .x-app-stream:not(.x-app-thread-open) .x-main,
 html.x-electron .x-app-stream:not(.x-app-thread-open) .x-col-feed {
-  flex: 1 1 var(--x-feed-w);
+  flex: 1 1 0;
+  min-width: 0;
   width: auto;
   max-width: none;
 }
 
 html.x-electron .x-app-stream:not(.x-app-thread-open) .x-channel {
-  flex: 1 1 var(--x-feed-w);
-  min-width: var(--x-feed-w);
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+html.x-electron .x-app-thread-open .x-col-feed,
+html.x-electron .x-app-thread-open .x-main-thread-open,
+html.x-electron .x-app-thread-open .x-col-feed-in-thread {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  max-width: none;
+}
+
+html.x-electron .x-app-thread-open .x-channel-main {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 html.x-electron .x-app-thread-open .x-shell {
@@ -305,6 +341,17 @@ html.x-electron .x-app-thread-open .x-shell {
 
 html.x-electron .x-app-thread-open .x-thread-blade {
   border-right: none;
+  height: 100%;
+  min-height: 0;
+}
+
+html.x-electron .x-app-thread-open .x-rail-thread {
+  flex: 0 0 var(--x-thread-w);
+  width: var(--x-thread-w);
+  min-width: var(--x-thread-w);
+  max-width: var(--x-thread-w);
+  height: 100%;
+  min-height: 0;
 }
 
 html.x-electron .x-rail {
@@ -351,7 +398,7 @@ html.x-electron a {
   display: flex;
   align-items: stretch;
   width: 100%;
-  max-width: var(--x-shell-w);
+  max-width: none;
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -359,8 +406,8 @@ html.x-electron a {
 
 .x-app-stream .x-shell {
   width: 100%;
-  max-width: var(--x-shell-w);
-  margin-right: auto;
+  max-width: none;
+  margin-right: 0;
   border-right: none;
 }
 
@@ -382,21 +429,60 @@ html.x-electron a {
 }
 
 .x-app-thread-open .x-channel {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
+}
+
+.x-app-thread-open .x-col-feed,
+.x-app-thread-open .x-main-thread-open {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  max-width: none;
 }
 
 .x-app-thread-open .x-col-feed-in-thread {
   border-right: none;
 }
 
-.x-app-thread-open .x-thread-blade {
-  flex: 1 1 var(--x-thread-w);
-  width: auto;
+.x-channel-has-thread .x-col-feed-in-thread {
+  box-shadow: inset -3px 0 0 color-mix(in srgb, var(--x-accent) 35%, transparent);
+}
+
+.x-rail-thread {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--x-thread-w);
+  width: var(--x-thread-w);
   min-width: var(--x-thread-w);
-  max-width: none;
+  max-width: var(--x-thread-w);
+  height: 100%;
+  min-height: 0;
+  align-self: stretch;
+  padding: 0;
+  overflow: hidden;
   border-left: 1px solid var(--x-border);
-  border-right: none;
+  background: var(--x-bg);
+  position: relative;
+  z-index: 80;
+  flex-shrink: 0;
+}
+
+.x-rail-thread .x-thread-blade {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: 100%;
+  min-height: 0;
+  border: none;
+  background: var(--x-bg);
+}
+
+.x-app-thread-open .x-rail-thread.x-col-rail {
+  flex: 0 0 var(--x-thread-w);
+  width: var(--x-thread-w);
+  min-width: var(--x-thread-w);
 }
 
 /* macOS traffic lights clearance in Electron */
@@ -1499,8 +1585,8 @@ html.x-electron a {
 }
 
 .x-post-thread-active {
-  background: color-mix(in srgb, var(--x-accent) 6%, var(--x-bg));
-  box-shadow: inset 3px 0 0 var(--x-accent);
+  background: color-mix(in srgb, var(--x-accent) 8%, var(--x-bg));
+  box-shadow: inset 4px 0 0 var(--x-accent);
 }
 
 /* ── Multimodal feed cards ── */
@@ -1819,7 +1905,7 @@ html.x-electron a {
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   min-width: 0;
   height: 100%;
   min-height: 0;
@@ -1827,6 +1913,7 @@ html.x-electron a {
 }
 
 .x-channel-main {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -1835,67 +1922,332 @@ html.x-electron a {
   overflow: hidden;
 }
 
-/* ── Slack thread column (attached to feed) ── */
+/* ── Thread panel (replaces context rail) ── */
 .x-thread-blade {
-  flex: 0 0 var(--x-thread-w);
-  width: var(--x-thread-w);
-  min-width: var(--x-thread-w);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: 100%;
+  min-width: 0;
   height: 100%;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--x-thread-bg, var(--x-bg));
-  border-left: 1px solid var(--x-border);
-  border-right: none;
-  z-index: 5;
   overflow: hidden;
+  background: var(--x-bg);
 }
 
-.x-thread-topbar {
+.x-thread-head {
+  grid-row: 1;
   flex-shrink: 0;
-  height: 49px;
-  display: grid;
-  grid-template-columns: 40px 1fr 40px;
+  display: flex;
   align-items: center;
-  padding: 0 8px 0 4px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--x-border);
-  background: var(--x-thread-bg, var(--x-bg));
+}
+
+.x-thread-back {
+  padding: 6px 0;
+  border: none;
+  background: none;
+  color: var(--x-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.x-thread-back:hover {
+  color: var(--x-accent);
+}
+
+.x-thread-subject {
+  grid-row: 2;
+  flex-shrink: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--x-border);
+  background: var(--x-surface);
+}
+
+.x-thread-source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border: 1px solid var(--x-border);
+  color: var(--x-muted);
+}
+
+.x-thread-source-gmail {
+  border-color: rgba(234, 67, 53, 0.35);
+  color: #ea4335;
+}
+
+.x-thread-source-monday {
+  border-color: rgba(255, 117, 0, 0.35);
+  color: #ff7500;
+}
+
+.x-thread-source-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.x-thread-subject-title {
+  margin: 0;
+  font-family: var(--x-font-sans);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--x-fg);
+}
+
+.x-thread-subject-sub {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--x-muted);
 }
 
 .x-thread-topbar-title {
   margin: 0;
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 700;
   text-align: left;
-  padding-left: 2px;
   color: var(--x-fg);
 }
 
 .x-thread-icon-btn {
-  width: 36px;
-  height: 36px;
-  border: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--x-border);
   border-radius: 8px;
-  background: transparent;
+  background: var(--x-surface);
   color: var(--x-muted);
-  font-size: 16px;
+  font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.x-thread-icon-btn:hover {
+.x-thread-icon-btn:hover:not(:disabled) {
   background: var(--x-hover);
   color: var(--x-fg);
+  border-color: var(--x-border-strong);
+}
+
+.x-thread-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .x-thread-body {
-  flex: 1;
+  grid-row: 3;
   overflow-y: auto;
   min-height: 0;
-  padding: 8px 0 16px;
+  overscroll-behavior: contain;
 }
+
+.x-thread-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px 16px;
+}
+
+.x-thread-message-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Gmail email cards */
+.x-thread-email {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--x-border);
+  border-radius: 10px;
+  background: var(--x-surface);
+}
+
+.x-thread-email-you {
+  border-color: color-mix(in srgb, var(--x-accent) 35%, var(--x-border));
+  background: color-mix(in srgb, var(--x-accent) 4%, var(--x-surface));
+}
+
+.x-thread-email-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.x-thread-email-from {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.x-thread-email-sender {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--x-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.x-thread-email-you-badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--x-accent) 15%, transparent);
+  color: var(--x-accent);
+}
+
+.x-thread-email-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--x-muted);
+}
+
+.x-thread-email-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.x-thread-email-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--x-body, var(--x-fg));
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.x-thread-link {
+  color: var(--x-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
+.x-thread-link:hover {
+  color: var(--x-accent-hover);
+}
+
+.x-thread-email-quote-wrap {
+  margin-top: 2px;
+}
+
+.x-thread-email-quote-toggle {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--x-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.x-thread-email-quote-toggle:hover {
+  color: var(--x-accent);
+}
+
+.x-thread-email-quote {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--x-border);
+  background: var(--x-bg);
+  font-family: var(--x-font-sans);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--x-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* Monday / chat messages */
+.x-thread-chat {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--x-border);
+  border-radius: 10px;
+  background: var(--x-surface);
+  align-items: flex-start;
+}
+
+.x-thread-chat-you {
+  border-color: color-mix(in srgb, var(--x-accent) 30%, var(--x-border));
+  background: color-mix(in srgb, var(--x-accent) 4%, var(--x-surface));
+}
+
+.x-thread-chat-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.x-thread-chat-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.x-thread-chat-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.x-thread-chat-author {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--x-fg);
+}
+
+.x-thread-chat-time {
+  font-size: 11px;
+  color: var(--x-muted);
+  flex-shrink: 0;
+}
+
+.x-thread-chat-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  color: var(--x-body, var(--x-fg));
+}
+
+/* legacy chat row classes removed — use x-thread-chat / x-thread-email */
 
 .x-thread-divider {
   display: flex;
@@ -1915,108 +2267,9 @@ html.x-electron a {
   background: var(--x-border);
 }
 
-.x-thread-msg {
-  display: flex;
-  gap: 8px;
-  padding: 4px 20px;
-  align-items: flex-start;
-}
-
-.x-thread-msg:hover {
-  background: var(--x-hover);
-}
-
-.x-thread-msg-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 4px;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-
-.x-thread-msg-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.x-thread-msg-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  line-height: 1.2;
-}
-
-.x-thread-msg-author {
-  font-size: 15px;
-  font-weight: 900;
-  color: var(--x-fg);
-}
-
-.x-thread-msg-time {
-  font-size: 12px;
-  color: var(--x-muted);
-}
-
-.x-thread-msg-text {
-  margin-top: 2px;
-  font-size: 15px;
-  line-height: 1.46668;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--x-fg);
-}
-
 .x-thread-placeholder {
-  margin: 20px;
-  font-size: 14px;
-  color: var(--x-muted);
-}
-
-.x-thread-item-head {
-  display: flex;
-  gap: 12px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--x-border);
-  background: var(--x-surface, rgba(255, 255, 255, 0.03));
-}
-
-.x-thread-item-brand {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: #fff;
-  border: 1px solid var(--x-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.x-thread-item-brand-icon {
-  width: 22px;
-  height: 22px;
-}
-
-.x-thread-item-meta {
-  min-width: 0;
-}
-
-.x-thread-item-title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.3;
-}
-
-.x-thread-item-board {
-  margin: 2px 0 0;
-  font-size: 12px;
+  margin: 20px 16px;
+  font-size: 13px;
   color: var(--x-muted);
 }
 
@@ -2032,8 +2285,9 @@ html.x-electron a {
 }
 
 .x-thread-activity {
-  padding: 8px 12px 4px;
-  border-bottom: 1px solid var(--x-border);
+  margin: 0 12px 8px;
+  padding: 0;
+  border: none;
 }
 
 .x-thread-activity-toggle {
@@ -2089,47 +2343,45 @@ html.x-electron a {
 .x-thread-date-divider {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 12px 16px 4px;
+  margin: 2px 0 4px;
 }
 
 .x-thread-date-divider span {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--x-muted);
-  padding: 2px 10px;
-  border-radius: 999px;
-  background: var(--x-surface, rgba(255, 255, 255, 0.05));
 }
 
 .x-thread-empty-comments {
-  padding: 24px 16px;
+  padding: 16px 12px;
   text-align: center;
   color: var(--x-muted);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .x-thread-reply-bar {
+  grid-row: 4;
   flex-shrink: 0;
-  padding: 12px 12px 14px 16px;
+  padding: 12px 16px 16px;
   border-top: 1px solid var(--x-border);
-  background: var(--x-thread-bg, var(--x-bg));
+  background: var(--x-surface);
 }
 
 .x-thread-flash {
   margin: 0 0 8px;
   font-size: 12px;
-  color: #007a5a;
+  color: var(--x-accent);
 }
 
 .x-thread-flash.is-error {
-  color: #e01e5a;
+  color: #e53935;
 }
 
 .x-thread-reply-row {
   display: flex;
-  gap: 8px;
-  align-items: flex-start;
+  gap: 0;
 }
 
 .x-thread-reply-composer {
@@ -2137,67 +2389,52 @@ html.x-electron a {
   min-width: 0;
 }
 
-.x-thread-reply-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 4px;
-  background: var(--x-avatar);
-  color: var(--x-muted);
-  font-size: 14px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
 .x-thread-reply-field {
   display: flex;
   align-items: flex-end;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
-  border: 1px solid var(--x-border-strong);
-  border-radius: 8px;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--x-border);
+  border-radius: 12px;
   background: var(--x-bg);
-  padding: 2px 6px 2px 10px;
 }
 
 .x-thread-reply-field:focus-within {
-  border-color: #1264a3;
-  box-shadow: 0 0 0 1px #1264a3;
+  border-color: color-mix(in srgb, var(--x-accent) 45%, var(--x-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--x-accent) 12%, transparent);
 }
 
 .x-thread-reply-field textarea {
   flex: 1;
-  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  max-height: 120px;
+  padding: 2px 0;
   border: none;
   background: transparent;
-  color: var(--x-fg);
-  font-size: 15px;
-  line-height: 1.466;
-  padding: 8px 0;
-  font-family: inherit;
   resize: none;
-  min-height: 22px;
-  max-height: 160px;
-  outline: none;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--x-fg);
+}
+
+.x-thread-reply-field textarea::placeholder {
+  color: var(--x-muted);
 }
 
 .x-thread-reply-send {
   flex-shrink: 0;
   width: 32px;
   height: 32px;
-  margin-bottom: 4px;
   border: none;
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--x-accent);
   color: #fff;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  transition: background 0.15s ease, opacity 0.15s ease;
 }
 
 .x-thread-reply-send:not(:disabled):hover {
@@ -2205,8 +2442,8 @@ html.x-electron a {
 }
 
 .x-thread-reply-send:disabled {
-  opacity: 0.35;
-  cursor: default;
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .x-thread-reply-send-icon {
@@ -2215,18 +2452,9 @@ html.x-electron a {
 }
 
 .x-thread-reply-hint {
-  margin: 8px 0 0;
+  margin: 6px 2px 0;
   font-size: 11px;
   color: var(--x-muted);
-  line-height: 1.35;
-}
-
-.x-thread-reply-hint kbd {
-  font-size: 11px;
-  font-family: inherit;
-  color: var(--x-fg);
-  background: none;
-  padding: 0;
 }
 
 /* legacy thread classes kept for feed reply button */
@@ -4264,15 +4492,17 @@ html.x-electron a {
 
 .x-col-feed,
 .x-main-wide {
-  flex: 0 0 var(--x-feed-w);
-  width: var(--x-feed-w);
-  max-width: var(--x-feed-w);
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  max-width: none;
 }
 
 .x-main-thread-open {
-  flex: 0 0 var(--x-feed-w);
-  width: var(--x-feed-w);
-  max-width: var(--x-feed-w);
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  max-width: none;
 }
 
 .x-col-rail,
@@ -6190,11 +6420,83 @@ button.x-home-running-row:hover {
 
 .x-int-body {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.x-int-feed-layout {
+  flex: 1;
   display: grid;
   grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
   align-items: stretch;
   min-height: 0;
   overflow: hidden;
+}
+
+.x-int-feed-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.x-int-section-head {
+  flex-shrink: 0;
+  padding: 16px var(--x-gutter) 0;
+}
+
+.x-int-section-head-col {
+  padding-bottom: 0;
+  border-right: 1px solid var(--x-border);
+  background: var(--x-bg);
+}
+
+.x-int-section-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--x-fg);
+}
+
+.x-int-section-head p {
+  margin: 4px 0 12px;
+  font-size: 13px;
+  color: var(--x-muted);
+}
+
+.x-int-desktop-apps {
+  flex-shrink: 0;
+  padding: 16px var(--x-gutter) 20px;
+  border-bottom: 1px solid var(--x-border);
+  background: var(--x-bg);
+}
+
+.x-int-grid-desktop {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: 10px;
+  padding: 0;
+  border-right: none;
+  overflow: visible;
+  min-height: auto;
+}
+
+.x-int-card-static {
+  cursor: default;
+}
+
+.x-int-card-youtube .x-int-card-icon {
+  background: #ff0000;
+  color: #fff;
+}
+
+.x-int-desktop-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
 }
 
 .x-int-grid {
@@ -7039,7 +7341,7 @@ button.x-home-running-row:hover {
 .x-nav-app-player {
   display: flex;
   flex-direction: column;
-  z-index: 40;
+  z-index: 60;
   background: var(--x-bg);
   border: 1px solid var(--x-border);
   overflow: hidden;
@@ -7066,24 +7368,45 @@ button.x-home-running-row:hover {
 }
 
 .x-nav-app-player--mini {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  width: min(380px, calc(100vw - var(--x-nav-w) - 40px));
-  height: 214px;
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  width: min(340px, calc(100% - 32px));
+  height: 200px;
   border-radius: var(--x-card-radius);
   box-shadow: var(--x-card-shadow), 0 12px 40px rgba(0, 0, 0, 0.35);
+  z-index: 40;
+  pointer-events: auto;
 }
 
-.x-app:not(.x-app-no-rail):not(.x-app-thread-open) .x-nav-app-player--mini {
-  right: calc(var(--x-rail-w) + 20px);
+/* Mini player lives inside the feed column — no thread/rail offset needed */
+.x-channel-main > .x-nav-app-player--mini {
+  right: 16px;
+  width: min(340px, calc(100% - 32px));
 }
 
-.x-app-thread-open .x-nav-app-player--mini {
-  right: calc(var(--x-thread-w) + 20px);
+/* Fallback when mini is docked on utility pages (no feed column) */
+.x-app > .x-nav-app-player--mini {
+  z-index: 50;
+}
+
+.x-app-no-rail:not(.x-app-thread-open) .x-app > .x-nav-app-player--mini {
+  width: min(340px, calc(100% - var(--x-nav-w) - 32px));
+}
+
+.x-app:not(.x-app-no-rail):not(.x-app-thread-open) .x-app > .x-nav-app-player--mini {
+  right: calc(var(--x-rail-w) + 16px);
+  width: min(340px, calc(100% - var(--x-nav-w) - var(--x-rail-w) - 48px));
+}
+
+.x-app-thread-open .x-app > .x-nav-app-player--mini {
+  right: calc(var(--x-thread-w) + 16px);
+  width: min(320px, calc(100% - var(--x-nav-w) - var(--x-thread-w) - 48px));
 }
 
 .x-nav-app-player-bar {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -7137,6 +7460,11 @@ button.x-home-running-row:hover {
   padding: 2px 8px;
 }
 
+.x-nav-app-player-btn-signin {
+  font-weight: 600;
+  color: var(--x-accent);
+}
+
 .x-nav-app-player-body {
   flex: 1;
   min-height: 0;
@@ -7144,9 +7472,11 @@ button.x-home-running-row:hover {
   flex-direction: column;
 }
 
+.x-nav-app-player-surface,
 .x-nav-app-player-webview {
   flex: 1;
   width: 100%;
+  min-height: 120px;
   border: none;
   background: #000;
 }
@@ -7298,7 +7628,13 @@ button.x-home-running-row:hover {
     left: 0;
   }
 
-  .x-nav-app-player--mini {
+  .x-channel-main > .x-nav-app-player--mini {
+    width: calc(100% - 24px);
+    right: 12px;
+    bottom: 12px;
+  }
+
+  .x-app > .x-nav-app-player--mini {
     width: calc(100vw - 24px);
     right: 12px;
     bottom: 12px;
@@ -7333,22 +7669,16 @@ button.x-home-running-row:hover {
   }
 
   .x-app-thread-open .x-thread-blade {
-    position: fixed;
-    right: 0;
-    top: 0;
-    flex: none;
-    width: min(var(--x-thread-w), 92vw);
-    min-width: 0;
-    max-width: 92vw;
-    height: 100vh;
-    z-index: 30;
-    box-shadow: -18px 0 44px rgba(0, 0, 0, 0.22);
-    border-right: none;
+    position: static;
+    width: 100%;
+    max-width: none;
+    height: auto;
+    box-shadow: none;
   }
 
   html.x-electron .x-app-thread-open .x-thread-blade {
-    top: var(--x-titlebar-h);
-    height: calc(100vh - var(--x-titlebar-h));
+    top: auto;
+    height: auto;
   }
 }
 

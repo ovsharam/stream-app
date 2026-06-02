@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { app, BrowserWindow, globalShortcut, screen, Tray, nativeImage, ipcMain, shell, dialog, session } from 'electron'
+import { app, BrowserView, BrowserWindow, globalShortcut, screen, Tray, nativeImage, ipcMain, shell, dialog, session } from 'electron'
 import type { BrowserWindow as BW, Input, Session, WebContents } from 'electron'
 import type { NativeImage } from 'electron'
 import { join } from 'path'
@@ -30,6 +30,81 @@ let mobileVisible = false
 let mobilePosition: { x: number; y: number } | null = null
 let audioTap: AudioTap | null = null
 let callSession: CallSessionManager | null = null
+
+/** Google blocks OAuth in Electron/webview UAs — present as current Chrome instead. */
+const CHROME_USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.204 Safari/537.36'
+
+let navBrowserView: BrowserView | null = null
+let navBrowserViewPartition: string | null = null
+const authWindows = new Map<string, BrowserWindow>()
+let navAppTheme: 'light' | 'dark' | 'gray' | 'midnight' = 'dark'
+
+const NAV_APP_THEME_BG: Record<string, string> = {
+  light: '#faf9f5',
+  dark: '#181715',
+  gray: '#1f1e1b',
+  midnight: '#141312'
+}
+
+function navAppThemeIsDark(theme: string): boolean {
+  return theme !== 'light'
+}
+
+function applyYoutubeDarkMode(dark: boolean): void {
+  if (!navBrowserView || navBrowserView.webContents.isDestroyed()) return
+  const url = navBrowserView.webContents.getURL()
+  if (!url.includes('youtube.com')) return
+  void navBrowserView.webContents
+    .executeJavaScript(
+      `(function() {
+        const html = document.documentElement;
+        if (${dark}) {
+          html.setAttribute('dark', 'true');
+          html.setAttribute('theme', 'dark');
+        } else {
+          html.removeAttribute('dark');
+          html.removeAttribute('theme');
+        }
+      })();`
+    )
+    .catch(() => {})
+}
+
+function applyNavAppAppearance(theme: string): void {
+  if (theme === 'light' || theme === 'dark' || theme === 'gray' || theme === 'midnight') {
+    navAppTheme = theme
+  }
+  const dark = navAppThemeIsDark(navAppTheme)
+  const bg = NAV_APP_THEME_BG[navAppTheme] ?? NAV_APP_THEME_BG.dark
+  if (!navBrowserView || navBrowserView.webContents.isDestroyed()) return
+  navBrowserView.setBackgroundColor(bg)
+  if (navBrowserView.webContents.isLoading()) {
+    navBrowserView.webContents.once('did-finish-load', () => applyYoutubeDarkMode(dark))
+  } else {
+    applyYoutubeDarkMode(dark)
+  }
+}
+
+async function getNavAppPlaybackState(): Promise<{ playing: boolean }> {
+  if (!navBrowserView || navBrowserView.webContents.isDestroyed()) return { playing: false }
+  try {
+    const result = await navBrowserView.webContents.executeJavaScript(
+      `(function() {
+        const path = location.pathname || '';
+        const onWatch = path === '/watch' || path.startsWith('/watch');
+        const v = document.querySelector('video');
+        if (!onWatch || !v) return { playing: false };
+        const playing = !v.paused && !v.ended && v.currentTime > 0;
+        return { playing };
+      })();`,
+      true
+    )
+    return result as { playing: boolean }
+  } catch {
+    return { playing: false }
+  }
+}
 
 function whisperDir(): string {
   return resolveWhisperRoot(app.getPath('userData'))
@@ -195,10 +270,133 @@ function registerShortcuts(): void {
 }
 
 function configureEmbeddedSession(sess: Session): void {
+  sess.setUserAgent(CHROME_USER_AGENT)
   sess.setPermissionRequestHandler((_wc, _permission, callback) => {
     callback(true)
   })
   sess.setPermissionCheckHandler(() => true)
+}
+
+function suspendNavBrowserView(): void {
+  if (!navBrowserView || !centralWindow || centralWindow.isDestroyed()) return
+  try {
+    centralWindow.removeBrowserView(navBrowserView)
+  } catch {
+    /* already detached */
+  }
+}
+
+function hideNavBrowserView(): void {
+  if (!navBrowserView) return
+  try {
+    suspendNavBrowserView()
+    navBrowserView.webContents.close()
+  } catch {
+    /* already torn down */
+  }
+  navBrowserView = null
+  navBrowserViewPartition = null
+}
+
+type NavAppBounds = { x: number; y: number; width: number; height: number }
+
+/** Keep embedded views out of the sidebar / titlebar — BrowserView draws above all web UI. */
+const NAV_APP_SIDEBAR_W = 196
+const NAV_APP_TITLEBAR_H = 48
+
+function sanitizeNavAppBounds(bounds: NavAppBounds): NavAppBounds | null {
+  if (bounds.width < 2 || bounds.height < 2) return null
+
+  let { x, y, width, height } = bounds
+
+  if (x < NAV_APP_SIDEBAR_W) {
+    width -= NAV_APP_SIDEBAR_W - x
+    x = NAV_APP_SIDEBAR_W
+  }
+  if (y < NAV_APP_TITLEBAR_H) {
+    height -= NAV_APP_TITLEBAR_H - y
+    y = NAV_APP_TITLEBAR_H
+  }
+
+  if (width < 2 || height < 2) return null
+  return {
+    x: Math.round(x),
+    y: Math.round(y),
+    width: Math.round(width),
+    height: Math.round(height)
+  }
+}
+
+function showNavBrowserView(args: { partition: string; url: string; bounds: NavAppBounds }): void {
+  if (!centralWindow || centralWindow.isDestroyed()) return
+
+  const bounds = sanitizeNavAppBounds(args.bounds)
+  if (!bounds) {
+    // Layout settling (full ↔ mini) — keep session alive, skip bounds update.
+    return
+  }
+
+  const sess = session.fromPartition(args.partition)
+  configureEmbeddedSession(sess)
+
+  if (navBrowserView && navBrowserViewPartition !== args.partition) {
+    hideNavBrowserView()
+  }
+
+  if (!navBrowserView) {
+    navBrowserView = new BrowserView({
+      webPreferences: {
+        session: sess,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false
+      }
+    })
+    navBrowserView.webContents.setUserAgent(CHROME_USER_AGENT)
+    configureGuestWebContents(navBrowserView.webContents)
+    navBrowserViewPartition = args.partition
+    navBrowserView.webContents.on('did-finish-load', () => applyNavAppAppearance(navAppTheme))
+    void navBrowserView.webContents.loadURL(args.url)
+  }
+
+  if (centralWindow && !centralWindow.isDestroyed()) {
+    const views = centralWindow.getBrowserViews()
+    if (!views.includes(navBrowserView)) {
+      centralWindow.addBrowserView(navBrowserView)
+    }
+  }
+
+  navBrowserView.setBounds(bounds)
+  applyNavAppAppearance(navAppTheme)
+}
+
+function openAuthWindow(args: { partition: string; url: string; title?: string }): void {
+  const sess = session.fromPartition(args.partition)
+  configureEmbeddedSession(sess)
+
+  const existing = authWindows.get(args.partition)
+  if (existing && !existing.isDestroyed()) {
+    existing.focus()
+    void existing.loadURL(args.url)
+    return
+  }
+
+  const win = new BrowserWindow({
+    ...popupWindowOptions(centralWindow, sess),
+    width: 960,
+    height: 780,
+    title: args.title ?? 'Sign in'
+  })
+  win.webContents.setUserAgent(CHROME_USER_AGENT)
+  configureGuestWebContents(win.webContents)
+  void win.loadURL(args.url)
+  authWindows.set(args.partition, win)
+  win.on('closed', () => {
+    authWindows.delete(args.partition)
+    if (centralWindow && !centralWindow.isDestroyed()) {
+      centralWindow.webContents.send('embedded:auth-closed', args.partition)
+    }
+  })
 }
 
 function popupWindowOptions(parent: BrowserWindow | null, sess: Session): Electron.BrowserWindowConstructorOptions {
@@ -224,6 +422,7 @@ function isNotchAppShell(url: string): boolean {
 
 function configureGuestWebContents(contents: WebContents): void {
   configureEmbeddedSession(contents.session)
+  contents.setUserAgent(CHROME_USER_AGENT)
 
   contents.setWindowOpenHandler(({ url }) => {
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -259,6 +458,28 @@ function setupEmbeddedBrowsing(): void {
   })
 }
 
+function hideNavAppAuthWindows(): void {
+  for (const win of authWindows.values()) {
+    if (!win.isDestroyed()) win.close()
+  }
+  authWindows.clear()
+}
+
+function wireCentralNavAppLifecycle(win: BrowserWindow): void {
+  // Hard refresh (⌘⇧R) reloads React but BrowserView lives in the main process — tear it down.
+  win.webContents.on('did-start-navigation', (_event, url, _inPlace, isMainFrame) => {
+    if (!isMainFrame || !isNotchAppShell(url)) return
+    hideNavBrowserView()
+    hideNavAppAuthWindows()
+  })
+
+  win.webContents.on('did-finish-load', () => {
+    if (!isNotchAppShell(win.webContents.getURL())) return
+    hideNavBrowserView()
+    win.webContents.send('navapp:renderer-ready')
+  })
+}
+
 function createCentralWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1100,
@@ -280,10 +501,12 @@ function createCentralWindow(): BrowserWindow {
   })
 
   wireLocalHotkey(win, toggleMobile)
+  wireCentralNavAppLifecycle(win)
   win.loadURL(CENTRAL_URL)
   win.show()
   win.focus()
   win.on('closed', () => {
+    hideNavBrowserView()
     centralWindow = null
   })
   return win
@@ -433,6 +656,29 @@ app.whenReady().then(() => {
   ipcMain.handle('meeting:status', () => (SIM ? { active: false, chunkCount: 0, signalCount: 0, starredCount: 0, autoEnd: false } : ensureCallSession().status()))
   ipcMain.on('shell:open', (_e, url: string) => {
     if (typeof url === 'string' && url.startsWith('http')) void shell.openExternal(url)
+  })
+  ipcMain.handle('navapp:show', (_e, args: { partition: string; url: string; bounds: NavAppBounds }) => {
+    if (!args?.partition || !args?.url || !args?.bounds) return { ok: false }
+    showNavBrowserView(args)
+    return { ok: true }
+  })
+  ipcMain.handle('navapp:hide', () => {
+    hideNavBrowserView()
+    return { ok: true }
+  })
+  ipcMain.handle('navapp:reload', () => {
+    navBrowserView?.webContents.reload()
+    return { ok: true }
+  })
+  ipcMain.handle('navapp:getPlayback', () => getNavAppPlaybackState())
+  ipcMain.handle('navapp:setTheme', (_e, theme: string) => {
+    applyNavAppAppearance(theme)
+    return { ok: true }
+  })
+  ipcMain.handle('embedded:openAuth', (_e, args: { partition: string; url: string; title?: string }) => {
+    if (!args?.partition || !args?.url) return { ok: false }
+    openAuthWindow(args)
+    return { ok: true }
   })
 
   console.log('[stream] central + mobile ready · mobile hidden until ⌘⇧M')

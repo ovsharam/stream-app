@@ -67,7 +67,24 @@ contextBridge.exposeInMainWorld('notch', {
 })
 
 contextBridge.exposeInMainWorld('notchDesktop', {
-  openExternal: (url: string) => ipcRenderer.send('shell:open', url)
+  openExternal: (url: string) => ipcRenderer.send('shell:open', url),
+  showNavApp: (args: { partition: string; url: string; bounds: { x: number; y: number; width: number; height: number } }) =>
+    ipcRenderer.invoke('navapp:show', args),
+  hideNavApp: () => ipcRenderer.invoke('navapp:hide'),
+  reloadNavApp: () => ipcRenderer.invoke('navapp:reload'),
+  getNavAppPlayback: () => ipcRenderer.invoke('navapp:getPlayback') as Promise<{ playing: boolean }>,
+  setNavAppTheme: (theme: string) => ipcRenderer.invoke('navapp:setTheme', theme),
+  openAuthWindow: (args: { partition: string; url: string; title?: string }) => ipcRenderer.invoke('embedded:openAuth', args),
+  onAuthClosed: (cb: (partition: string) => void) => {
+    const handler = (_: unknown, partition: string) => cb(partition)
+    ipcRenderer.on('embedded:auth-closed', handler)
+    return () => ipcRenderer.removeListener('embedded:auth-closed', handler)
+  },
+  onNavAppRendererReady: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on('navapp:renderer-ready', handler)
+    return () => ipcRenderer.removeListener('navapp:renderer-ready', handler)
+  }
 })
 
 declare global {
@@ -118,7 +135,21 @@ declare global {
         onSignal: (cb: (signal: { type: string; text: string }) => void) => () => void
       }
     }
-    notchDesktop?: { openExternal: (url: string) => void }
+    notchDesktop?: {
+      openExternal: (url: string) => void
+      showNavApp?: (args: {
+        partition: string
+        url: string
+        bounds: { x: number; y: number; width: number; height: number }
+      }) => Promise<{ ok: boolean }>
+      hideNavApp?: () => Promise<{ ok: boolean }>
+      reloadNavApp?: () => Promise<{ ok: boolean }>
+      getNavAppPlayback?: () => Promise<{ playing: boolean }>
+      setNavAppTheme?: (theme: string) => Promise<{ ok: boolean }>
+      openAuthWindow?: (args: { partition: string; url: string; title?: string }) => Promise<{ ok: boolean }>
+      onAuthClosed?: (cb: (partition: string) => void) => () => void
+      onNavAppRendererReady?: (cb: () => void) => () => void
+    }
   }
 }
 

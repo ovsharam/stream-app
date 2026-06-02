@@ -1,15 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { THEMES, useTheme, type ThemeId } from './useTheme'
+import { THEMES, type ThemeId } from './useTheme'
 
 type Props = {
   open: boolean
+  theme: ThemeId
+  setTheme: (id: ThemeId) => void
   anchorRef: RefObject<HTMLElement | null>
   onClose: () => void
 }
 
-export function ThemeMenu({ open, anchorRef, onClose }: Props) {
-  const { theme, setTheme } = useTheme()
+export function ThemeMenu({ open, theme, setTheme, anchorRef, onClose }: Props) {
   const menuRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ top: 0, left: 0 })
   const [ready, setReady] = useState(false)

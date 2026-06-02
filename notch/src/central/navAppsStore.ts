@@ -6,18 +6,28 @@ export type NavApp = {
   url: string
   /** Shrink to mini player when navigating to Home / Feed */
   miniPlayer?: boolean
-  builtin?: boolean
+}
+
+export type NavAppCatalogEntry = {
+  id: string
+  label: string
+  url: string
+  miniPlayer?: boolean
+  description: string
+  brandClass: string
 }
 
 const STORAGE_KEY = 'notch.navApps'
 
-export const DEFAULT_NAV_APPS: NavApp[] = [
+/** Apps available to pin from the Apps page — not pinned by default. */
+export const NAV_APP_CATALOG: NavAppCatalogEntry[] = [
   {
     id: 'youtube',
     label: 'YouTube',
     url: 'https://www.youtube.com',
     miniPlayer: true,
-    builtin: true
+    description: 'Watch and listen in Notch — keeps playing in a mini player when you switch to Feed.',
+    brandClass: 'x-int-card-youtube'
   }
 ]
 
@@ -36,21 +46,15 @@ function slugId(label: string): string {
   return `app-${base || 'link'}-${Date.now().toString(36).slice(-4)}`
 }
 
-function mergeApps(stored: NavApp[]): NavApp[] {
-  const builtins = DEFAULT_NAV_APPS.filter((d) => d.builtin)
-  const custom = stored.filter((a) => !a.builtin && !builtins.some((b) => b.id === a.id))
-  return [...builtins, ...custom]
-}
-
 export function loadNavApps(): NavApp[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return [...DEFAULT_NAV_APPS]
+    if (!raw) return []
     const parsed = JSON.parse(raw) as NavApp[]
-    if (!Array.isArray(parsed)) return [...DEFAULT_NAV_APPS]
-    return mergeApps(parsed)
+    if (!Array.isArray(parsed)) return []
+    return parsed
   } catch {
-    return [...DEFAULT_NAV_APPS]
+    return []
   }
 }
 
@@ -60,6 +64,26 @@ export function saveNavApps(apps: NavApp[]) {
 
 export function getNavApp(id: string, apps = loadNavApps()): NavApp | undefined {
   return apps.find((a) => a.id === id)
+}
+
+export function isNavAppPinned(id: string, apps = loadNavApps()): boolean {
+  return apps.some((a) => a.id === id)
+}
+
+export function pinCatalogApp(catalogId: string): NavApp | null {
+  const entry = NAV_APP_CATALOG.find((c) => c.id === catalogId)
+  if (!entry) return null
+  const apps = loadNavApps()
+  const existing = apps.find((a) => a.id === entry.id)
+  if (existing) return existing
+  const app: NavApp = {
+    id: entry.id,
+    label: entry.label,
+    url: entry.url,
+    miniPlayer: entry.miniPlayer ?? true
+  }
+  saveNavApps([...apps, app])
+  return app
 }
 
 export function addNavApp(input: { label: string; url: string; miniPlayer?: boolean }): NavApp {
@@ -77,8 +101,6 @@ export function addNavApp(input: { label: string; url: string; miniPlayer?: bool
 }
 
 export function removeNavApp(id: string): NavApp[] {
-  const app = getNavApp(id)
-  if (app?.builtin) return loadNavApps()
   const next = loadNavApps().filter((a) => a.id !== id)
   saveNavApps(next)
   return next
@@ -99,11 +121,17 @@ export function useNavApps() {
     return app
   }, [])
 
+  const pinCatalog = useCallback((catalogId: string) => {
+    const app = pinCatalogApp(catalogId)
+    setApps(loadNavApps())
+    return app
+  }, [])
+
   const remove = useCallback((id: string) => {
     setApps(removeNavApp(id))
   }, [])
 
-  return { apps, add, remove, refresh }
+  return { apps, add, pinCatalog, remove, refresh }
 }
 
 export function isNavAppDesktop(): boolean {

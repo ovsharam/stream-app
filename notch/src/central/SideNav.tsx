@@ -55,7 +55,7 @@ const SYSTEM_NAV: NavTarget[] = [
   {
     id: 'integrations',
     label: 'Apps',
-    hint: 'Connect tools',
+    hint: 'Desktop apps & integrations',
     page: 'integrations'
   },
   {
@@ -273,20 +273,17 @@ export function SideNav({
 
         <div className="x-side-nav-group">
           {compact ? null : <p className="x-side-nav-group-label">Pinned</p>}
-          {appTargets.map((target) => {
-            const app = navApps.find((a) => a.id === target.navAppId)
-            return (
-              <NavButton
-                key={target.id}
-                target={target}
-                active={isActive(target, page, area, tab, activeNavAppId)}
-                live={false}
-                compact={compact}
-                onClick={() => onOpenNavApp(target.navAppId!)}
-                onRemove={app?.builtin ? undefined : () => onRemoveNavApp(target.navAppId!)}
-              />
-            )
-          })}
+          {appTargets.map((target) => (
+            <NavButton
+              key={target.id}
+              target={target}
+              active={isActive(target, page, area, tab, activeNavAppId)}
+              live={false}
+              compact={compact}
+              onClick={() => onOpenNavApp(target.navAppId!)}
+              onRemove={() => onRemoveNavApp(target.navAppId!)}
+            />
+          ))}
           {addingApp ? (
             <AddNavAppForm
               compact={compact}

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ClusterThread, ClusterThreadUpdate } from '@shared/cluster'
 import { clusterApi, integrationApi, openExternal } from '../lib/api'
-import { IconMonday, IconSend } from './Icons'
+import { IconGmail, IconMonday, IconSend } from './Icons'
+import { FormattedChatBody, FormattedEmailBody } from './threadFormat'
 
 type Props = {
   itemId: string
@@ -34,7 +35,7 @@ function initials(name: string): string {
 function avatarColor(name: string): string {
   let hash = 0
   for (let i = 0; i < name.length; i += 1) hash = name.charCodeAt(i) + ((hash << 5) - hash)
-  const hues = ['#ff3d57', '#5865f2', '#00897b', '#7c3aed', '#0176d3', '#f59e0b']
+  const hues = ['#ea4335', '#5865f2', '#00897b', '#7c3aed', '#0176d3', '#cc785c']
   return hues[Math.abs(hash) % hues.length]
 }
 
@@ -51,19 +52,36 @@ function allMessages(thread: ClusterThread | null): ClusterThreadUpdate[] {
     .sort((a, b) => a.ts - b.ts)
 }
 
-function CommentMessage({ update }: { update: ClusterThreadUpdate }) {
+function GmailMessage({ update, isYou }: { update: ClusterThreadUpdate; isYou?: boolean }) {
+  return (
+    <article className={`x-thread-email${isYou ? ' x-thread-email-you' : ''}`}>
+      <header className="x-thread-email-head">
+        <div className="x-thread-email-from">
+          <span className="x-thread-email-sender">{update.actor}</span>
+          {isYou ? <span className="x-thread-email-you-badge">You</span> : null}
+        </div>
+        <time className="x-thread-email-time" dateTime={new Date(update.ts).toISOString()}>
+          {time(update.ts)}
+        </time>
+      </header>
+      <FormattedEmailBody body={update.body} />
+    </article>
+  )
+}
+
+function ChatMessage({ update, isYou }: { update: ClusterThreadUpdate; isYou?: boolean }) {
   const color = avatarColor(update.actor)
   return (
-    <article className="x-thread-msg">
-      <div className="x-thread-msg-avatar" style={{ background: color }}>
+    <article className={`x-thread-chat${isYou ? ' x-thread-chat-you' : ''}`}>
+      <div className="x-thread-chat-avatar" style={{ background: color }}>
         {initials(update.actor)}
       </div>
-      <div className="x-thread-msg-main">
-        <div className="x-thread-msg-meta">
-          <span className="x-thread-msg-author">{update.actor}</span>
-          <span className="x-thread-msg-time">{time(update.ts)}</span>
-        </div>
-        <div className="x-thread-msg-text">{update.body}</div>
+      <div className="x-thread-chat-main">
+        <header className="x-thread-chat-head">
+          <span className="x-thread-chat-author">{update.actor}</span>
+          <time className="x-thread-chat-time">{time(update.ts)}</time>
+        </header>
+        <FormattedChatBody body={update.body} />
       </div>
     </article>
   )
@@ -158,47 +176,43 @@ export function ThreadBlade({ itemId, day, contextItemId, onClose }: Props) {
   }
 
   const externalLabel = isGmail ? 'Open in Gmail' : 'Open in Monday'
+  const Message = isGmail ? GmailMessage : ChatMessage
 
   return (
-    <aside className="x-thread-blade" aria-label="Thread">
-      <header className="x-thread-topbar">
-        <button type="button" className="x-thread-icon-btn" onClick={onClose} aria-label="Close">
-          ✕
+    <div className={`x-thread-blade${isGmail ? ' x-thread-blade-gmail' : ''}`} aria-label="Thread">
+      <header className="x-thread-head">
+        <button type="button" className="x-thread-back" onClick={onClose} aria-label="Back to feed">
+          ← Feed
         </button>
-        <h2 className="x-thread-topbar-title">{thread?.itemTitle ?? 'Thread'}</h2>
         <button
           type="button"
           className="x-thread-icon-btn"
           aria-label={externalLabel}
           title={externalLabel}
+          disabled={!thread?.taskUrl}
           onClick={() => thread?.taskUrl && openExternal(thread.taskUrl)}
         >
           ↗
         </button>
       </header>
 
-      {thread && !isGmail ? (
-        <div className="x-thread-item-head">
-          <div className="x-thread-item-brand" aria-hidden>
-            <IconMonday className="x-thread-item-brand-icon" />
-          </div>
-          <div className="x-thread-item-meta">
-            <p className="x-thread-item-title">{thread.itemTitle}</p>
-            {thread.boardName ? (
-              <p className="x-thread-item-board">{thread.boardName}</p>
-            ) : null}
-            {thread.currentStatus ? (
-              <span className="x-thread-status-pill">{thread.currentStatus}</span>
-            ) : null}
-          </div>
+      <div className="x-thread-subject">
+        <div className={`x-thread-source-badge${isGmail ? ' x-thread-source-gmail' : ' x-thread-source-monday'}`}>
+          {isGmail ? <IconGmail className="x-thread-source-icon" /> : <IconMonday className="x-thread-source-icon" />}
+          <span>{isGmail ? 'Gmail' : 'Monday'}</span>
         </div>
-      ) : null}
+        <h2 className="x-thread-subject-title">{thread?.itemTitle ?? 'Loading…'}</h2>
+        {thread?.boardName && !isGmail ? <p className="x-thread-subject-sub">{thread.boardName}</p> : null}
+        {thread?.currentStatus && !isGmail ? (
+          <span className="x-thread-status-pill">{thread.currentStatus}</span>
+        ) : null}
+      </div>
 
       <div className="x-thread-body">
         {!thread ? (
           <p className="x-thread-placeholder">Loading…</p>
         ) : (
-          <>
+          <div className="x-thread-messages">
             {activity.length > 0 ? (
               <section className="x-thread-activity">
                 <button
@@ -207,7 +221,7 @@ export function ThreadBlade({ itemId, day, contextItemId, onClose }: Props) {
                   aria-expanded={activityOpen}
                   onClick={() => setActivityOpen((v) => !v)}
                 >
-                  {activityOpen ? '▾' : '▸'} Board activity · {activity.length}
+                  {activityOpen ? '▾' : '▸'} Activity · {activity.length}
                 </button>
                 {activityOpen ? (
                   <ul className="x-thread-activity-list">
@@ -221,25 +235,25 @@ export function ThreadBlade({ itemId, day, contextItemId, onClose }: Props) {
 
             {comments.length === 0 ? (
               <p className="x-thread-empty-comments">
-                {isGmail ? 'No messages yet.' : 'No comments yet — reply below.'}
+                {isGmail ? 'No messages in this thread.' : 'No comments yet — reply below.'}
               </p>
             ) : (
               comments.map((u, i) => {
                 const prev = comments[i - 1]
                 const showDate = !prev || dateLabel(prev.ts) !== dateLabel(u.ts)
                 return (
-                  <div key={u.id}>
+                  <div key={u.id} className="x-thread-message-group">
                     {showDate ? (
                       <div className="x-thread-date-divider">
                         <span>{dateLabel(u.ts)}</span>
                       </div>
                     ) : null}
-                    <CommentMessage update={u} />
+                    <Message update={u} isYou={u.actor === 'You' || u.id.startsWith('pending-')} />
                   </div>
                 )
               })
             )}
-          </>
+          </div>
         )}
       </div>
 
@@ -250,14 +264,13 @@ export function ThreadBlade({ itemId, day, contextItemId, onClose }: Props) {
 
         {thread?.canExecute ? (
           <div className="x-thread-reply-row">
-            <div className="x-thread-reply-avatar">A</div>
             <div className="x-thread-reply-composer">
               <div className="x-thread-reply-field">
                 <textarea
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  placeholder={isGmail ? 'Reply to thread…' : 'Comment or "move to Done"…'}
-                  rows={1}
+                  placeholder={isGmail ? 'Write a reply…' : 'Comment or "move to Done"…'}
+                  rows={2}
                   disabled={busy}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -277,21 +290,15 @@ export function ThreadBlade({ itemId, day, contextItemId, onClose }: Props) {
                   <IconSend className="x-thread-reply-send-icon" />
                 </button>
               </div>
-              <p className="x-thread-reply-hint">
-                {isGmail
-                  ? 'Enter to send · Shift+Enter for newline'
-                  : 'Comment · "move to Done" · @monday create: for new ticket'}
-              </p>
+              <p className="x-thread-reply-hint">Enter to send · Shift+Enter for newline</p>
             </div>
           </div>
         ) : (
           <p className="x-thread-reply-hint">
-            {isGmail
-              ? 'Connect Gmail in Apps to reply here.'
-              : 'Connect Monday in Apps to reply here.'}
+            {isGmail ? 'Connect Gmail in Apps to reply here.' : 'Connect Monday in Apps to reply here.'}
           </p>
         )}
       </footer>
-    </aside>
+    </div>
   )
 }

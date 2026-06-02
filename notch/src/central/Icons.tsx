@@ -277,6 +277,37 @@ export function IconVideoCall({ className }: IconProps) {
   )
 }
 
+/** YouTube */
+export function IconYoutube({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <path
+        fill="currentColor"
+        d="M21.8 8.001a2.749 2.749 0 0 0-1.937-1.948C18.363 5.75 12 5.75 12 5.75s-6.363 0-7.863.303A2.749 2.749 0 0 0 2.2 8.001 28.23 28.23 0 0 0 1.9 12a28.23 28.23 0 0 0 .3 3.999 2.749 2.749 0 0 0 1.937 1.948c1.5.303 7.863.303 7.863.303s6.363 0 7.863-.303a2.749 2.749 0 0 0 1.937-1.948A28.23 28.23 0 0 0 22.1 12a28.23 28.23 0 0 0-.3-3.999zM10 15.001V9l5.2 3-5.2 3z"
+      />
+    </svg>
+  )
+}
+
+export function IconPlus({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <path fill="currentColor" d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6z" />
+    </svg>
+  )
+}
+
+export function IconGlobe({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <path
+        fill="currentColor"
+        d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm7.93 9h-3.17a15.3 15.3 0 0 0-1.2-4.76A8.03 8.03 0 0 1 19.93 11zM12 4c.95 0 2.36 1.8 3.08 5H8.92C9.64 5.8 11.05 4 12 4zM4.27 6.24A15.3 15.3 0 0 0 3.07 11H6.1a15.3 15.3 0 0 1 1.2-4.76A8.03 8.03 0 0 0 4.27 6.24zM6.1 13H3.07a8.03 8.03 0 0 0 1.23 4.76 15.3 15.3 0 0 1 1.2-4.76zm1.82 5.52A15.3 15.3 0 0 1 8.92 13h6.16a15.3 15.3 0 0 1-1.2 4.76A8.03 8.03 0 0 1 7.92 18.52zM12 20c-.95 0-2.36-1.8-3.08-5h6.16c-.72 3.2-2.13 5-3.08 5zm4.73-1.24a15.3 15.3 0 0 1-1.2-4.76h3.03a8.03 8.03 0 0 1-1.83 4.76z"
+      />
+    </svg>
+  )
+}
+
 /** Monday.com — multicolor dot mark */
 export function IconMonday({ className }: IconProps) {
   return (

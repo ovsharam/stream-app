@@ -1,6 +1,6 @@
 import { HomeChat } from './HomeChat'
 import { HomeChatSidebar } from './HomeChatSidebar'
-import { useHomeChatSessions } from './homeChatStore'
+import { useHomeChat } from './homeChatContext'
 import type { CentralStreamEvent, ClusterSearchHit } from '@shared/cluster'
 
 type Props = {
@@ -9,7 +9,6 @@ type Props = {
   onFocusMeeting: (itemId: string) => void
   onOpenSearchHit?: (hit: ClusterSearchHit) => void
   onSeeAllAgents?: () => void
-  onRailChange?: (open: boolean) => void
 }
 
 export function HomeChatLayout({
@@ -17,10 +16,9 @@ export function HomeChatLayout({
   liveCapture,
   onFocusMeeting,
   onOpenSearchHit,
-  onSeeAllAgents,
-  onRailChange
+  onSeeAllAgents
 }: Props) {
-  const chat = useHomeChatSessions(onRailChange)
+  const chat = useHomeChat()
 
   return (
     <div className={`x-home-shell${chat.showRail ? ' x-home-shell-rail' : ''}`}>

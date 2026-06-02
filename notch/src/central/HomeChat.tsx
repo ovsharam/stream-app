@@ -13,6 +13,7 @@ const STARTERS = [
 ] as const
 
 type Props = {
+  compact?: boolean
   events: CentralStreamEvent[]
   liveCapture?: boolean
   messages: HomeChatMessage[]
@@ -41,6 +42,7 @@ function AgentSpinner() {
 }
 
 export function HomeChat({
+  compact,
   events,
   liveCapture,
   messages,
@@ -179,11 +181,32 @@ export function HomeChat({
     ) : null
 
   return (
-    <div className={`x-home-chat${hasThread ? ' x-home-chat-thread' : ''}`}>
-      <div className="x-home-bg" aria-hidden />
+    <div
+      className={`x-home-chat${hasThread ? ' x-home-chat-thread' : ''}${compact ? ' x-home-chat-compact' : ''}`}
+    >
+      {!compact ? <div className="x-home-bg" aria-hidden /> : null}
 
       <div className="x-home-chat-scroll" ref={scrollRef}>
+        <div className="x-home-col">
         {!hasThread ? (
+          compact ? (
+            <div className="x-home-hero x-home-hero-compact">
+              <p className="x-home-compact-lede">Ask about your feed, tasks, or calls.</p>
+              <div className="x-home-starter-grid x-home-starter-grid-compact">
+                {STARTERS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="x-home-starter-card x-home-starter-card-compact"
+                    disabled={busy}
+                    onClick={() => void sendMessage(item.label)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
           <div className="x-home-hero">
             <header className="x-home-welcome">
               <p className="x-home-date">{dateLabel}</p>
@@ -208,9 +231,10 @@ export function HomeChat({
               ))}
             </div>
           </div>
+          )
         ) : (
           <div className="x-home-thread">
-            {agentStrip}
+            {!compact ? agentStrip : null}
             <div className="x-home-messages">
             {messages.map((msg) => (
               <article
@@ -271,9 +295,11 @@ export function HomeChat({
             </div>
           </div>
         )}
+        </div>
       </div>
 
       <footer className="x-home-dock">
+        <div className="x-home-col">
         <div className="x-home-dock-inner">
           <div className="x-home-composer-inner">
             <textarea
@@ -309,7 +335,10 @@ export function HomeChat({
               </svg>
             </button>
           </div>
-          <p className="x-home-dock-hint">Enter to send · Shift+Enter for new line</p>
+          {!compact ? (
+            <p className="x-home-dock-hint">Enter to send · Shift+Enter for new line</p>
+          ) : null}
+        </div>
         </div>
       </footer>
     </div>

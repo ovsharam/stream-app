@@ -5,7 +5,7 @@ import { openMeeting } from '../lib/api'
 import { IconGmail, IconLike, IconMonday, IconReply, IconRepost, IconShare, IconViews } from './Icons'
 
 const AVATAR: Record<string, { bg: string; color: string; label: string }> = {
-  notch: { bg: '#0f1419', color: '#fff', label: 'N' },
+  notch: { bg: '#181715', color: '#cc785c', label: 'N' },
   meet: { bg: '#00897b', color: '#fff', label: '▶' },
   meeting: { bg: '#00897b', color: '#fff', label: '✦' },
   slack: { bg: '#611f69', color: '#fff', label: 'S' },
@@ -17,6 +17,38 @@ const AVATAR: Record<string, { bg: string; color: string; label: string }> = {
   salesforce: { bg: '#0176d3', color: '#fff', label: 'SF' },
   build: { bg: '#f59e0b', color: '#fff', label: '⚡' },
   insight: { bg: '#536471', color: '#fff', label: '✦' }
+}
+
+type AttachmentMeta = {
+  type: 'file' | 'image' | 'link'
+  name: string
+  url?: string
+  mimeType?: string
+}
+
+type MetricsMeta = {
+  like_count?: number
+  retweet_count?: number
+  reply_count?: number
+}
+
+function metaStr(meta: Record<string, unknown> | undefined, key: string): string | undefined {
+  const v = meta?.[key]
+  if (v == null || v === '') return undefined
+  return String(v)
+}
+
+function metaJson<T>(meta: Record<string, unknown> | undefined, key: string): T | undefined {
+  const raw = meta?.[key]
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw) as T
+    } catch {
+      return undefined
+    }
+  }
+  if (raw && typeof raw === 'object') return raw as T
+  return undefined
 }
 
 function FeedAvatar({ source }: { source: string }) {
@@ -49,6 +81,225 @@ function timeAgo(ts: number): string {
   return `${Math.floor(m / 60)}h`
 }
 
+
+function LinkPreview({
+  url,
+  title,
+  onClick
+}: {
+  url: string
+  title?: string
+  onClick: (e: MouseEvent) => void
+}) {
+  let host = url
+  try {
+    host = new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    /* keep raw url */
+  }
+  const imageAttachment = url.match(/\.(png|jpe?g|gif|webp)(\?|$)/i)
+
+  return (
+    <button type="button" className="x-card-link-preview" onClick={onClick}>
+      {imageAttachment ? (
+        <img className="x-card-link-preview-thumb" src={url} alt="" loading="lazy" />
+      ) : (
+        <div className="x-card-link-preview-thumb" aria-hidden>
+          🔗
+        </div>
+      )}
+      <div className="x-card-link-preview-body">
+        <p className="x-card-link-preview-title">{title ?? host}</p>
+        <p className="x-card-link-preview-url">{host}</p>
+      </div>
+    </button>
+  )
+}
+
+function AttachmentChips({ attachments }: { attachments: AttachmentMeta[] }) {
+  if (attachments.length === 0) return null
+  return (
+    <div className="x-card-row">
+      {attachments.slice(0, 3).map((a, i) => (
+        <span key={`${a.name}-${i}`} className="x-card-attachment">
+          {a.type === 'image' ? '🖼' : a.type === 'link' ? '🔗' : '📎'} {a.name}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function EngagementHints({ metrics }: { metrics?: MetricsMeta }) {
+  if (!metrics) return null
+  const likes = metrics.like_count ?? 0
+  const reposts = metrics.retweet_count ?? 0
+  const replies = metrics.reply_count ?? 0
+  if (likes + reposts + replies === 0) return null
+  return (
+    <div className="x-card-engagement">
+      {replies > 0 ? <span>💬 {replies}</span> : null}
+      {reposts > 0 ? <span>🔁 {reposts}</span> : null}
+      {likes > 0 ? <span>♥ {likes}</span> : null}
+    </div>
+  )
+}
+
+function GmailCard({ event }: { event: CentralStreamEvent }) {
+  const subject = metaStr(event.meta, 'subject') ?? event.title
+  const attachments = metaJson<AttachmentMeta[]>(event.meta, 'attachments') ?? []
+
+  return (
+    <>
+      {subject ? <p className="x-post-title x-post-title-inline">{subject}</p> : null}
+      {event.body ? <p className="x-post-body">{event.body}</p> : null}
+      <AttachmentChips attachments={attachments} />
+    </>
+  )
+}
+
+function ChatCard({ event, channelLabel }: { event: CentralStreamEvent; channelLabel?: string }) {
+  const replyCount = Number(metaStr(event.meta, 'replyCount') ?? '0')
+  const channel =
+    channelLabel ??
+    (event.title.startsWith('#') ? event.title : metaStr(event.meta, 'channelName') ? `#${metaStr(event.meta, 'channelName')}` : undefined)
+
+  return (
+    <>
+      <div className="x-card-row x-card-row-tight">
+        {channel ? <span className="x-card-channel">{channel}</span> : null}
+        {replyCount > 0 ? <span className="x-card-meta-line">{replyCount} replies</span> : null}
+      </div>
+      {event.body ? <p className="x-post-body">{event.body}</p> : null}
+    </>
+  )
+}
+
+function GithubCard({ event }: { event: CentralStreamEvent }) {
+  const repo = metaStr(event.meta, 'repo')
+  const issueNumber = metaStr(event.meta, 'issueNumber')
+  const title = event.title.replace(/^#\d+\s*/, '')
+
+  return (
+    <>
+      <div className="x-card-row x-card-row-tight">
+        {repo ? <span className="x-card-repo">{repo}</span> : null}
+        {issueNumber ? <span className="x-card-issue-badge">#{issueNumber}</span> : null}
+      </div>
+      <p className="x-post-title x-post-title-inline">{title}</p>
+      {event.body && event.body !== title ? <p className="x-post-body">{event.body}</p> : null}
+    </>
+  )
+}
+
+function MondayCard({ event }: { event: CentralStreamEvent }) {
+  const board = metaStr(event.meta, 'boardName')
+  return (
+    <>
+      {board ? <span className="x-card-channel">{board}</span> : null}
+      {event.title ? <p className="x-post-title x-post-title-inline">{event.title}</p> : null}
+      {event.body ? <p className="x-post-body">{event.body}</p> : null}
+    </>
+  )
+}
+
+function GdocsCard({ event }: { event: CentralStreamEvent }) {
+  return (
+    <>
+      <p className="x-post-title x-post-title-inline">{event.title}</p>
+      {event.body ? <p className="x-post-body">{event.body}</p> : null}
+    </>
+  )
+}
+
+function XCard({ event }: { event: CentralStreamEvent }) {
+  const metrics = metaJson<MetricsMeta>(event.meta, 'metrics')
+
+  return (
+    <>
+      {event.body ? <p className="x-post-body">{event.body}</p> : null}
+      <EngagementHints metrics={metrics} />
+    </>
+  )
+}
+
+function MeetingCard({ event }: { event: CentralStreamEvent }) {
+  const durationSec = metaStr(event.meta, 'durationSec')
+  const durationMin = durationSec ? Math.round(Number(durationSec) / 60) : undefined
+  const isLive = event.kind === 'transcript_live'
+
+  return (
+    <>
+      <div className="x-card-row x-card-row-tight">
+        {isLive ? (
+          <span className="x-card-live-badge">
+            <span className="x-card-live-dot" aria-hidden />
+            Live
+          </span>
+        ) : null}
+        {durationMin ? <span className="x-card-meta-line">{durationMin} min</span> : null}
+      </div>
+      {event.title && !isLive ? <p className="x-post-title x-post-title-inline">{event.title}</p> : null}
+      {event.body ? <p className="x-post-body">{event.body}</p> : null}
+    </>
+  )
+}
+
+function GongCard({ event }: { event: CentralStreamEvent }) {
+  const durationSec = metaStr(event.meta, 'durationSec')
+  const durationMin = durationSec ? Math.round(Number(durationSec) / 60) : undefined
+
+  return (
+    <>
+      {event.title ? <p className="x-post-title x-post-title-inline">{event.title}</p> : null}
+      {event.body ? <p className="x-post-body">{event.body}</p> : null}
+      {durationMin ? <p className="x-card-meta-line">{durationMin} min</p> : null}
+    </>
+  )
+}
+
+function GenericCard({ event }: { event: CentralStreamEvent }) {
+  return (
+    <>
+      {event.highlight ? <span className="x-card-highlight">{event.highlight}</span> : null}
+      {event.title && event.kind !== 'transcript_live' ? (
+        <p className="x-post-title x-post-title-inline">{event.title}</p>
+      ) : null}
+      {event.body ? <p className="x-post-body">{event.body}</p> : null}
+    </>
+  )
+}
+
+function SourceCardBody({ event }: { event: CentralStreamEvent }) {
+  switch (event.source) {
+    case 'gmail':
+      return <GmailCard event={event} />
+    case 'slack':
+    case 'discord':
+      return <ChatCard event={event} channelLabel={event.title.startsWith('#') ? event.title : undefined} />
+    case 'github':
+      return <GithubCard event={event} />
+    case 'monday':
+      return <MondayCard event={event} />
+    case 'gdocs':
+      return <GdocsCard event={event} />
+    case 'x':
+      return <XCard event={event} />
+    case 'notch':
+      if (event.kind === 'transcript_live' || event.kind === 'transcript_done') {
+        return <MeetingCard event={event} />
+      }
+      return <GenericCard event={event} />
+    case 'meeting':
+      return <MeetingCard event={event} />
+    case 'gong':
+      return <GongCard event={event} />
+    case 'meet':
+      return null
+    default:
+      return <GenericCard event={event} />
+  }
+}
+
 type Props = {
   event: CentralStreamEvent
   isNew?: boolean
@@ -74,6 +325,66 @@ function isActionable(event: CentralStreamEvent): boolean {
   )
 }
 
+function PostActions({
+  event,
+  isMondayThread,
+  isThreadable,
+  threadItemId,
+  openThread,
+  selectContext,
+  onOpenWorkspace
+}: {
+  event: CentralStreamEvent
+  isMondayThread: boolean
+  isThreadable: boolean
+  threadItemId: string
+  openThread: (e?: MouseEvent) => void
+  selectContext: () => void
+  onOpenWorkspace?: (event: CentralStreamEvent) => void
+}) {
+  return (
+    <div className="x-actions">
+      <button
+        type="button"
+        className="x-action"
+        aria-label={isThreadable ? 'Open thread' : 'Reply'}
+        onClick={(e) => {
+          e.stopPropagation()
+          selectContext()
+          if (isThreadable && threadItemId) openThread(e)
+        }}
+      >
+        <IconReply className="x-action-icon" />
+      </button>
+      {!isMondayThread && (
+        <>
+          <button type="button" className="x-action" aria-label="Repost" onClick={(e) => e.stopPropagation()}>
+            <IconRepost className="x-action-icon" />
+          </button>
+          <button type="button" className="x-action" aria-label="Like" onClick={(e) => e.stopPropagation()}>
+            <IconLike className="x-action-icon" />
+          </button>
+          <button type="button" className="x-action" aria-label="Views" onClick={(e) => e.stopPropagation()}>
+            <IconViews className="x-action-icon" />
+          </button>
+        </>
+      )}
+      <button
+        type="button"
+        className="x-action x-action-share"
+        aria-label={isThreadable ? 'Open thread' : 'Open'}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (isThreadable && threadItemId) openThread(e)
+          else onOpenWorkspace?.(event)
+        }}
+      >
+        <IconShare className="x-action-icon" />
+      </button>
+    </div>
+  )
+}
+
 export function FeedPost({
   event,
   isNew,
@@ -91,19 +402,23 @@ export function FeedPost({
     isMondayThread
       ? 'Monday'
       : event.source === 'notch'
-      ? 'Notch AI'
-      : event.source === 'meet'
-        ? 'Google Meet'
-        : event.source === 'gmail' && event.meta?.accountEmail
-          ? `Gmail · ${event.meta.accountEmail}`
-          : event.source.charAt(0).toUpperCase() + event.source.slice(1)
+        ? 'Notch AI'
+        : event.source === 'meet'
+          ? 'Google Meet'
+          : event.source === 'gmail'
+            ? metaStr(event.meta, 'sender') ?? 'Gmail'
+            : event.source === 'x' && metaStr(event.meta, 'sender')
+              ? metaStr(event.meta, 'sender')!
+              : metaStr(event.meta, 'sender') ?? event.source.charAt(0).toUpperCase() + event.source.slice(1)
   const threadCount = Number(event.meta?.threadCount ?? '0')
   const threadItemId = streamItemId(event)
   const threadDay = event.meta?.day ? String(event.meta.day) : undefined
   const threadTitle = isMondayThread ? event.title.trim() : event.title
   const threadActive = isThreadable && threadItemId && activeThreadId === threadItemId
   const parentTs = isMondayThread ? Number(event.meta?.parentTs ?? event.ts) : event.ts
-  const latestUpdateAgo = isMondayThread ? timeAgo(event.ts) : ''
+  const linkUrl = metaStr(event.meta, 'url')
+  const attachments = metaJson<AttachmentMeta[]>(event.meta, 'attachments') ?? []
+  const imageUrl = attachments.find((a) => a.type === 'image' && a.url)?.url ?? linkUrl
 
   const googleDocUrl =
     event.source === 'meeting' && event.meta?.googleDocUrl
@@ -128,70 +443,62 @@ export function FeedPost({
     if (isGmailThread && threadItemId) openThread()
   }
 
+  const openExternal = (e: MouseEvent, url: string) => {
+    e.stopPropagation()
+    window.notchDesktop?.openExternal?.(url)
+  }
+
+  const hideTitle =
+    event.kind === 'transcript_live' ||
+    ['gmail', 'github', 'gdocs', 'x', 'slack', 'discord'].includes(event.source) ||
+    isMondayThread
+
   return (
     <article
-      className={`x-post ${isNew ? 'x-post-new' : ''} ${isContext ? 'x-post-context' : ''} ${isActionable(event) ? 'x-post-actionable' : ''} ${threadActive ? 'x-post-thread-active' : ''} ${isThreadable ? 'x-post-threadable' : ''}`}
+      className={`x-post x-post-${event.source} ${isNew ? 'x-post-new' : ''} ${isContext ? 'x-post-context' : ''} ${isActionable(event) ? 'x-post-actionable' : ''} ${threadActive ? 'x-post-thread-active' : ''} ${isThreadable ? 'x-post-threadable' : ''}`}
       onClick={handlePostClick}
     >
       <FeedAvatar source={event.source} />
       <div className="x-post-content">
         <div className="x-post-head">
           <span className="x-name">{handle}</span>
-          <span className="x-handle">@{event.source}</span>
           <span className="x-dot">·</span>
           <span className="x-time">{timeAgo(parentTs)}</span>
+          {isMondayThread && threadCount > 0 ? (
+            <>
+              <span className="x-dot">·</span>
+              <button type="button" className="x-post-thread-link" onClick={openThread}>
+                {threadCount} {threadCount === 1 ? 'update' : 'updates'}
+              </button>
+            </>
+          ) : null}
+          {isGmailThread && threadCount > 0 ? (
+            <>
+              <span className="x-dot">·</span>
+              <button type="button" className="x-post-thread-link" onClick={openThread}>
+                {threadCount + 1} msgs
+              </button>
+            </>
+          ) : null}
         </div>
 
-        {threadTitle && event.kind !== 'transcript_live' && (
-          <p className="x-post-title">{threadTitle}</p>
-        )}
-        <p className="x-post-body">{event.body}</p>
+        {threadTitle && !hideTitle ? <p className="x-post-title">{threadTitle}</p> : null}
 
-        {isMondayThread && threadCount > 0 && threadItemId && (
-          <button type="button" className="x-thread-replies" onClick={openThread}>
-            <span className="x-thread-replies-icon" aria-hidden>
-              <svg viewBox="0 0 24 24" width="16" height="16">
-                <path
-                  fill="currentColor"
-                  d="M1.751 10c0-4.42 3.584-8 8.005-8h4.366c4.49 0 8.129 3.64 8.129 8.13 0 2.96-1.607 5.68-4.196 7.11l-8.054 4.46v-3.69h-.067c-4.49.1-8.183-3.51-8.183-8.01zm8.005-6c-3.317 0-6.005 2.69-6.005 6 0 3.37 2.77 6.08 6.138 6.01l.351-.01h1.761v2.3l5.087-2.81c1.951-1.08 3.163-3.13 3.163-5.36 0-3.39-2.744-6.13-6.129-6.13H9.756z"
-                />
-              </svg>
-            </span>
-            <span className="x-thread-replies-text">
-              {threadCount} {threadCount === 1 ? 'update' : 'updates'}
-            </span>
-            {latestUpdateAgo && (
-              <span className="x-thread-replies-meta">Last activity {latestUpdateAgo} ago</span>
-            )}
-          </button>
-        )}
+        {event.source !== 'meet' ? <SourceCardBody event={event} /> : null}
 
-        {isGmailThread && threadItemId && (
-          <button type="button" className="x-thread-replies" onClick={openThread}>
-            <span className="x-thread-replies-icon" aria-hidden>
-              <svg viewBox="0 0 24 24" width="16" height="16">
-                <path
-                  fill="currentColor"
-                  d="M1.751 10c0-4.42 3.584-8 8.005-8h4.366c4.49 0 8.129 3.64 8.129 8.13 0 2.96-1.607 5.68-4.196 7.11l-8.054 4.46v-3.69h-.067c-4.49.1-8.183-3.51-8.183-8.01zm8.005-6c-3.317 0-6.005 2.69-6.005 6 0 3.37 2.77 6.08 6.138 6.01l.351-.01h1.761v2.3l5.087-2.81c1.951-1.08 3.163-3.13 3.163-5.36 0-3.39-2.744-6.13-6.129-6.13H9.756z"
-                />
-              </svg>
-            </span>
-            <span className="x-thread-replies-text">
-              {threadCount > 0
-                ? `${threadCount + 1} messages`
-                : 'Open thread'}
-            </span>
-          </button>
-        )}
+        {linkUrl && !['gdocs', 'github', 'meet'].includes(event.source) ? (
+          <LinkPreview
+            url={imageUrl && imageUrl.match(/\.(png|jpe?g|gif|webp)/i) ? imageUrl : linkUrl}
+            title={event.title}
+            onClick={(e) => openExternal(e, linkUrl)}
+          />
+        ) : null}
 
         {googleDocUrl ? (
           <button
             type="button"
             className="x-action-btn x-action-btn-primary x-meeting-doc-btn"
-            onClick={(e) => {
-              e.stopPropagation()
-              window.notchDesktop?.openExternal?.(googleDocUrl)
-            }}
+            onClick={(e) => openExternal(e, googleDocUrl)}
           >
             Open Google Doc
           </button>
@@ -253,48 +560,15 @@ export function FeedPost({
           </div>
         )}
 
-        <div className="x-actions">
-          <button
-            type="button"
-            className="x-action"
-            aria-label={isThreadable ? 'Open thread' : 'Open tab'}
-            onClick={(e) => {
-              e.stopPropagation()
-              if (isThreadable && threadItemId) openThread(e)
-              else onOpenWorkspace?.(event)
-            }}
-          >
-            {isThreadable ? 'Open thread' : 'Open tab'}
-          </button>
-          <button
-            type="button"
-            className="x-action"
-            aria-label="Reply"
-            onClick={(e) => {
-              e.stopPropagation()
-              selectContext()
-              if (isThreadable && threadItemId) openThread(e)
-            }}
-          >
-            <IconReply className="x-action-icon" />
-          </button>
-          {!isMondayThread && (
-            <>
-              <button type="button" className="x-action" aria-label="Repost" onClick={(e) => e.stopPropagation()}>
-                <IconRepost className="x-action-icon" />
-              </button>
-              <button type="button" className="x-action" aria-label="Like" onClick={(e) => e.stopPropagation()}>
-                <IconLike className="x-action-icon" />
-              </button>
-              <button type="button" className="x-action" aria-label="Views" onClick={(e) => e.stopPropagation()}>
-                <IconViews className="x-action-icon" />
-              </button>
-            </>
-          )}
-          <button type="button" className="x-action x-action-share" aria-label="Share" onClick={(e) => e.stopPropagation()}>
-            <IconShare className="x-action-icon" />
-          </button>
-        </div>
+        <PostActions
+          event={event}
+          isMondayThread={isMondayThread}
+          isThreadable={isThreadable}
+          threadItemId={threadItemId}
+          openThread={openThread}
+          selectContext={selectContext}
+          onOpenWorkspace={onOpenWorkspace}
+        />
       </div>
     </article>
   )

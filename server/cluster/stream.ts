@@ -264,7 +264,29 @@ function externalEvents(now: number): CentralStreamEvent[] {
         ...(item.source === 'meeting' && item.metadata?.approvedActions
           ? { approvedActions: JSON.stringify(item.metadata.approvedActions) }
           : {}),
-        ...(item.metadata?.projectLabel ? { projectLabel: String(item.metadata.projectLabel) } : {})
+        ...(item.metadata?.projectLabel ? { projectLabel: String(item.metadata.projectLabel) } : {}),
+        ...(item.metadata?.url ? { url: String(item.metadata.url) } : {}),
+        ...(item.metadata?.channel ? { channel: String(item.metadata.channel) } : {}),
+        ...(item.metadata?.channelName ? { channelName: String(item.metadata.channelName) } : {}),
+        ...(item.metadata?.subject ? { subject: String(item.metadata.subject) } : {}),
+        ...(item.metadata?.durationSec
+          ? { durationSec: String(item.metadata.durationSec) }
+          : {}),
+        ...(item.metadata?.metrics
+          ? {
+              metrics:
+                typeof item.metadata.metrics === 'string'
+                  ? item.metadata.metrics
+                  : JSON.stringify(item.metadata.metrics)
+            }
+          : {}),
+        ...(item.thread?.replyCount
+          ? { replyCount: String(item.thread.replyCount) }
+          : {}),
+        ...(item.attachments?.length
+          ? { attachments: JSON.stringify(item.attachments) }
+          : {}),
+        ...(item.sender.handle ? { senderHandle: String(item.sender.handle) } : {})
       }
     }))
 

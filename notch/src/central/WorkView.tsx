@@ -19,7 +19,6 @@ type Props = {
   onRefresh?: () => void
   onOpenSearchHit?: (hit: ClusterSearchHit) => void
   onSeeAllAgents?: () => void
-  onHomeChatRailChange?: (open: boolean) => void
 }
 
 function streamItemId(event: CentralStreamEvent): string {
@@ -80,8 +79,7 @@ export function WorkView({
   onFocusMeeting,
   onRefresh,
   onOpenSearchHit,
-  onSeeAllAgents,
-  onHomeChatRailChange
+  onSeeAllAgents
 }: Props) {
   const [captureLive, setCaptureLive] = useState(false)
 
@@ -175,7 +173,6 @@ export function WorkView({
         onFocusMeeting={openMeeting}
         onOpenSearchHit={onOpenSearchHit}
         onSeeAllAgents={onSeeAllAgents}
-        onRailChange={onHomeChatRailChange}
       />
     </div>
   )

@@ -1,5 +1,6 @@
 import { openExternal } from '../lib/api'
 import type { WorkspaceTab } from './workspace'
+import { EmbeddedWebview } from './EmbeddedWebview'
 
 type Props = {
   tab: WorkspaceTab
@@ -25,7 +26,7 @@ export function WorkspaceView({ tab }: Props) {
           </button>
         </div>
       </header>
-      <webview className="x-workspace-webview" src={tab.url} partition="persist:stream-central" allowpopups />
+      <EmbeddedWebview className="x-workspace-webview" src={tab.url} partition="persist:stream-central" />
     </section>
   )
 }

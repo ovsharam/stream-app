@@ -1,6 +1,6 @@
 import 'dotenv/config'
-import { app, BrowserWindow, globalShortcut, screen, Tray, nativeImage, ipcMain, shell, dialog } from 'electron'
-import type { BrowserWindow as BW, Input } from 'electron'
+import { app, BrowserWindow, globalShortcut, screen, Tray, nativeImage, ipcMain, shell, dialog, session } from 'electron'
+import type { BrowserWindow as BW, Input, Session, WebContents } from 'electron'
 import type { NativeImage } from 'electron'
 import { join } from 'path'
 import { spawn } from 'child_process'
@@ -194,6 +194,71 @@ function registerShortcuts(): void {
   console.log('[notch] meeting hotkeys: ⌘⇧L start · ⌘⇧K end · ⌘⇧S star')
 }
 
+function configureEmbeddedSession(sess: Session): void {
+  sess.setPermissionRequestHandler((_wc, _permission, callback) => {
+    callback(true)
+  })
+  sess.setPermissionCheckHandler(() => true)
+}
+
+function popupWindowOptions(parent: BrowserWindow | null, sess: Session): Electron.BrowserWindowConstructorOptions {
+  return {
+    width: 520,
+    height: 720,
+    title: 'Sign in',
+    autoHideMenuBar: true,
+    parent: parent ?? undefined,
+    modal: false,
+    webPreferences: {
+      session: sess,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  }
+}
+
+function isNotchAppShell(url: string): boolean {
+  return url.includes('localhost:5174') || url.includes('dist-renderer') || url.endsWith('central.html') || url.endsWith('index.html')
+}
+
+function configureGuestWebContents(contents: WebContents): void {
+  configureEmbeddedSession(contents.session)
+
+  contents.setWindowOpenHandler(({ url }) => {
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return { action: 'deny' as const }
+    }
+    return {
+      action: 'allow' as const,
+      overrideBrowserWindowOptions: popupWindowOptions(centralWindow, contents.session)
+    }
+  })
+}
+
+function setupEmbeddedBrowsing(): void {
+  for (const part of ['persist:stream-central', 'persist:nav-app-youtube']) {
+    try {
+      configureEmbeddedSession(session.fromPartition(part))
+    } catch {
+      /* partition may not exist yet */
+    }
+  }
+
+  app.on('web-contents-created', (_event, contents) => {
+    const type = contents.getType()
+    if (type === 'webview') {
+      configureGuestWebContents(contents)
+      return
+    }
+    if (type === 'window') {
+      contents.once('did-start-navigation', (_e, url) => {
+        if (!isNotchAppShell(url)) configureGuestWebContents(contents)
+      })
+    }
+  })
+}
+
 function createCentralWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1100,
@@ -280,6 +345,7 @@ function createTrayIcon(): NativeImage {
 }
 
 app.whenReady().then(() => {
+  setupEmbeddedBrowsing()
   mobileWindow = createMobileWindow()
   if (!mobileOnly) centralWindow = createCentralWindow()
 

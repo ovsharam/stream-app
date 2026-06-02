@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import type { CalendarRailEvent, ClusterSearchHit, PerplexityNewsItem } from '@shared/cluster'
+import type { CalendarRailEvent, ClusterSearchHit, CentralStreamEvent, PerplexityNewsItem } from '@shared/cluster'
 import { cleanKbExcerpt } from '@shared/assistText'
 import { clusterApi, openExternal, openMeeting } from '../lib/api'
+import { FeedRailChatPanel } from './FeedRailChatPanel'
 import { IconGmail, IconMonday, IconSearch, IconVideoCall } from './Icons'
 
-type RailTab = 'context' | 'calendar' | 'mind' | 'news'
+type RailTab = 'context' | 'calendar' | 'chat' | 'news'
 type IntentionFilter = 'all' | 'plan' | 'explore' | 'execute'
 
 type RecentItem = {
@@ -19,7 +20,7 @@ type RecentItem = {
 const RAIL_TABS: { id: RailTab; label: string }[] = [
   { id: 'context', label: 'Context' },
   { id: 'calendar', label: 'Calendar' },
-  { id: 'mind', label: 'Mind' },
+  { id: 'chat', label: 'Chat' },
   { id: 'news', label: 'News' }
 ]
 
@@ -530,83 +531,6 @@ function NewsPanel({
   )
 }
 
-function MindPanel() {
-  const [text, setText] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [stats, setStats] = useState<{
-    datapoints: number
-    entities: number
-    traces: number
-  } | null>(null)
-
-  const loadStats = async () => {
-    try {
-      const data = await clusterApi.kbStats()
-      setStats({
-        datapoints: data.datapoints,
-        entities: data.entities,
-        traces: data.traces
-      })
-    } catch {
-      setStats(null)
-    }
-  }
-
-  useEffect(() => {
-    void loadStats()
-    const onMind = () => void loadStats()
-    window.addEventListener('notch:mind-updated', onMind)
-    return () => window.removeEventListener('notch:mind-updated', onMind)
-  }, [])
-
-  const save = async () => {
-    const trimmed = text.trim()
-    if (!trimmed || busy) return
-    setBusy(true)
-    try {
-      await clusterApi.kbStream(trimmed)
-      setText('')
-      await loadStats()
-      window.dispatchEvent(new Event('notch:mind-updated'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="x-rail-tab-body x-mind-rail">
-      <div className="x-cal-head x-mind-head">
-        <h2>Mind</h2>
-        <p className="x-cal-sub">Stream → knowledge graph</p>
-      </div>
-      <textarea
-        className="x-mind-input"
-        rows={4}
-        value={text}
-        placeholder="Learning, plans, reflections… #topics [[concepts]]"
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-            e.preventDefault()
-            void save()
-          }
-        }}
-      />
-      <div className="x-mind-actions">
-        <button type="button" className="x-mind-save" disabled={!text.trim() || busy} onClick={() => void save()}>
-          {busy ? 'Saving…' : 'Save to graph'}
-        </button>
-        {stats && (
-          <span className="x-mind-stats">
-            {stats.datapoints} dp · {stats.entities} ent · {stats.traces} traces
-          </span>
-        )}
-      </div>
-      <p className="x-mind-hint">Or compose <code>@mind …</code> in the feed. Feed clicks record time-to-action.</p>
-    </div>
-  )
-}
-
 function ContextPanel() {
   const [recent, setRecent] = useState<RecentItem[]>([])
   const [filter, setFilter] = useState<IntentionFilter>('all')
@@ -656,7 +580,7 @@ function ContextPanel() {
       {filtered.length === 0 ? (
         <p className="x-cal-empty">
           {recent.length === 0
-            ? 'Nothing in the graph yet — save a note in Mind or @mind in the feed.'
+            ? 'Nothing in the graph yet — use @mind in the feed to save notes.'
             : 'No items match this filter.'}
         </p>
       ) : (
@@ -695,7 +619,13 @@ function ContextPanel() {
   )
 }
 
-export function ContextRail() {
+export function ContextRail({
+  events = [],
+  onOpenHome
+}: {
+  events?: CentralStreamEvent[]
+  onOpenHome?: () => void
+}) {
   const [activeTab, setActiveTab] = useState<RailTab>('context')
   const calendar = useCalendarRail()
 
@@ -716,7 +646,10 @@ export function ContextRail() {
           </button>
         ))}
       </div>
-      <div className="x-rail-panel" role="tabpanel">
+      <div
+        className={`x-rail-panel${activeTab === 'chat' ? ' x-rail-panel-chat' : ''}`}
+        role="tabpanel"
+      >
         {activeTab === 'context' && <ContextPanel />}
         {activeTab === 'calendar' && (
           <CalendarPanel
@@ -725,7 +658,7 @@ export function ContextRail() {
             calendarHint={calendar.calendarHint}
           />
         )}
-        {activeTab === 'mind' && <MindPanel />}
+        {activeTab === 'chat' && <FeedRailChatPanel events={events} onOpenHome={onOpenHome} />}
         {activeTab === 'news' && (
           <NewsPanel
             pplxNews={calendar.pplxNews}

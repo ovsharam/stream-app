@@ -370,6 +370,7 @@ declare global {
         bounds: { x: number; y: number; width: number; height: number }
       }) => Promise<{ ok: boolean }>
       hideNavApp?: () => Promise<{ ok: boolean }>
+      destroyNavApp?: () => Promise<{ ok: boolean }>
       reloadNavApp?: () => Promise<{ ok: boolean }>
       getNavAppPlayback?: () => Promise<{ playing: boolean }>
       setNavAppTheme?: (theme: string) => Promise<{ ok: boolean }>

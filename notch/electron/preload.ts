@@ -71,6 +71,7 @@ contextBridge.exposeInMainWorld('notchDesktop', {
   showNavApp: (args: { partition: string; url: string; bounds: { x: number; y: number; width: number; height: number } }) =>
     ipcRenderer.invoke('navapp:show', args),
   hideNavApp: () => ipcRenderer.invoke('navapp:hide'),
+  destroyNavApp: () => ipcRenderer.invoke('navapp:destroy'),
   reloadNavApp: () => ipcRenderer.invoke('navapp:reload'),
   getNavAppPlayback: () => ipcRenderer.invoke('navapp:getPlayback') as Promise<{ playing: boolean }>,
   setNavAppTheme: (theme: string) => ipcRenderer.invoke('navapp:setTheme', theme),
@@ -143,6 +144,7 @@ declare global {
         bounds: { x: number; y: number; width: number; height: number }
       }) => Promise<{ ok: boolean }>
       hideNavApp?: () => Promise<{ ok: boolean }>
+      destroyNavApp?: () => Promise<{ ok: boolean }>
       reloadNavApp?: () => Promise<{ ok: boolean }>
       getNavAppPlayback?: () => Promise<{ playing: boolean }>
       setNavAppTheme?: (theme: string) => Promise<{ ok: boolean }>

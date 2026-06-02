@@ -76,21 +76,63 @@ export function CentralApp() {
 
   const activeNavApp = activeNavAppId ? getNavApp(activeNavAppId, navApps) : null
 
-  const dockNavAppMini = () => {
+  const closeNavApp = useCallback(() => {
+    setActiveNavAppId(null)
+    setNavAppMini(false)
+    void window.notchDesktop?.destroyNavApp?.()
+    setPage((p) => (p === 'navapp' ? 'stream' : p))
+  }, [])
+
+  /** Only dock mini when a video is actively playing — never on a bare app visit. */
+  const dockNavAppMini = useCallback(async (): Promise<boolean> => {
     const app = activeNavAppId ? getNavApp(activeNavAppId, navApps) : null
-    if (!app?.miniPlayer) return
+    if (!app?.miniPlayer) {
+      closeNavApp()
+      return false
+    }
 
-    // Stay mounted as mini immediately — async playback check used to run too late
-    // and unmount destroyed the BrowserView (full YouTube reload on remount).
-    setNavAppMini(true)
+    try {
+      const state = await window.notchDesktop?.getNavAppPlayback?.()
+      if (!state?.playing) {
+        closeNavApp()
+        return false
+      }
+      setNavAppMini(true)
+      return true
+    } catch {
+      closeNavApp()
+      return false
+    }
+  }, [activeNavAppId, navApps, closeNavApp])
 
-    void window.notchDesktop?.getNavAppPlayback?.().then((state) => {
-      if (state?.playing) return
-      setActiveNavAppId(null)
-      setNavAppMini(false)
-      void window.notchDesktop?.hideNavApp?.()
+  const withNavAppLeave = useCallback(
+    (action: () => void) => {
+      if (page === 'navapp' && activeNavAppId) {
+        void dockNavAppMini().finally(action)
+        return
+      }
+      action()
+    },
+    [page, activeNavAppId, dockNavAppMini]
+  )
+
+  const minimizeNavAppToFeed = useCallback(() => {
+    void dockNavAppMini().then((docked) => {
+      if (!docked) return
+      setPage('stream')
+      setArea('feed')
     })
-  }
+  }, [dockNavAppMini])
+
+  useEffect(() => {
+    if (!navAppMini || !activeNavAppId) return
+    const verify = async () => {
+      const state = await window.notchDesktop?.getNavAppPlayback?.()
+      if (!state?.playing) closeNavApp()
+    }
+    const interval = window.setInterval(() => void verify(), 4000)
+    return () => window.clearInterval(interval)
+  }, [navAppMini, activeNavAppId, closeNavApp])
 
   useEffect(() => {
     void window.notchDesktop?.setNavAppTheme?.(theme)
@@ -104,16 +146,8 @@ export function CentralApp() {
     setFocusMeetingItemId(null)
   }
 
-  const closeNavApp = () => {
-    setActiveNavAppId(null)
-    setNavAppMini(false)
-    void window.notchDesktop?.hideNavApp?.()
-  }
-
   const resetToHomeChat = useCallback(() => {
-    setActiveNavAppId(null)
-    setNavAppMini(false)
-    void window.notchDesktop?.hideNavApp?.()
+    closeNavApp()
     setThreadTarget(null)
     setFeedQuery('')
     setContextItemId(null)
@@ -122,7 +156,7 @@ export function CentralApp() {
     setPage('stream')
     setArea('work')
     setTab('foryou')
-  }, [])
+  }, [closeNavApp])
 
   useEffect(() => {
     resetToHomeChat()
@@ -167,51 +201,69 @@ export function CentralApp() {
   const refreshStream = () => window.dispatchEvent(new Event('notch:stream-push'))
 
   const openSearchHit = (hit: ClusterSearchHit) => {
-    if (page === 'navapp' && activeNavAppId) dockNavAppMini()
-    setPage('stream')
-    setArea('feed')
-    const itemId = hit.itemId ?? hit.id.replace(/^ext-/, '')
-    if (hit.source === 'monday' || hit.source === 'gmail') {
-      setThreadTarget({ itemId, day: hit.day })
-      setContextItemId(itemId)
-    }
+    withNavAppLeave(() => {
+      setPage('stream')
+      setArea('feed')
+      const itemId = hit.itemId ?? hit.id.replace(/^ext-/, '')
+      if (hit.source === 'monday' || hit.source === 'gmail') {
+        setThreadTarget({ itemId, day: hit.day })
+        setContextItemId(itemId)
+      }
+    })
   }
 
   const openMeetingInWork = (itemId: string) => {
-    if (page === 'navapp' && activeNavAppId) dockNavAppMini()
-    setPage('stream')
-    setArea('work')
-    setFocusMeetingItemId(itemId)
+    withNavAppLeave(() => {
+      setPage('stream')
+      setArea('work')
+      setFocusMeetingItemId(itemId)
+    })
   }
 
   const onNav = (item: NavTarget) => {
-    if (page === 'navapp' && activeNavAppId) dockNavAppMini()
     if (item.navAppId) {
-      openNavApp(item.navAppId)
+      if (item.navAppId === activeNavAppId && page === 'navapp') return
+      // Switching embedded apps should not mini-dock the outgoing session.
+      if (page === 'navapp' && activeNavAppId && item.navAppId !== activeNavAppId) {
+        openNavApp(item.navAppId)
+        return
+      }
+      withNavAppLeave(() => openNavApp(item.navAppId))
       return
     }
-    if (item.page) {
-      setPage(item.page)
-      return
-    }
-    setPage('stream')
-    if (item.area) setArea(item.area)
-    if (item.tab) setTab(item.tab)
-    setActiveWorkspaceId(null)
+    withNavAppLeave(() => {
+      if (item.page) {
+        setPage(item.page)
+        return
+      }
+      setPage('stream')
+      if (item.area) setArea(item.area)
+      if (item.tab) setTab(item.tab)
+      setActiveWorkspaceId(null)
+    })
   }
 
   const openAgentsFeed = () => {
-    if (page === 'navapp' && activeNavAppId) dockNavAppMini()
-    setPage('stream')
-    setArea('feed')
-    setTab('signals')
-    setActiveWorkspaceId(null)
-    setFocusMeetingItemId(null)
+    withNavAppLeave(() => {
+      setPage('stream')
+      setArea('feed')
+      setTab('signals')
+      setActiveWorkspaceId(null)
+      setFocusMeetingItemId(null)
+    })
   }
 
   const goHome = () => {
-    if (page === 'navapp' && activeNavAppId) dockNavAppMini()
-    resetToHomeChat()
+    withNavAppLeave(() => {
+      setPage('stream')
+      setArea('work')
+      setTab('foryou')
+      setThreadTarget(null)
+      setFeedQuery('')
+      setContextItemId(null)
+      setFocusMeetingItemId(null)
+      setActiveWorkspaceId(null)
+    })
   }
 
   const openWorkspaceTab = (tab: WorkspaceTab, opts?: { activate?: boolean }) => {
@@ -615,11 +667,7 @@ export function CentralApp() {
               app={activeNavApp}
               mode="mini"
               hasRail={false}
-              onMinimize={() => {
-                setNavAppMini(true)
-                setPage('stream')
-                setArea('feed')
-              }}
+              onMinimize={minimizeNavAppToFeed}
               onExpand={() => {
                 setNavAppMini(false)
                 setPage('navapp')
@@ -655,11 +703,7 @@ export function CentralApp() {
           app={activeNavApp}
           mode="full"
           hasRail={hasRightRail}
-          onMinimize={() => {
-            setNavAppMini(true)
-            setPage('stream')
-            setArea('feed')
-          }}
+          onMinimize={minimizeNavAppToFeed}
           onExpand={() => {
             setNavAppMini(false)
             setPage('navapp')
@@ -671,11 +715,7 @@ export function CentralApp() {
           app={activeNavApp}
           mode="mini"
           hasRail={hasRightRail}
-          onMinimize={() => {
-            setNavAppMini(true)
-            setPage('stream')
-            setArea('feed')
-          }}
+          onMinimize={minimizeNavAppToFeed}
           onExpand={() => {
             setNavAppMini(false)
             setPage('navapp')

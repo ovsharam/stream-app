@@ -13,6 +13,8 @@ export function useNavAppBrowserView(
   const modeRef = useRef(mode)
   modeRef.current = mode
 
+  // Suspend (detach) only — destroy is reserved for closeNavApp so playback
+  // checks during dockNavAppMini are not racing a torn-down BrowserView.
   useEffect(() => {
     if (mode !== 'off') return
     void window.notchDesktop?.hideNavApp?.()

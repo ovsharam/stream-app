@@ -92,11 +92,20 @@ async function getNavAppPlaybackState(): Promise<{ playing: boolean }> {
     const result = await navBrowserView.webContents.executeJavaScript(
       `(function() {
         const path = location.pathname || '';
-        const onWatch = path === '/watch' || path.startsWith('/watch');
-        const v = document.querySelector('video');
-        if (!onWatch || !v) return { playing: false };
-        const playing = !v.paused && !v.ended && v.currentTime > 0;
-        return { playing };
+        const onVideo =
+          path.startsWith('/watch') || path.startsWith('/shorts') || path.startsWith('/live/');
+        if (!onVideo) return { playing: false };
+        const v =
+          document.querySelector('video.html5-main-video') ||
+          document.querySelector('#movie_player video') ||
+          document.querySelector('ytd-watch-flexy video') ||
+          document.querySelector('video');
+        if (!v) return { playing: false };
+        if (v.paused || v.ended) return { playing: false };
+        if (v.readyState < 2) return { playing: false };
+        if (v.currentTime < 1) return { playing: false };
+        if (v.duration > 0 && v.duration < 3) return { playing: false };
+        return { playing: true };
       })();`,
       true
     )
@@ -286,7 +295,13 @@ function suspendNavBrowserView(): void {
   }
 }
 
+/** Detach from window but keep webContents alive (mini dock / layout transitions). */
 function hideNavBrowserView(): void {
+  suspendNavBrowserView()
+}
+
+/** Tear down guest session (app closed, partition switch, shell reload). */
+function destroyNavBrowserView(): void {
   if (!navBrowserView) return
   try {
     suspendNavBrowserView()
@@ -340,7 +355,7 @@ function showNavBrowserView(args: { partition: string; url: string; bounds: NavA
   configureEmbeddedSession(sess)
 
   if (navBrowserView && navBrowserViewPartition !== args.partition) {
-    hideNavBrowserView()
+    destroyNavBrowserView()
   }
 
   if (!navBrowserView) {
@@ -469,13 +484,13 @@ function wireCentralNavAppLifecycle(win: BrowserWindow): void {
   // Hard refresh (⌘⇧R) reloads React but BrowserView lives in the main process — tear it down.
   win.webContents.on('did-start-navigation', (_event, url, _inPlace, isMainFrame) => {
     if (!isMainFrame || !isNotchAppShell(url)) return
-    hideNavBrowserView()
+    destroyNavBrowserView()
     hideNavAppAuthWindows()
   })
 
   win.webContents.on('did-finish-load', () => {
     if (!isNotchAppShell(win.webContents.getURL())) return
-    hideNavBrowserView()
+    destroyNavBrowserView()
     win.webContents.send('navapp:renderer-ready')
   })
 }
@@ -506,7 +521,7 @@ function createCentralWindow(): BrowserWindow {
   win.show()
   win.focus()
   win.on('closed', () => {
-    hideNavBrowserView()
+    destroyNavBrowserView()
     centralWindow = null
   })
   return win
@@ -664,6 +679,10 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('navapp:hide', () => {
     hideNavBrowserView()
+    return { ok: true }
+  })
+  ipcMain.handle('navapp:destroy', () => {
+    destroyNavBrowserView()
     return { ok: true }
   })
   ipcMain.handle('navapp:reload', () => {

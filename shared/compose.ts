@@ -201,6 +201,138 @@ export function isComposeAction(raw: string): boolean {
   return parseComposeCommand(raw) != null
 }
 
+const COMPOSE_CMD_RE =
+  /@(?:monday|gmail|google|slack|discord|x|twitter|perplexity|pplx|claude|anthropic|cursor|github|gh|gemini|gdocs|docs|gong|mind|kb|think|calcom|cal)\b[^\n]*/gi
+
+/** Pull validated @provider compose commands from free text (e.g. chat agent handoffs). */
+export function extractComposeCommands(text: string): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  const matches = text.match(COMPOSE_CMD_RE) ?? []
+  for (const raw of matches) {
+    let cmd = raw.trim().replace(/^[-*•]\s+/, '').replace(/^["'`]+|["'`]+$/g, '')
+    if (!cmd.startsWith('@')) cmd = `@${cmd}`
+    if (seen.has(cmd)) continue
+    if (!parseComposeCommand(cmd)) continue
+    seen.add(cmd)
+    out.push(cmd)
+  }
+  return out
+}
+
+export type ComposeSuggestion = {
+  label: string
+  insert: string
+  hint?: string
+}
+
+/** Short command chips shown after @provider in compose — only where relevant. */
+export const COMPOSE_SUGGESTIONS: Partial<Record<ComposeProvider, ComposeSuggestion[]>> = {
+  monday: [
+    { label: 'create:', insert: 'create: ', hint: 'New task' },
+    { label: '#ID comment:', insert: '#123456789 comment: ', hint: 'Comment on item' },
+    { label: '/Board:', insert: '/Board name: ', hint: 'Create on board' }
+  ],
+  gmail: [
+    { label: 'reply:', insert: 'reply: ', hint: 'Reply in thread' },
+    { label: 'send:', insert: 'send user@co.com: ', hint: 'New email' }
+  ],
+  slack: [{ label: '#channel:', insert: '#general: ', hint: 'Post to channel' }],
+  discord: [{ label: '#channel:', insert: '#dev: ', hint: 'Post to channel' }],
+  x: [{ label: 'post:', insert: 'post: ', hint: 'Publish tweet' }],
+  perplexity: [{ label: 'ask:', insert: 'ask: ', hint: 'Research query' }],
+  claude: [
+    { label: 'ask:', insert: 'ask: ', hint: 'Question or task' },
+    { label: 'draft:', insert: 'draft: ', hint: 'Draft copy' }
+  ],
+  gemini: [{ label: 'ask:', insert: 'ask: ', hint: 'Question or task' }],
+  cursor: [{ label: 'ask:', insert: 'ask: ', hint: 'Launch build agent' }],
+  github: [
+    { label: 'org/repo:', insert: 'org/repo: ', hint: 'New issue' },
+    { label: '#ID comment:', insert: '#42 comment: ', hint: 'Comment on issue' }
+  ],
+  gdocs: [
+    { label: 'create:', insert: 'create: ', hint: 'New doc' },
+    { label: '#ID append:', insert: '#DOC_ID append: ', hint: 'Append to doc' }
+  ],
+  gong: [{ label: '#ID note:', insert: '#CALL_ID note: ', hint: 'Call note' }],
+  mind: [{ label: 'capture', insert: '', hint: 'Freeform KB note' }],
+  calcom: [{ label: 'book:', insert: 'book: ', hint: 'Schedule meeting' }]
+}
+
+export function resolveComposeProvider(token: string): ComposeProvider | null {
+  return PROVIDER_ALIASES[token.toLowerCase()] ?? null
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+/** HTML for mirror layer — @provider tags styled blue. */
+export function formatComposeHighlight(text: string): string {
+  const escaped = escapeHtml(text)
+  return escaped.replace(/(^|[\s\n])@([a-z0-9_]+)\b/gi, (full, lead, tag) => {
+    if (!resolveComposeProvider(tag)) return full
+    return `${lead}<span class="x-compose-tag">@${tag}</span>`
+  })
+}
+
+export function getActiveComposeContext(
+  text: string,
+  cursor: number
+): {
+  provider: ComposeProvider
+  providerToken: string
+  tagStart: number
+  rest: string
+  suggestions: ComposeSuggestion[]
+} | null {
+  const before = text.slice(0, cursor)
+  const match = before.match(/(?:^|[\s\n])@([a-z0-9_]+)\b([\s\S]*)$/i)
+  if (!match?.[1]) return null
+
+  const providerToken = match[1]
+  const provider = resolveComposeProvider(providerToken)
+  if (!provider) return null
+
+  const tagStart = before.lastIndexOf(`@${providerToken}`)
+  const restRaw = match[2] ?? ''
+  const rest = restRaw.replace(/^:\s*/, '')
+
+  const all = COMPOSE_SUGGESTIONS[provider] ?? []
+  if (all.length === 0) return null
+
+  if (rest.length > 48) return null
+
+  const restLower = rest.trimStart().toLowerCase()
+  if (!restLower) {
+    return { provider, providerToken, tagStart, rest: restRaw, suggestions: all }
+  }
+
+  const filtered = all.filter((s) => {
+    const key = s.insert.replace(/:\s*$/, '').toLowerCase()
+    const label = s.label.toLowerCase()
+    return (
+      key.startsWith(restLower) ||
+      label.startsWith(restLower) ||
+      s.insert.toLowerCase().startsWith(restLower)
+    )
+  })
+
+  if (filtered.length === 0 && restLower.includes(' ') && rest.length > 12) return null
+
+  return {
+    provider,
+    providerToken,
+    tagStart,
+    rest: restRaw,
+    suggestions: filtered.length > 0 ? filtered : all
+  }
+}
+
 export const COMPOSE_HELP: { provider: ComposeProvider; examples: string[] }[] = [
   {
     provider: 'monday',

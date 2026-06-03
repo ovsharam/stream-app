@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { openBrowserLink } from '../../lib/api'
 
 const API = 'http://localhost:3131'
 
@@ -155,7 +156,7 @@ export function MeetingPanel() {
                 rel="noreferrer"
                 onClick={(e) => {
                   e.preventDefault()
-                  window.notchDesktop?.openExternal?.(endingResult.googleDocUrl!)
+                  openBrowserLink(endingResult.googleDocUrl!, { title: 'Meeting notes', source: 'gdocs' })
                 }}
               >
                 Open Google Doc ↗

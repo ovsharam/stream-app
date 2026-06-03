@@ -80,6 +80,7 @@ export type MeetingResult = {
 
 let active: MeetingSession | null = null
 const archive = new Map<string, MeetingSession>()
+const extractionArchive = new Map<string, MeetingExtraction>()
 
 export function startMeetingSession(input: { title?: string; dealHint?: string } = {}): MeetingSession {
   if (active) endMeetingSession({ persist: false })
@@ -533,6 +534,27 @@ function formatDocBody(session: MeetingSession, extraction: MeetingExtraction, t
   return lines.join('\n')
 }
 
+export function exportMeetingMarkdown(
+  sessionId: string,
+  mode: 'full' | 'summary' = 'full'
+): string | null {
+  const session = getMeeting(sessionId)
+  if (!session) return null
+  const extraction = extractionArchive.get(sessionId)
+  const transcript = session.chunks.map((c) => c.text).join('\n').trim()
+  if (!extraction) return transcript || null
+  if (mode === 'summary') {
+    const lines = [
+      extraction.summary,
+      '',
+      `Scope: ${extraction.scopeDecision}`,
+      ...(extraction.nextSteps.length ? ['', 'Next steps:', ...extraction.nextSteps.map((s) => `• ${s}`)] : [])
+    ]
+    return lines.join('\n').trim()
+  }
+  return formatDocBody(session, extraction, transcript)
+}
+
 function buildFeedItem(
   session: MeetingSession,
   extraction: MeetingExtraction,
@@ -660,6 +682,7 @@ export async function endMeetingSession(
   input.io?.emit('stream:item', feedItem)
 
   archive.set(session.id, session)
+  extractionArchive.set(session.id, extraction)
 
   return {
     sessionId: session.id,

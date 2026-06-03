@@ -5,6 +5,8 @@ import { HomeChatProvider } from './homeChatContext'
 import { WorkView } from './WorkView'
 import { ContextRail } from './ContextRail'
 import { IntegrationsPanel } from './IntegrationsPanel'
+import { BuildAgentsView } from './BuildAgentsView'
+import { NotesView } from './NotesView'
 import { SideNav, type NavTarget, type Page } from './SideNav'
 import { NavAppPlayer } from './NavAppPlayer'
 import { getNavApp, useNavApps } from './navAppsStore'
@@ -12,9 +14,11 @@ import { SettingsPanel } from './SettingsPanel'
 import { ThemeMenu } from './ThemeMenu'
 import { useTheme } from './useTheme'
 import { ThreadBlade } from './ThreadBlade'
-import { WorkspaceView } from './WorkspaceView'
+import { WorkspaceBrowser } from './WorkspaceBrowser'
 import { WorkspaceTabBar } from './WorkspaceTabBar'
 import { FeedSearchBar, filterFeedEvents } from './FeedSearchBar'
+import { FeedStreamBar, useFeedStreamId } from './FeedStreamBar'
+import { filterEventsByStream } from './feedStreamsStore'
 import { useCentralStream } from './useCentralStream'
 import {
   completeAgent,
@@ -22,8 +26,9 @@ import {
   startAgent,
   updateAgentStatus
 } from './runningAgentsStore'
+import { ComposeInput } from './ComposeInput'
 import { parseComposeCommand } from '@shared/compose'
-import { clusterApi, integrationApi } from '../lib/api'
+import { clusterApi, integrationApi, openBrowserLink, inferWorkspaceMeta } from '../lib/api'
 import { tabFromCalendarEvent, tabFromUrl, toWorkspaceTab, type WorkspaceTab } from './workspace'
 import {
   IconEmoji,
@@ -69,6 +74,7 @@ export function CentralApp() {
   const themeBtnRef = useRef<HTMLButtonElement>(null)
   const [threadTarget, setThreadTarget] = useState<{ itemId: string; day?: string } | null>(null)
   const [feedQuery, setFeedQuery] = useState('')
+  const [feedStreamId, setFeedStreamId] = useFeedStreamId()
   const [feedRailCollapsed, setFeedRailCollapsed] = useState(() => {
     try {
       return localStorage.getItem('notch.feedRailCollapsed') === '1'
@@ -82,7 +88,7 @@ export function CentralApp() {
   )
   const [homeChatRail, setHomeChatRail] = useState(false)
   const { theme, setTheme } = useTheme()
-  const { apps: navApps, add: addNavApp, remove: removeNavApp, pinCatalog: pinNavApp } = useNavApps()
+  const { apps: navApps, remove: removeNavApp, pinCatalog: pinNavApp } = useNavApps()
   const [activeNavAppId, setActiveNavAppId] = useState<string | null>(null)
   const [navAppMini, setNavAppMini] = useState(false)
   const autoShadedRef = useRef(new Set<string>())
@@ -148,10 +154,17 @@ export function CentralApp() {
   }, [navAppMini, activeNavAppId, closeNavApp])
 
   useEffect(() => {
-    void window.notchDesktop?.setNavAppTheme?.(theme)
+    void window.notchDesktop?.setNavAppTheme?.(theme)?.catch?.(() => undefined)
   }, [theme])
 
   const openNavApp = (appId: string) => {
+    const app = getNavApp(appId, navApps)
+    if (!app) return
+    if (app.surface === 'workspace') {
+      const meta = inferWorkspaceMeta(app.url)
+      openBrowserLink(app.url, { title: app.label, source: meta.source })
+      return
+    }
     setPage('navapp')
     setActiveNavAppId(appId)
     setNavAppMini(false)
@@ -171,13 +184,12 @@ export function CentralApp() {
     setTab('foryou')
   }, [closeNavApp])
 
+  // After hard refresh (⌘⇧R), tear down orphan BrowserViews from the main process.
   useEffect(() => {
-    resetToHomeChat()
-  }, [resetToHomeChat])
-
-  useEffect(() => {
-    return window.notchDesktop?.onNavAppRendererReady?.(() => resetToHomeChat())
-  }, [resetToHomeChat])
+    return window.notchDesktop?.onNavAppRendererReady?.(() => {
+      void window.notchDesktop?.destroyNavApp?.()
+    })
+  }, [])
 
   const filtered =
     tab === 'signals'
@@ -191,9 +203,14 @@ export function CentralApp() {
             !(e.source === 'meet' && e.joinable && e.meta?.live === 'true')
         )
 
+  const streamFiltered = useMemo(
+    () => filterEventsByStream(filtered, feedStreamId),
+    [filtered, feedStreamId]
+  )
+
   const feedFiltered = useMemo(
-    () => filterFeedEvents(filtered, feedQuery),
-    [filtered, feedQuery]
+    () => filterFeedEvents(streamFiltered, feedQuery),
+    [streamFiltered, feedQuery]
   )
 
   const openThreadFromSearch = (hit: import('@shared/cluster').ClusterSearchHit) => {
@@ -258,9 +275,7 @@ export function CentralApp() {
 
   const openAgentsFeed = () => {
     withNavAppLeave(() => {
-      setPage('stream')
-      setArea('feed')
-      setTab('signals')
+      setPage('build')
       setActiveWorkspaceId(null)
       setFocusMeetingItemId(null)
     })
@@ -416,15 +431,26 @@ export function CentralApp() {
         activate?: boolean
       }>).detail
       if (!detail?.url) return
-      openWorkspaceTab(
-        tabFromUrl(detail.url, {
-          title: detail.title ?? 'Tab',
-          source: detail.source,
-          summary: detail.summary,
-          id: detail.id
-        }),
-        { activate: detail.activate !== false }
-      )
+      const tab = tabFromUrl(detail.url, {
+        title: detail.title ?? 'Tab',
+        source: detail.source,
+        summary: detail.summary,
+        id: detail.id
+      })
+      setPage('stream')
+      setArea('work')
+      setActiveNavAppId(null)
+      setNavAppMini(false)
+      void window.notchDesktop?.destroyNavApp?.()
+      setWorkspaceTabs((prev) => {
+        const existing = prev.find((t) => t.id === tab.id)
+        if (existing) {
+          if (detail.activate !== false) setActiveWorkspaceId(existing.id)
+          return prev
+        }
+        if (detail.activate !== false) setActiveWorkspaceId(tab.id)
+        return [...prev, tab]
+      })
     }
     window.addEventListener('notch:open-workspace', onOpen)
     return () => window.removeEventListener('notch:open-workspace', onOpen)
@@ -524,11 +550,12 @@ export function CentralApp() {
           activeNavAppId={activeNavAppId}
           onNavigate={onNav}
           onOpenNavApp={openNavApp}
-          onAddNavApp={addNavApp}
+          onPinApp={(id) => pinNavApp(id)}
           onRemoveNavApp={(id) => {
             if (activeNavAppId === id) closeNavApp()
             removeNavApp(id)
           }}
+          onBrowseApps={() => setPage('integrations')}
           onGoHome={goHome}
           themeOpen={themeOpen}
           onThemeToggle={() => setThemeOpen((v) => !v)}
@@ -559,6 +586,18 @@ export function CentralApp() {
             }}
           />
         </main>
+      ) : page === 'build' ? (
+        <main className="x-main x-main-utility">
+          <BuildAgentsView
+            events={events}
+            onOpenIntegrations={() => setPage('integrations')}
+            onFocusMeeting={openMeetingInWork}
+          />
+        </main>
+      ) : page === 'notes' ? (
+        <main className="x-main x-main-utility">
+          <NotesView onOpenIntegrations={() => setPage('integrations')} />
+        </main>
       ) : page === 'navapp' ? (
         <main className="x-main x-main-nav-app" aria-hidden="true" />
       ) : (
@@ -580,7 +619,7 @@ export function CentralApp() {
             className={`x-main x-col-feed ${threadTarget ? 'x-col-feed-in-thread' : ''} ${area === 'work' ? 'x-main-work x-main-home' : ''} ${activeWorkspace ? 'x-main-workspace' : ''}`}
           >
             {activeWorkspace ? (
-              <WorkspaceView tab={activeWorkspace} />
+              <WorkspaceBrowser tabs={workspaceTabs} activeId={activeWorkspace.id} />
             ) : area === 'work' ? (
               <WorkView
                 events={events}
@@ -612,7 +651,7 @@ export function CentralApp() {
                 query={feedQuery}
                 onQueryChange={setFeedQuery}
                 matchCount={feedFiltered.length}
-                totalCount={filtered.length}
+                totalCount={streamFiltered.length}
                 onSelectHit={openThreadFromSearch}
               />
               <button
@@ -625,6 +664,8 @@ export function CentralApp() {
                 {feedRailCollapsed ? '◧ Panel' : '◨ Panel'}
               </button>
             </header>
+
+            <FeedStreamBar activeStreamId={feedStreamId} onStreamChange={setFeedStreamId} />
 
                   <div className="x-compose">
                     <div className="x-avatar x-avatar-user">A</div>
@@ -649,25 +690,19 @@ export function CentralApp() {
                       {composeError && (
                         <p className="x-compose-note x-compose-note-error">{composeError}</p>
                       )}
-                      <textarea
+                      <ComposeInput
                         value={compose}
-                        onChange={(e) => {
-                          setCompose(e.target.value)
+                        onChange={(v) => {
+                          setCompose(v)
                           if (composeError) setComposeError(null)
                         }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                            e.preventDefault()
-                            void submitCompose()
-                          }
-                        }}
+                        onSubmit={() => void submitCompose()}
                         placeholder={
                           mondayContext
                             ? '@monday: comment or move to Done · @monday create: new ticket'
                             : '@mind · @claude · @gemini · @cursor · @github · @gdocs · @gong · @perplexity · @gmail · @monday · @slack · @discord · @x'
                         }
                         rows={3}
-                        className="x-compose-input"
                       />
                       <div className="x-compose-toolbar">
                         <div className="x-compose-icons">
@@ -738,7 +773,11 @@ export function CentralApp() {
             </aside>
           ) : showContextRail ? (
             <aside className="x-rail x-col-rail">
-              <ContextRail events={events} onOpenHome={goHome} />
+              <ContextRail
+                events={events}
+                onOpenHome={goHome}
+                railContext={{ page, area, tab }}
+              />
             </aside>
           ) : null}
         </>

@@ -1,91 +1,109 @@
 import { useState, type MouseEvent } from 'react'
 import type { CentralStreamEvent } from '@shared/cluster'
-import type { MeetingActionApproval, MeetingActionProposal } from '@shared/meeting-actions'
-import {
-  getMeetingActionDetail,
-  parseMeetingActionsMeta
+import type {
+  MeetingActionApproval,
+  MeetingActionProposal,
+  MeetingActionsMeta
 } from '@shared/meeting-actions'
+import { parseMeetingActionsMeta } from '@shared/meeting-actions'
+
+const EMPTY_MEETING_ACTIONS: MeetingActionsMeta = { proposedActions: [], approvedActions: {} }
 import { clusterApi } from '../lib/api'
 import { IconMonday } from './Icons'
 
-const PROVIDER_AVATAR: Record<
-  MeetingActionProposal['provider'],
-  { bg: string; label: string; useMondayIcon?: boolean }
-> = {
-  monday: { bg: '#ff3d57', label: 'M', useMondayIcon: true },
-  cursor: { bg: '#111827', label: 'Cu' },
-  github: { bg: '#24292f', label: 'GH' },
-  calcom: { bg: '#111827', label: 'Cal' }
+const PROVIDER_LABEL: Record<MeetingActionProposal['provider'], string> = {
+  monday: 'Monday',
+  cursor: 'Cursor',
+  github: 'GitHub',
+  calcom: 'Cal.com'
 }
 
 type Props = {
   event: CentralStreamEvent
   onRefresh?: () => void
-  /** deck = Work post-call surface; feed = compact (hidden — use link in feed) */
-  variant?: 'deck' | 'inline'
+  variant?: 'deck' | 'inline' | 'simple'
+  /** When parent renders Run all in the section header */
+  hideRunAll?: boolean
+  approvals?: MeetingActionApprovals
+}
+
+export type MeetingActionApprovals = {
+  ready: boolean
+  meta: MeetingActionsMeta
+  approvedActions: Record<string, MeetingActionApproval>
+  pending: MeetingActionProposal[]
+  pendingCount: number
+  showRunAll: boolean
+  approving: string | null
+  runAllBusy: boolean
+  approve: (actionId: string, e: MouseEvent<HTMLButtonElement>) => Promise<void>
+  runAll: () => Promise<void>
 }
 
 function streamItemId(event: CentralStreamEvent): string {
   return String(event.meta?.itemId ?? event.id.replace(/^ext-/, ''))
 }
 
-function ProviderAvatar({ provider }: { provider: MeetingActionProposal['provider'] }) {
-  const av = PROVIDER_AVATAR[provider]
-  if (av.useMondayIcon) {
+function ProviderIcon({ provider }: { provider: MeetingActionProposal['provider'] }) {
+  if (provider === 'monday') {
     return (
-      <div className="x-meeting-action-icon x-meeting-action-icon-monday" aria-hidden>
-        <IconMonday className="x-meeting-action-brand-icon" />
-      </div>
+      <span className="x-meeting-action-icon x-meeting-action-icon-monday" aria-hidden>
+        <IconMonday className="x-meeting-action-icon-glyph" />
+      </span>
     )
   }
   return (
-    <div className="x-meeting-action-icon" style={{ background: av.bg }} aria-hidden>
-      {av.label}
-    </div>
+    <span className="x-meeting-action-icon" aria-hidden title={PROVIDER_LABEL[provider]}>
+      {PROVIDER_LABEL[provider].slice(0, 1)}
+    </span>
   )
 }
 
-function ActionDetail({
+function ProviderBadge({ provider }: { provider: MeetingActionProposal['provider'] }) {
+  if (provider === 'monday') {
+    return (
+      <span className="x-meeting-action-badge x-meeting-action-badge-monday" aria-hidden>
+        <IconMonday className="x-meeting-action-brand-icon" />
+      </span>
+    )
+  }
+  return <span className="x-meeting-action-badge">{PROVIDER_LABEL[provider].slice(0, 2)}</span>
+}
+
+function SimpleActionRow({
   proposal,
-  meta
+  approval,
+  loading,
+  onRun
 }: {
   proposal: MeetingActionProposal
-  meta?: Record<string, unknown>
+  approval?: MeetingActionApproval
+  loading: boolean
+  onRun: (e: MouseEvent<HTMLButtonElement>) => void
 }) {
-  const detail = getMeetingActionDetail(proposal, meta)
+  const done = Boolean(approval?.ok)
+  const failed = Boolean(approval && !approval.ok && !loading)
 
   return (
-    <div className="x-meeting-action-detail">
-      <p className="x-meeting-action-detail-summary">{detail.summary}</p>
-
-      {detail.bullets && detail.bullets.length > 0 ? (
-        <div className="x-meeting-action-detail-block">
-          <p className="x-meeting-action-detail-heading">Next steps included</p>
-          <ul className="x-meeting-action-detail-list">
-            {detail.bullets.map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {detail.body ? (
-        <div className="x-meeting-action-detail-block">
-          <p className="x-meeting-action-detail-heading">
-            {proposal.provider === 'cursor' ? 'Build brief' : 'Task details'}
-          </p>
-          <pre className="x-meeting-action-detail-body">{detail.body}</pre>
-        </div>
-      ) : null}
-
-      <div className="x-meeting-action-detail-block">
-        <p className="x-meeting-action-detail-heading">Command that will run</p>
-        <code className="x-meeting-action-detail-command">
-          <span className="x-meeting-action-detail-command-tag">{detail.commandLabel}</span>
-          {detail.commandLabel.endsWith(':') ? ' ' : ': '}
-          {detail.commandBody}
-        </code>
+    <div
+      className={`x-meeting-action-ios ${done ? 'x-meeting-action-ios-done' : failed ? 'x-meeting-action-ios-failed' : ''}`}
+    >
+      <ProviderIcon provider={proposal.provider} />
+      <div className="x-meeting-action-ios-body">
+        <p className="x-meeting-action-ios-label">{proposal.label}</p>
+        {approval && !done && approval.message !== 'Routing…' ? (
+          <p className="x-meeting-action-ios-msg">{approval.message}</p>
+        ) : null}
       </div>
+      {done ? (
+        <span className="x-meeting-action-ios-status" aria-label="Done">
+          Done
+        </span>
+      ) : (
+        <button type="button" className="x-meeting-action-ios-run" disabled={loading} onClick={onRun}>
+          {loading ? '…' : failed ? 'Retry' : 'Run'}
+        </button>
+      )}
     </div>
   )
 }
@@ -117,7 +135,7 @@ function ActionCard({
     <div
       className={`x-meeting-action-card ${expanded ? 'x-meeting-action-card-expanded' : ''} ${succeeded ? 'x-meeting-action-card-ok' : failed ? 'x-meeting-action-card-err' : showRouting ? 'x-eng-card-pending' : ''}`}
     >
-      <ProviderAvatar provider={proposal.provider} />
+      <ProviderBadge provider={proposal.provider} />
       <div className="x-meeting-action-body">
         <p className="x-meeting-action-label">{proposal.label}</p>
         <p className="x-meeting-action-desc">{proposal.description}</p>
@@ -129,39 +147,17 @@ function ActionCard({
             {approval.message}
           </p>
         ) : null}
-        {expanded ? <ActionDetail proposal={proposal} meta={meta} /> : null}
       </div>
       <div className="x-meeting-action-actions">
         {!succeeded ? (
-          <>
-            <button
-              type="button"
-              className="x-meeting-action-review"
-              aria-expanded={expanded}
-              onClick={onToggle}
-            >
-              {expanded ? 'Hide' : failed ? 'Review' : 'Review'}
-            </button>
-            {expanded ? (
-              <button
-                type="button"
-                className="x-action-btn x-action-btn-primary x-meeting-action-approve"
-                disabled={loading}
-                onClick={onApprove}
-              >
-                {loading ? 'Running…' : failed ? 'Retry' : 'Approve'}
-              </button>
-            ) : failed ? (
-              <button
-                type="button"
-                className="x-action-btn x-action-btn-primary x-meeting-action-approve"
-                disabled={loading}
-                onClick={onApprove}
-              >
-                {loading ? 'Running…' : 'Retry'}
-              </button>
-            ) : null}
-          </>
+          <button
+            type="button"
+            className="x-action-btn x-action-btn-primary x-meeting-action-approve"
+            disabled={loading}
+            onClick={onApprove}
+          >
+            {loading ? 'Running…' : failed ? 'Retry' : 'Run'}
+          </button>
         ) : (
           <span className="x-meeting-action-check" aria-label="Approved">
             ✓
@@ -172,30 +168,29 @@ function ActionCard({
   )
 }
 
-export function MeetingActionCards({ event, onRefresh, variant = 'inline' }: Props) {
+export function useMeetingActionApprovals(
+  event: CentralStreamEvent,
+  onRefresh?: () => void
+): MeetingActionApprovals {
   const meta = parseMeetingActionsMeta(event.meta)
   const [approving, setApproving] = useState<string | null>(null)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [runAllBusy, setRunAllBusy] = useState(false)
   const [localApproved, setLocalApproved] = useState<Record<string, MeetingActionApproval>>({})
 
-  if (event.source !== 'meeting' || !meta || meta.proposedActions.length === 0) {
-    return null
-  }
-
-  if (variant === 'inline') {
-    return null
-  }
-
-  const approvedActions = { ...meta.approvedActions, ...localApproved }
+  const ready = event.source === 'meeting' && Boolean(meta && meta.proposedActions.length > 0)
+  const safeMeta = meta ?? EMPTY_MEETING_ACTIONS
+  const approvedActions = { ...safeMeta.approvedActions, ...localApproved }
   const itemId = streamItemId(event)
+  const pending = safeMeta.proposedActions.filter((p) => !approvedActions[p.id]?.ok)
+  const showRunAll = pending.length >= 2
 
   const approve = async (actionId: string, e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation()
-    if (approving || approvedActions[actionId]?.ok) return
+    if (!ready || approving || approvedActions[actionId]?.ok) return
     setApproving(actionId)
     setLocalApproved((prev) => ({
       ...prev,
-      [actionId]: { at: Date.now(), ok: false, message: '✓ Routing…' }
+      [actionId]: { at: Date.now(), ok: false, message: 'Routing…' }
     }))
     try {
       const result = await clusterApi.approveMeetingAction({ itemId, actionId })
@@ -203,7 +198,6 @@ export function MeetingActionCards({ event, onRefresh, variant = 'inline' }: Pro
         ...prev,
         [actionId]: { at: Date.now(), ok: result.ok, message: result.message }
       }))
-      if (result.ok) setExpandedId(null)
       onRefresh?.()
     } catch (err) {
       setLocalApproved((prev) => ({
@@ -211,7 +205,7 @@ export function MeetingActionCards({ event, onRefresh, variant = 'inline' }: Pro
         [actionId]: {
           at: Date.now(),
           ok: false,
-          message: err instanceof Error ? err.message : 'Approval failed'
+          message: err instanceof Error ? err.message : 'Failed'
         }
       }))
     } finally {
@@ -219,27 +213,132 @@ export function MeetingActionCards({ event, onRefresh, variant = 'inline' }: Pro
     }
   }
 
-  const toggle = (actionId: string, e: MouseEvent<HTMLButtonElement>) => {
-    e.stopPropagation()
-    setExpandedId((current) => (current === actionId ? null : actionId))
+  const runAll = async () => {
+    if (!ready || runAllBusy || approving || pending.length === 0) return
+    setRunAllBusy(true)
+    for (const proposal of pending) {
+      setApproving(proposal.id)
+      setLocalApproved((prev) => ({
+        ...prev,
+        [proposal.id]: { at: Date.now(), ok: false, message: 'Routing…' }
+      }))
+      try {
+        const result = await clusterApi.approveMeetingAction({ itemId, actionId: proposal.id })
+        setLocalApproved((prev) => ({
+          ...prev,
+          [proposal.id]: { at: Date.now(), ok: result.ok, message: result.message }
+        }))
+      } catch (err) {
+        setLocalApproved((prev) => ({
+          ...prev,
+          [proposal.id]: {
+            at: Date.now(),
+            ok: false,
+            message: err instanceof Error ? err.message : 'Failed'
+          }
+        }))
+      }
+    }
+    setApproving(null)
+    setRunAllBusy(false)
+    onRefresh?.()
+  }
+
+  return {
+    ready,
+    meta: safeMeta,
+    approvedActions,
+    pending,
+    pendingCount: pending.length,
+    showRunAll,
+    approving,
+    runAllBusy,
+    approve,
+    runAll
+  }
+}
+
+export function MeetingActionRunAllButton({
+  approvals,
+  className = 'x-run-all-btn',
+  tone = 'primary'
+}: {
+  approvals: MeetingActionApprovals
+  className?: string
+  tone?: 'primary' | 'text'
+}) {
+  if (!approvals.showRunAll) return null
+  const { pending, runAllBusy, approving, runAll } = approvals
+  const label = runAllBusy ? `Running ${pending.length}…` : `Run all (${pending.length})`
+  if (tone === 'text') {
+    return (
+      <button
+        type="button"
+        className={`x-post-call-text-btn ${className}`}
+        disabled={runAllBusy || Boolean(approving)}
+        onClick={() => void runAll()}
+      >
+        {label}
+      </button>
+    )
+  }
+  return (
+    <button
+      type="button"
+      className={`x-action-btn x-action-btn-primary ${className}`}
+      disabled={runAllBusy || Boolean(approving)}
+      onClick={() => void runAll()}
+    >
+      {label}
+    </button>
+  )
+}
+
+export function MeetingActionCards({
+  event,
+  onRefresh,
+  variant = 'inline',
+  hideRunAll = false,
+  approvals: external
+}: Props) {
+  const internal = useMeetingActionApprovals(event, onRefresh)
+  const a = external ?? internal
+
+  if (!a.ready || variant === 'inline') {
+    return null
+  }
+
+  if (variant === 'simple') {
+    return (
+      <div className="x-meeting-actions x-meeting-actions-ios" onClick={(e) => e.stopPropagation()}>
+        {!hideRunAll ? <MeetingActionRunAllButton approvals={a} /> : null}
+        {a.meta.proposedActions.map((proposal, i) => (
+          <div key={proposal.id} className={i > 0 ? 'x-post-call-row-divider' : undefined}>
+            <SimpleActionRow
+              proposal={proposal}
+              approval={a.approvedActions[proposal.id]}
+              loading={a.approving === proposal.id || (a.runAllBusy && !a.approvedActions[proposal.id]?.ok)}
+              onRun={(e) => void a.approve(proposal.id, e)}
+            />
+          </div>
+        ))}
+      </div>
+    )
   }
 
   return (
     <div className={`x-meeting-actions ${variant === 'deck' ? 'x-meeting-actions-deck' : ''}`} onClick={(e) => e.stopPropagation()}>
-      {variant !== 'deck' ? (
-        <p className="x-meeting-actions-heading">Proposed actions — review before approving</p>
-      ) : null}
-      {meta.proposedActions.map((proposal) => (
+      {a.meta.proposedActions.map((proposal) => (
         <ActionCard
           key={proposal.id}
           proposal={proposal}
-          approval={approvedActions[proposal.id]}
-          loading={approving === proposal.id}
-          routing={approvedActions[proposal.id]?.message === '✓ Routing…'}
-          expanded={expandedId === proposal.id}
+          approval={a.approvedActions[proposal.id]}
+          loading={a.approving === proposal.id}
+          routing={a.approvedActions[proposal.id]?.message === 'Routing…'}
+          expanded={false}
           meta={event.meta}
-          onToggle={(e) => toggle(proposal.id, e)}
-          onApprove={(e) => void approve(proposal.id, e)}
+          onToggle={() => {}}
+          onApprove={(e) => void a.approve(proposal.id, e)}
         />
       ))}
     </div>

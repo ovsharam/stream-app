@@ -1,6 +1,7 @@
-import { useState, type RefObject } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import {
   IconApps,
+  IconBookmark,
   IconGlobe,
   IconNotch,
   IconPlus,
@@ -10,11 +11,15 @@ import {
   IconStream,
   IconYoutube
 } from './Icons'
-import type { NavApp } from './navAppsStore'
+import { integrationApi } from '../lib/api'
+import {
+  listUnpinnedApps,
+  type NavApp
+} from './navAppsStore'
 
 type Tab = 'foryou' | 'signals'
 type Area = 'work' | 'feed'
-export type Page = 'stream' | 'settings' | 'integrations' | 'navapp'
+export type Page = 'stream' | 'settings' | 'integrations' | 'navapp' | 'build' | 'notes'
 
 export type NavTarget = {
   id: string
@@ -43,11 +48,16 @@ const PRIMARY_NAV: NavTarget[] = [
     tab: 'foryou'
   },
   {
-    id: 'signals',
-    label: 'Signals',
-    hint: 'AI & build prompts',
-    area: 'feed',
-    tab: 'signals'
+    id: 'notes',
+    label: 'Notes',
+    hint: 'Capture & reminders',
+    page: 'notes'
+  },
+  {
+    id: 'build',
+    label: 'Build',
+    hint: 'Cursor agents & prompts',
+    page: 'build'
   }
 ]
 
@@ -76,12 +86,13 @@ type Props = {
   activeNavAppId: string | null
   onNavigate: (target: NavTarget) => void
   onOpenNavApp: (appId: string) => void
-  onAddNavApp: (input: { label: string; url: string }) => void
+  onPinApp: (appId: string) => void
   onRemoveNavApp: (appId: string) => void
   onGoHome: () => void
   themeOpen: boolean
   onThemeToggle: () => void
   themeBtnRef: RefObject<HTMLButtonElement>
+  onBrowseApps: () => void
 }
 
 function NavIcon({ id }: { id: string }) {
@@ -91,6 +102,10 @@ function NavIcon({ id }: { id: string }) {
       return <IconPortal className={cls} />
     case 'feed':
       return <IconStream className={cls} />
+    case 'notes':
+      return <IconBookmark className={cls} />
+    case 'build':
+      return <IconRadar className={cls} />
     case 'signals':
       return <IconRadar className={cls} />
     case 'integrations':
@@ -99,6 +114,13 @@ function NavIcon({ id }: { id: string }) {
       return <IconSettings className={cls} />
     case 'youtube':
       return <IconYoutube className={cls} />
+    case 'gmail':
+    case 'slack':
+    case 'discord':
+    case 'monday':
+    case 'gdocs':
+    case 'github':
+      return <span className={`${cls} x-side-nav-icon-letter`}>{id.slice(0, 1).toUpperCase()}</span>
     default:
       return <IconGlobe className={cls} />
   }
@@ -160,56 +182,84 @@ function NavButton({
   )
 }
 
-function AddNavAppForm({
+function pinHint(app: NavApp): string {
+  if (app.surface === 'workspace') return 'Opens in app tab'
+  if (app.miniPlayer) return 'Mini player when you leave'
+  return 'Pinned app'
+}
+
+function PinAppPicker({
   compact,
-  onAdd,
-  onCancel
+  navApps,
+  onPin,
+  onCancel,
+  onBrowseApps
 }: {
   compact?: boolean
-  onAdd: (input: { label: string; url: string }) => void
+  navApps: NavApp[]
+  onPin: (id: string) => void
   onCancel: () => void
+  onBrowseApps: () => void
 }) {
-  const [label, setLabel] = useState('')
-  const [url, setUrl] = useState('')
+  const [connected, setConnected] = useState<Record<string, boolean>>({})
+  const [loading, setLoading] = useState(true)
 
-  const submit = () => {
-    if (!label.trim() || !url.trim()) return
-    onAdd({ label: label.trim(), url: url.trim() })
-    setLabel('')
-    setUrl('')
-  }
+  useEffect(() => {
+    let cancelled = false
+    void integrationApi
+      .connections()
+      .then((data) => {
+        if (!cancelled) setConnected(data.connected ?? {})
+      })
+      .catch(() => {
+        if (!cancelled) setConnected({})
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   if (compact) return null
 
+  const unpinned = listUnpinnedApps(connected, navApps)
+
   return (
-    <form
-      className="x-side-nav-add-app"
-      onSubmit={(e) => {
-        e.preventDefault()
-        submit()
-      }}
-    >
-      <input
-        value={label}
-        onChange={(e) => setLabel(e.target.value)}
-        placeholder="App name"
-        aria-label="App name"
-      />
-      <input
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        placeholder="https://…"
-        aria-label="App URL"
-      />
-      <div className="x-side-nav-add-app-actions">
-        <button type="button" className="x-side-nav-add-app-cancel" onClick={onCancel}>
-          Cancel
-        </button>
-        <button type="submit" className="x-side-nav-add-app-save" disabled={!label.trim() || !url.trim()}>
-          Pin
-        </button>
-      </div>
-    </form>
+    <div className="x-side-nav-pin-picker">
+      {loading ? (
+        <p className="x-side-nav-pin-picker-empty">Loading apps…</p>
+      ) : unpinned.length === 0 ? (
+        <div className="x-side-nav-pin-picker-empty">
+          <p>Nothing to pin — connect more in Apps.</p>
+          <button type="button" className="x-side-nav-pin-picker-link" onClick={onBrowseApps}>
+            Open Apps
+          </button>
+        </div>
+      ) : (
+        <ul className="x-side-nav-pin-picker-list">
+          {unpinned.map((entry) => (
+            <li key={entry.id}>
+              <button
+                type="button"
+                className="x-side-nav-pin-picker-item"
+                onClick={() => onPin(entry.id)}
+              >
+                <NavIcon id={entry.id} />
+                <span className="x-side-nav-pin-picker-text">
+                  <strong>{entry.label}</strong>
+                  <span>{entry.integrationId ? 'Connected' : entry.description.slice(0, 42)}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <button type="button" className="x-side-nav-pin-picker-cancel" onClick={onCancel}>
+        Cancel
+      </button>
+    </div>
   )
 }
 
@@ -223,9 +273,10 @@ export function SideNav({
   activeNavAppId,
   onNavigate,
   onOpenNavApp,
-  onAddNavApp,
+  onPinApp,
   onRemoveNavApp,
   onGoHome,
+  onBrowseApps,
   themeOpen,
   onThemeToggle,
   themeBtnRef
@@ -235,7 +286,7 @@ export function SideNav({
   const appTargets: NavTarget[] = navApps.map((app) => ({
     id: app.id,
     label: app.label,
-    hint: app.miniPlayer ? 'Mini player when you leave' : 'Pinned app',
+    hint: pinHint(app),
     navAppId: app.id
   }))
 
@@ -285,20 +336,22 @@ export function SideNav({
             />
           ))}
           {addingApp ? (
-            <AddNavAppForm
+            <PinAppPicker
               compact={compact}
-              onAdd={(input) => {
-                onAddNavApp(input)
+              navApps={navApps}
+              onPin={(id) => {
+                onPinApp(id)
                 setAddingApp(false)
               }}
               onCancel={() => setAddingApp(false)}
+              onBrowseApps={onBrowseApps}
             />
           ) : (
             <button
               type="button"
               className={`x-side-nav-pin-app${compact ? ' x-side-nav-pin-app-compact' : ''}`}
               onClick={() => setAddingApp(true)}
-              title="Pin a website to the nav"
+              title="Pin a connected app"
             >
               <IconPlus className="x-side-nav-icon" />
               {compact ? null : <span>Pin app</span>}

@@ -224,6 +224,49 @@ export const clusterApi = {
     json<{ ok: boolean }>(`/fde/mcp-agents/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
+export const captureApi = {
+  state: () => json<import('@shared/capture').CaptureState>('/capture/state'),
+  saveState: (patch: {
+    profiles?: import('@shared/capture').CaptureProfile[]
+    activeProfileId?: string
+  }) =>
+    json<import('@shared/capture').CaptureState>('/capture/state', {
+      method: 'PUT',
+      body: JSON.stringify(patch)
+    }),
+  note: (input: {
+    text: string
+    title?: string
+    profileId?: string
+    destinations?: import('@shared/capture').CaptureDestination[]
+  }) =>
+    json<import('@shared/capture').CaptureNoteResult>('/capture/note', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    }),
+  addReminder: (input: { text: string; dueAt: string; profileId?: string }) =>
+    json<import('@shared/capture').Reminder>('/capture/reminder', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    }),
+  updateReminder: (id: string, patch: Partial<{ done: boolean; text: string; dueAt: string }>) =>
+    json<import('@shared/capture').Reminder>(`/capture/reminder/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch)
+    }),
+  deleteReminder: (id: string) =>
+    json<{ ok: boolean }>(`/capture/reminder/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  exportMeeting: (sessionId: string, mode: 'full' | 'summary' = 'full') =>
+    json<{ markdown: string; mode: string }>(
+      `/capture/meeting/${encodeURIComponent(sessionId)}/export?mode=${mode}`
+    ),
+  appendMeeting: (sessionId: string, input?: { profileId?: string; mode?: 'full' | 'summary' }) =>
+    json<import('@shared/capture').CaptureNoteResult>(
+      `/capture/meeting/${encodeURIComponent(sessionId)}/append`,
+      { method: 'POST', body: JSON.stringify(input ?? {}) }
+    )
+}
+
 export type IntegrationConnections = {
   connections: Record<string, boolean>
   configured: Record<string, boolean>
@@ -240,6 +283,7 @@ export const integrationApi = {
     json<{ url: string; simulated?: boolean }>(
       `/auth/gmail${addAccount ? '?addAccount=1' : ''}`
     ),
+  slackAuthUrl: () => json<{ url: string }>('/auth/slack'),
   xAuthUrl: () => json<{ url: string; state: string }>('/auth/x'),
   calcomAuthUrl: () =>
     json<{ url: string; state: string; accountLabel?: string }>('/auth/calcom/oauth'),
@@ -353,28 +397,103 @@ export function canUseInAppWorkspace(): boolean {
   )
 }
 
+function hostMatches(hostname: string, pattern: string): boolean {
+  return hostname === pattern || hostname.endsWith(`.${pattern}`)
+}
+
+/** OAuth setup, Cursor, etc. — must use the system browser. */
+const FORCE_EXTERNAL_HOSTS = [
+  'cursor.com',
+  'authenticate.cursor.sh',
+  'console.cloud.google.com',
+  'developers.google.com',
+  'workos.com'
+]
+
+export function shouldForceExternal(url: string): boolean {
+  try {
+    const { hostname } = new URL(url)
+    return FORCE_EXTERNAL_HOSTS.some((h) => hostMatches(hostname, h))
+  } catch {
+    return false
+  }
+}
+
+export function inferWorkspaceMeta(url: string): {
+  title: string
+  source: 'meet' | 'gmail' | 'calendar' | 'gdocs' | 'monday' | 'slack'
+} {
+  try {
+    const u = new URL(url)
+    const host = u.hostname.replace(/^www\./, '')
+    if (hostMatches(u.hostname, 'docs.google.com')) {
+      const docId = u.pathname.match(/\/document\/d\/([^/]+)/)?.[1]
+      return { title: docId ? `Doc · ${docId.slice(0, 8)}…` : 'Google Doc', source: 'gdocs' }
+    }
+    if (hostMatches(u.hostname, 'drive.google.com')) return { title: 'Google Drive', source: 'gdocs' }
+    if (hostMatches(u.hostname, 'meet.google.com')) return { title: 'Google Meet', source: 'meet' }
+    if (hostMatches(u.hostname, 'mail.google.com')) return { title: 'Gmail', source: 'gmail' }
+    if (hostMatches(u.hostname, 'calendar.google.com')) return { title: 'Calendar', source: 'calendar' }
+    if (hostMatches(u.hostname, 'monday.com')) return { title: 'Monday', source: 'monday' }
+    if (hostMatches(u.hostname, 'slack.com')) return { title: 'Slack', source: 'slack' }
+    return { title: host, source: 'meet' }
+  } catch {
+    return { title: 'Tab', source: 'meet' }
+  }
+}
+
 export function openInWorkspace(
   url: string,
-  opts?: { title?: string; source?: string; summary?: string; id?: string; activate?: boolean }
+  opts?: {
+    title?: string
+    source?: string
+    summary?: string
+    id?: string
+    activate?: boolean
+  }
 ): boolean {
   if (!canUseInAppWorkspace()) return false
+  const inferred = inferWorkspaceMeta(url)
   window.dispatchEvent(
     new CustomEvent('notch:open-workspace', {
-      detail: { url, activate: opts?.activate !== false, ...opts }
+      detail: {
+        url,
+        activate: opts?.activate !== false,
+        title: opts?.title ?? inferred.title,
+        source: opts?.source ?? inferred.source,
+        summary: opts?.summary,
+        id: opts?.id
+      }
     })
   )
   return true
 }
 
-export function openMeeting(url: string, title?: string): void {
-  if (openInWorkspace(url, { title: title ?? 'Google Meet', source: 'meet', summary: title })) {
+/** In-app Chrome-style tab when possible; system browser for OAuth-only hosts (Cursor, GCP console). */
+export function openBrowserLink(
+  url: string,
+  opts?: {
+    title?: string
+    source?: string
+    summary?: string
+    id?: string
+    activate?: boolean
+    forceExternal?: boolean
+  }
+): void {
+  if (!url?.startsWith('http')) return
+  if (!opts?.forceExternal && !shouldForceExternal(url) && openInWorkspace(url, opts)) {
     return
   }
   window.notchDesktop?.openExternal?.(url)
 }
 
+export function openMeeting(url: string, title?: string): void {
+  openBrowserLink(url, { title: title ?? 'Google Meet', source: 'meet', summary: title })
+}
+
 export function openExternal(url: string): void {
-  window.notchDesktop?.openExternal?.(url)
+  openBrowserLink(url)
 }
 
 declare global {
@@ -385,6 +504,7 @@ declare global {
         partition: string
         url: string
         bounds: { x: number; y: number; width: number; height: number }
+        layout?: 'full' | 'mini'
       }) => Promise<{ ok: boolean }>
       hideNavApp?: () => Promise<{ ok: boolean }>
       destroyNavApp?: () => Promise<{ ok: boolean }>

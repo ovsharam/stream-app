@@ -21,6 +21,8 @@ function tabIcon(source: WorkspaceTab['source']): string {
       return 'S'
     case 'calendar':
       return '📅'
+    case 'gdocs':
+      return 'G'
     default:
       return '◆'
   }

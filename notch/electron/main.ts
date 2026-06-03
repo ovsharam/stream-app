@@ -37,6 +37,8 @@ const CHROME_USER_AGENT =
 
 let navBrowserView: BrowserView | null = null
 let navBrowserViewPartition: string | null = null
+let navBrowserViewTargetUrl: string | null = null
+let navAppLayout: 'full' | 'mini' = 'full'
 const authWindows = new Map<string, BrowserWindow>()
 let navAppTheme: 'light' | 'dark' | 'gray' | 'midnight' = 'dark'
 
@@ -71,6 +73,113 @@ function applyYoutubeDarkMode(dark: boolean): void {
     .catch(() => {})
 }
 
+const YOUTUBE_MINI_STYLE_ID = 'notch-youtube-mini'
+
+function applyYoutubeMiniLayout(mini: boolean): void {
+  if (!navBrowserView || navBrowserView.webContents.isDestroyed()) return
+  const url = navBrowserView.webContents.getURL()
+  if (!url.includes('youtube.com')) return
+  void navBrowserView.webContents
+    .executeJavaScript(
+      `(function() {
+        const STYLE_ID = '${YOUTUBE_MINI_STYLE_ID}';
+        const mini = ${mini};
+        const path = location.pathname || '';
+        const onWatch = path.startsWith('/watch');
+        const onShorts = path.startsWith('/shorts');
+        const onLive = path.startsWith('/live/');
+        const onVideo = onWatch || onShorts || onLive;
+
+        const removeStyle = () => {
+          const el = document.getElementById(STYLE_ID);
+          if (el) el.remove();
+        };
+
+        if (!mini || !onVideo) {
+          removeStyle();
+          return;
+        }
+
+        if (!document.getElementById(STYLE_ID)) {
+          const style = document.createElement('style');
+          style.id = STYLE_ID;
+          style.textContent = \`
+            ytd-masthead, #masthead-container, #guide, ytd-mini-guide-renderer,
+            #secondary, #related, ytd-watch-metadata, #below, ytd-comments,
+            #chat, ytd-engagement-panel-section-list-renderer, #panels,
+            .ytp-chrome-top, .ytp-chrome-bottom, .ytp-gradient-top, .ytp-gradient-bottom,
+            .ytp-pause-overlay, .ytp-ce-element, .ytp-show-cards-title, .ytp-watermark,
+            .ytp-youtube-button, .ytp-title, .ytp-share-button, .ytp-overflow-button,
+            ytd-shorts #header, ytd-shorts #navigation, ytd-shorts .reel-player-overlay-actions,
+            ytd-shorts .yt-spec-button-shape-next, ytd-reel-player-overlay-renderer {
+              display: none !important;
+              visibility: hidden !important;
+            }
+            html, body, ytd-app, #content.ytd-app {
+              overflow: hidden !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #000 !important;
+            }
+            ytd-watch-flexy {
+              --ytd-watch-flexy-sidebar-min-width: 0px !important;
+              --ytd-watch-flexy-max-player-width-available: 100vw !important;
+              max-width: none !important;
+            }
+            ytd-watch-flexy #player-theater-container,
+            ytd-watch-flexy #full-bleed-container,
+            ytd-watch-flexy #player-container,
+            ytd-watch-flexy #player,
+            #movie_player, .html5-video-player, .ytp-player {
+              position: fixed !important;
+              top: 0 !important;
+              left: 0 !important;
+              right: 0 !important;
+              bottom: 0 !important;
+              width: 100vw !important;
+              height: 100vh !important;
+              max-width: none !important;
+              max-height: none !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              z-index: 9999 !important;
+            }
+            video.html5-main-video, #movie_player video {
+              width: 100% !important;
+              height: 100% !important;
+              object-fit: contain !important;
+            }
+            ytd-shorts, #shorts-container, ytd-reel-video-renderer {
+              position: fixed !important;
+              inset: 0 !important;
+              width: 100vw !important;
+              height: 100vh !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #000 !important;
+            }
+            ytd-shorts .html5-video-player, ytd-shorts video {
+              width: 100% !important;
+              height: 100% !important;
+              object-fit: contain !important;
+            }
+          \`;
+          document.head.appendChild(style);
+        }
+
+        if (onWatch || onLive) {
+          const flexy = document.querySelector('ytd-watch-flexy');
+          if (flexy) {
+            flexy.setAttribute('theater', '');
+            flexy.setAttribute('fullscreen', '');
+            flexy.removeAttribute('flexy');
+          }
+        }
+      })();`
+    )
+    .catch(() => {})
+}
+
 function applyNavAppAppearance(theme: string): void {
   if (theme === 'light' || theme === 'dark' || theme === 'gray' || theme === 'midnight') {
     navAppTheme = theme
@@ -79,10 +188,14 @@ function applyNavAppAppearance(theme: string): void {
   const bg = NAV_APP_THEME_BG[navAppTheme] ?? NAV_APP_THEME_BG.dark
   if (!navBrowserView || navBrowserView.webContents.isDestroyed()) return
   navBrowserView.setBackgroundColor(bg)
-  if (navBrowserView.webContents.isLoading()) {
-    navBrowserView.webContents.once('did-finish-load', () => applyYoutubeDarkMode(dark))
-  } else {
+  const applyYoutube = () => {
     applyYoutubeDarkMode(dark)
+    applyYoutubeMiniLayout(navAppLayout === 'mini')
+  }
+  if (navBrowserView.webContents.isLoading()) {
+    navBrowserView.webContents.once('did-finish-load', applyYoutube)
+  } else {
+    applyYoutube()
   }
 }
 
@@ -311,6 +424,7 @@ function destroyNavBrowserView(): void {
   }
   navBrowserView = null
   navBrowserViewPartition = null
+  navBrowserViewTargetUrl = null
 }
 
 type NavAppBounds = { x: number; y: number; width: number; height: number }
@@ -342,12 +456,33 @@ function sanitizeNavAppBounds(bounds: NavAppBounds): NavAppBounds | null {
   }
 }
 
-function showNavBrowserView(args: { partition: string; url: string; bounds: NavAppBounds }): void {
+function navAppUrlsEquivalent(current: string, target: string): boolean {
+  try {
+    const a = new URL(current)
+    const b = new URL(target)
+    return a.origin === b.origin && a.pathname === b.pathname
+  } catch {
+    return current === target
+  }
+}
+
+function showNavBrowserView(args: {
+  partition: string
+  url: string
+  bounds: NavAppBounds
+  layout?: 'full' | 'mini'
+}): void {
   if (!centralWindow || centralWindow.isDestroyed()) return
+
+  if (args.layout === 'mini' || args.layout === 'full') {
+    navAppLayout = args.layout
+  }
+
+  navBrowserViewTargetUrl = args.url
 
   const bounds = sanitizeNavAppBounds(args.bounds)
   if (!bounds) {
-    // Layout settling (full ↔ mini) — keep session alive, skip bounds update.
+    // Layout settling — keep session alive, skip bounds update until valid.
     return
   }
 
@@ -368,10 +503,19 @@ function showNavBrowserView(args: { partition: string; url: string; bounds: NavA
       }
     })
     navBrowserView.webContents.setUserAgent(CHROME_USER_AGENT)
-    configureGuestWebContents(navBrowserView.webContents)
+    configureNavAppWebContents(navBrowserView.webContents, args.partition)
     navBrowserViewPartition = args.partition
     navBrowserView.webContents.on('did-finish-load', () => applyNavAppAppearance(navAppTheme))
     void navBrowserView.webContents.loadURL(args.url)
+  } else {
+    const current = navBrowserView.webContents.getURL()
+    if (
+      !current ||
+      current === 'about:blank' ||
+      !navAppUrlsEquivalent(current, args.url)
+    ) {
+      void navBrowserView.webContents.loadURL(args.url)
+    }
   }
 
   if (centralWindow && !centralWindow.isDestroyed()) {
@@ -408,6 +552,14 @@ function openAuthWindow(args: { partition: string; url: string; title?: string }
   authWindows.set(args.partition, win)
   win.on('closed', () => {
     authWindows.delete(args.partition)
+    if (
+      args.partition === navBrowserViewPartition &&
+      navBrowserView &&
+      !navBrowserView.webContents.isDestroyed() &&
+      navBrowserViewTargetUrl
+    ) {
+      void navBrowserView.webContents.loadURL(navBrowserViewTargetUrl)
+    }
     if (centralWindow && !centralWindow.isDestroyed()) {
       centralWindow.webContents.send('embedded:auth-closed', args.partition)
     }
@@ -435,6 +587,77 @@ function isNotchAppShell(url: string): boolean {
   return url.includes('localhost:5174') || url.includes('dist-renderer') || url.endsWith('central.html') || url.endsWith('index.html')
 }
 
+/** OAuth / Cloudflare login hosts — load in a dedicated window (same session partition). */
+function isNavAppAuthUrl(url: string): boolean {
+  try {
+    const { hostname, pathname } = new URL(url)
+    if (hostname === 'authenticate.cursor.sh') return true
+    if (hostname.endsWith('.workos.com') || hostname === 'api.workos.com') return true
+    if (hostname === 'accounts.google.com') return true
+    if (hostname === 'github.com' && pathname.startsWith('/login')) return true
+    if (hostname === 'cursor.com' && pathname.startsWith('/api/auth/')) return true
+    return false
+  } catch {
+    return false
+  }
+}
+
+function openNavAppAuthWindow(partition: string, url: string, title?: string): void {
+  openAuthWindow({ partition, url, title: title ?? 'Sign in' })
+}
+
+function configureNavAppWebContents(contents: WebContents, partition: string): void {
+  configureGuestWebContents(contents)
+
+  contents.on('will-navigate', (event, url) => {
+    if (!isNavAppAuthUrl(url)) return
+    event.preventDefault()
+    openNavAppAuthWindow(partition, url, 'Sign in')
+  })
+
+  contents.on('will-redirect', (event, url) => {
+    if (!isNavAppAuthUrl(url)) return
+    event.preventDefault()
+    openNavAppAuthWindow(partition, url, 'Sign in')
+  })
+
+  contents.on('did-fail-load', (_event, code, desc, url) => {
+    if (code === -3) return // ERR_ABORTED — navigation intercepted for auth popup
+    console.warn('[navapp] failed to load', code, desc, url)
+  })
+
+  contents.on('did-navigate-in-page', () => {
+    if (partition !== navBrowserViewPartition) return
+    applyYoutubeMiniLayout(navAppLayout === 'mini')
+    applyYoutubeDarkMode(navAppThemeIsDark(navAppTheme))
+  })
+
+  contents.on('did-finish-load', () => {
+    if (partition !== navBrowserViewPartition) return
+    if (!navBrowserViewTargetUrl) return
+    const current = contents.getURL()
+    if (!current || current === 'about:blank') return
+    if (isNavAppAuthUrl(current)) return
+    applyYoutubeMiniLayout(navAppLayout === 'mini')
+    applyYoutubeDarkMode(navAppThemeIsDark(navAppTheme))
+    // Stuck on Cloudflare "Just a moment…" with an empty body — retry in auth window.
+    void contents
+      .executeJavaScript(
+        `(function() {
+          const t = (document.title || '').toLowerCase();
+          const body = (document.body && document.body.innerText) || '';
+          return t.includes('just a moment') && body.trim().length < 80;
+        })();`,
+        true
+      )
+      .then((stuck) => {
+        if (!stuck) return
+        openNavAppAuthWindow(partition, contents.getURL(), 'Sign in')
+      })
+      .catch(() => {})
+  })
+}
+
 function configureGuestWebContents(contents: WebContents): void {
   configureEmbeddedSession(contents.session)
   contents.setUserAgent(CHROME_USER_AGENT)
@@ -451,7 +674,7 @@ function configureGuestWebContents(contents: WebContents): void {
 }
 
 function setupEmbeddedBrowsing(): void {
-  for (const part of ['persist:stream-central', 'persist:nav-app-youtube']) {
+  for (const part of ['persist:stream-central', 'persist:nav-app-youtube', 'persist:nav-app-cursor']) {
     try {
       configureEmbeddedSession(session.fromPartition(part))
     } catch {
@@ -502,11 +725,9 @@ function createCentralWindow(): BrowserWindow {
     minWidth: 1008,
     minHeight: 560,
     title: 'Stream',
-    backgroundColor: '#0E0E12',
+    backgroundColor: '#141413',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 18 },
-    vibrancy: 'under-window',
-    visualEffectState: 'active',
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -514,6 +735,17 @@ function createCentralWindow(): BrowserWindow {
       webviewTag: true
     }
   })
+
+  if (isDev) {
+    win.webContents.on('console-message', (_event, level, message) => {
+      if (level >= 2) console.warn('[central-renderer]', message)
+    })
+    win.webContents.on('did-fail-load', (_event, code, desc, url) => {
+      console.error('[central] failed to load', code, desc, url)
+    })
+  }
+
+  destroyNavBrowserView()
 
   wireLocalHotkey(win, toggleMobile)
   wireCentralNavAppLifecycle(win)
@@ -672,11 +904,14 @@ app.whenReady().then(() => {
   ipcMain.on('shell:open', (_e, url: string) => {
     if (typeof url === 'string' && url.startsWith('http')) void shell.openExternal(url)
   })
-  ipcMain.handle('navapp:show', (_e, args: { partition: string; url: string; bounds: NavAppBounds }) => {
-    if (!args?.partition || !args?.url || !args?.bounds) return { ok: false }
-    showNavBrowserView(args)
-    return { ok: true }
-  })
+  ipcMain.handle(
+    'navapp:show',
+    (_e, args: { partition: string; url: string; bounds: NavAppBounds; layout?: 'full' | 'mini' }) => {
+      if (!args?.partition || !args?.url || !args?.bounds) return { ok: false }
+      showNavBrowserView(args)
+      return { ok: true }
+    }
+  )
   ipcMain.handle('navapp:hide', () => {
     hideNavBrowserView()
     return { ok: true }

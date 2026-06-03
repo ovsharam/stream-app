@@ -48,9 +48,12 @@ export async function isGdocsConnected(): Promise<boolean> {
   return (await feedEnabledAccountsAnySession()).length > 0
 }
 
-async function docsClient() {
+async function docsClient(accountId?: string) {
   const accounts = await feedEnabledAccounts()
-  const account = accounts[0] ?? (await feedEnabledAccountsAnySession())[0]
+  const account =
+    (accountId ? accounts.find((a) => a.id === accountId) : undefined) ??
+    accounts[0] ??
+    (await feedEnabledAccountsAnySession())[0]
   if (!account) throw new Error('Connect Gmail with Docs scope first')
   const auth = authClientForTokens(account.tokens)
   return {
@@ -146,8 +149,9 @@ export async function createGoogleDoc(input: {
 export async function appendGoogleDoc(input: {
   documentId: string
   text: string
+  accountId?: string
 }): Promise<void> {
-  const { docs } = await docsClient()
+  const { docs } = await docsClient(input.accountId)
   const doc = await docs.documents.get({ documentId: input.documentId })
   const endIndex = doc.data.body?.content?.at(-1)?.endIndex ?? 1
   const insertAt = Math.max(1, endIndex - 1)

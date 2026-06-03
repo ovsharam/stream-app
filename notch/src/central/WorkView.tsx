@@ -151,7 +151,7 @@ export function WorkView({
       )
     }
     return (
-      <div className="x-work">
+      <div className="x-work x-work-post-call">
         <PostCallTaskDeck
           event={focusEvent}
           onDismiss={() => onFocusMeeting(null)}

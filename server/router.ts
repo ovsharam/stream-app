@@ -110,9 +110,18 @@ import {
   ingestChunk,
   starMoment,
   speculate,
-  getLatestPrediction
+  getLatestPrediction,
+  exportMeetingMarkdown
 } from './cluster/meetingPipeline'
 import { approveMeetingAction } from './cluster/meetingActions'
+import {
+  getCaptureState,
+  setCaptureState,
+  captureNote,
+  addReminder,
+  updateReminder,
+  deleteReminder
+} from './sources/captureStore'
 import { scoreFdeDecision } from './scoring/fde-scorer'
 import {
   setBrowserContext,
@@ -652,6 +661,111 @@ export function createRouter(io?: SocketServer): Router {
     upsertItem(item)
     io?.emit('stream:item', streamItemToApi(item))
     res.json(streamItemToApi(item))
+  })
+
+  router.get('/capture/state', (req, res) => {
+    const sid = getSessionId(req, res)
+    res.json(getCaptureState(sid))
+  })
+
+  router.put('/capture/state', (req, res) => {
+    const sid = getSessionId(req, res)
+    const body = req.body as {
+      profiles?: import('../shared/capture').CaptureProfile[]
+      activeProfileId?: string
+    }
+    res.json(
+      setCaptureState(sid, {
+        profiles: body.profiles,
+        activeProfileId: body.activeProfileId
+      })
+    )
+  })
+
+  router.post('/capture/note', async (req, res) => {
+    const sid = getSessionId(req, res)
+    const { text, title, profileId, destinations } = req.body as {
+      text?: string
+      title?: string
+      profileId?: string
+      destinations?: import('../shared/capture').CaptureDestination[]
+    }
+    if (!text?.trim()) {
+      res.status(400).json({ error: 'text required' })
+      return
+    }
+    try {
+      const result = await captureNote(sid, { text, title, profileId, destinations, io })
+      res.json(result)
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message })
+    }
+  })
+
+  router.post('/capture/reminder', (req, res) => {
+    const sid = getSessionId(req, res)
+    const { text, dueAt, profileId } = req.body as {
+      text?: string
+      dueAt?: string
+      profileId?: string
+    }
+    if (!text?.trim() || !dueAt) {
+      res.status(400).json({ error: 'text and dueAt required' })
+      return
+    }
+    res.json(addReminder(sid, { text, dueAt, profileId }))
+  })
+
+  router.patch('/capture/reminder/:id', (req, res) => {
+    const sid = getSessionId(req, res)
+    const updated = updateReminder(sid, String(req.params.id), req.body as Partial<{ done: boolean; text: string; dueAt: string }>)
+    if (!updated) {
+      res.status(404).json({ error: 'reminder not found' })
+      return
+    }
+    res.json(updated)
+  })
+
+  router.delete('/capture/reminder/:id', (req, res) => {
+    const sid = getSessionId(req, res)
+    if (!deleteReminder(sid, String(req.params.id))) {
+      res.status(404).json({ error: 'reminder not found' })
+      return
+    }
+    res.json({ ok: true })
+  })
+
+  router.get('/capture/meeting/:id/export', (req, res) => {
+    const mode = req.query.mode === 'summary' ? 'summary' : 'full'
+    const markdown = exportMeetingMarkdown(String(req.params.id), mode)
+    if (!markdown) {
+      res.status(404).json({ error: 'meeting not found' })
+      return
+    }
+    res.json({ markdown, mode })
+  })
+
+  router.post('/capture/meeting/:id/append', async (req, res) => {
+    const sid = getSessionId(req, res)
+    const mode = req.body?.mode === 'summary' ? 'summary' : 'full'
+    const profileId = req.body?.profileId as string | undefined
+    const markdown = exportMeetingMarkdown(String(req.params.id), mode)
+    if (!markdown) {
+      res.status(404).json({ error: 'meeting not found' })
+      return
+    }
+    try {
+      const result = await captureNote(sid, {
+        text: markdown,
+        title: mode === 'summary' ? 'Meeting summary' : 'Meeting notes',
+        profileId,
+        destinations: ['obsidian', 'gdocs'],
+        io
+      })
+      res.json(result)
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message })
+    }
   })
 
   router.post('/sync/all', async (_req, res) => {

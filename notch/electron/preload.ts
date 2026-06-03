@@ -68,8 +68,12 @@ contextBridge.exposeInMainWorld('notch', {
 
 contextBridge.exposeInMainWorld('notchDesktop', {
   openExternal: (url: string) => ipcRenderer.send('shell:open', url),
-  showNavApp: (args: { partition: string; url: string; bounds: { x: number; y: number; width: number; height: number } }) =>
-    ipcRenderer.invoke('navapp:show', args),
+  showNavApp: (args: {
+    partition: string
+    url: string
+    bounds: { x: number; y: number; width: number; height: number }
+    layout?: 'full' | 'mini'
+  }) => ipcRenderer.invoke('navapp:show', args),
   hideNavApp: () => ipcRenderer.invoke('navapp:hide'),
   destroyNavApp: () => ipcRenderer.invoke('navapp:destroy'),
   reloadNavApp: () => ipcRenderer.invoke('navapp:reload'),
@@ -142,6 +146,7 @@ declare global {
         partition: string
         url: string
         bounds: { x: number; y: number; width: number; height: number }
+        layout?: 'full' | 'mini'
       }) => Promise<{ ok: boolean }>
       hideNavApp?: () => Promise<{ ok: boolean }>
       destroyNavApp?: () => Promise<{ ok: boolean }>

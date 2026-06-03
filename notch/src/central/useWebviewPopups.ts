@@ -1,4 +1,5 @@
 import { useEffect, type RefObject } from 'react'
+import { openBrowserLink } from '../lib/api'
 
 type WebviewEl = HTMLElement & {
   addEventListener(type: 'new-window', listener: (e: WebviewNewWindowEvent) => void): void
@@ -24,14 +25,7 @@ export function useWebviewPopups(ref: RefObject<HTMLElement | null>, enabled: bo
       const url = event.url
       if (!url || !/^https?:\/\//i.test(url)) return
       event.preventDefault?.()
-      // Guest popup from allowpopups — load in same webview when Electron doesn't spawn a window.
-      if (typeof el.loadURL === 'function') {
-        el.loadURL(url)
-        return
-      }
-      if (event.newGuest && typeof event.newGuest.loadURL === 'function') {
-        event.newGuest.loadURL(url)
-      }
+      openBrowserLink(url)
     }
 
     el.addEventListener('new-window', onNewWindow)

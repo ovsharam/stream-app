@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { openExternal } from '../lib/api'
+import { openBrowserLink } from '../lib/api'
 import type { NavApp } from './navAppsStore'
 import { isNavAppDesktop } from './navAppsStore'
 import { useNavAppBrowserView } from './useNavAppBrowserView'
@@ -45,7 +45,7 @@ export function NavAppPlayer({ app, mode, hasRail, onMinimize, onExpand, onClose
           <button
             type="button"
             className="x-nav-app-player-btn x-nav-app-player-btn-external"
-            onClick={() => openExternal(app.url)}
+            onClick={() => openBrowserLink(app.url, { forceExternal: true, title: app.label })}
             title="Open in browser"
           >
             ↗
@@ -61,7 +61,11 @@ export function NavAppPlayer({ app, mode, hasRail, onMinimize, onExpand, onClose
         ) : (
           <div className="x-nav-app-player-fallback">
             <p>In-app apps run in the Notch desktop app (Electron).</p>
-            <button type="button" className="x-nav-app-player-fallback-open" onClick={() => openExternal(app.url)}>
+            <button
+              type="button"
+              className="x-nav-app-player-fallback-open"
+              onClick={() => openBrowserLink(app.url, { forceExternal: true, title: app.label })}
+            >
               Open {app.label} in browser
             </button>
           </div>

@@ -1,6 +1,8 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { AssistResult } from '@shared/cluster'
 import { dedupeAssistLines } from '@shared/assistText'
+import { extractComposeCommands } from '@shared/compose'
+import { clusterApi } from '../lib/api'
 
 type Props = {
   assist: AssistResult
@@ -79,6 +81,29 @@ function renderChatContent(text: string) {
 
 export function AssistMessageBody({ assist }: Props) {
   const main = String(assist.response ?? '').trim()
+  const composeCommands = extractComposeCommands(main)
+  const [runAllBusy, setRunAllBusy] = useState(false)
+  const [runAllMsg, setRunAllMsg] = useState<string | null>(null)
+
+  const runAllAgents = async () => {
+    if (runAllBusy || composeCommands.length === 0) return
+    setRunAllBusy(true)
+    setRunAllMsg(null)
+    let ok = 0
+    let fail = 0
+    for (const cmd of composeCommands) {
+      try {
+        const result = await clusterApi.runAction({ text: cmd }, { timeoutMs: 90_000 })
+        if (result.ok) ok++
+        else fail++
+      } catch {
+        fail++
+      }
+    }
+    const total = composeCommands.length
+    setRunAllMsg(`${ok}/${total} succeeded`)
+    setRunAllBusy(false)
+  }
 
   if (!main) {
     return (
@@ -88,5 +113,24 @@ export function AssistMessageBody({ assist }: Props) {
     )
   }
 
-  return <div className="x-home-msg-body">{renderChatContent(main)}</div>
+  return (
+    <div className="x-home-msg-body">
+      {renderChatContent(main)}
+      {composeCommands.length > 0 ? (
+        <div className="x-home-run-all">
+          <button
+            type="button"
+            className="x-action-btn x-action-btn-primary x-run-all-btn"
+            disabled={runAllBusy}
+            onClick={() => void runAllAgents()}
+          >
+            {runAllBusy
+              ? `Running ${composeCommands.length}…`
+              : `Run all agents (${composeCommands.length})`}
+          </button>
+          {runAllMsg ? <span className="x-home-run-all-msg">{runAllMsg}</span> : null}
+        </div>
+      ) : null}
+    </div>
+  )
 }

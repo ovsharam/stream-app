@@ -19,6 +19,11 @@ import {
 
 const STARTERS = [
   { id: 'today', label: 'What needs my attention today?', hint: 'Priorities & open loops' },
+  {
+    id: 'tomorrow',
+    label: 'Plan tomorrow by top priorities',
+    hint: 'Calendar, KB, tasks & agent handoffs'
+  },
   { id: 'call', label: 'Prep me for my next call', hint: 'Context & talking points' },
   { id: 'monday', label: 'Summarize my open Monday tasks', hint: 'Board status' }
 ] as const

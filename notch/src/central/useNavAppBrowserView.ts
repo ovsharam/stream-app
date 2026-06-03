@@ -41,7 +41,8 @@ export function useNavAppBrowserView(
             width: Math.round(rect.width),
             height: Math.round(rect.height)
           }
-          void window.notchDesktop?.showNavApp?.({ partition, url: app.url, bounds })
+          const layout = modeRef.current === 'mini' ? 'mini' : 'full'
+          void window.notchDesktop?.showNavApp?.({ partition, url: app.url, bounds, layout })
         })
       })
     }
@@ -54,9 +55,14 @@ export function useNavAppBrowserView(
 
     const unsubReady = window.notchDesktop?.onNavAppRendererReady?.(() => sync())
 
+    const unsubAuth = window.notchDesktop?.onAuthClosed?.((closedPartition) => {
+      if (closedPartition === partition) void window.notchDesktop?.reloadNavApp?.()
+    })
+
     return () => {
       cancelAnimationFrame(raf)
       unsubReady?.()
+      unsubAuth?.()
       ro.disconnect()
       window.removeEventListener('resize', sync)
       window.removeEventListener('scroll', sync, true)
@@ -74,6 +80,7 @@ export function useNavAppBrowserView(
       raf = requestAnimationFrame(() => {
         const rect = el.getBoundingClientRect()
         if (rect.width < 1 || rect.height < 1) return
+        const layout = mode === 'mini' ? 'mini' : 'full'
         void window.notchDesktop?.showNavApp?.({
           partition,
           url: app.url,
@@ -82,7 +89,8 @@ export function useNavAppBrowserView(
             y: Math.round(rect.y),
             width: Math.round(rect.width),
             height: Math.round(rect.height)
-          }
+          },
+          layout
         })
       })
     })

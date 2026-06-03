@@ -1,11 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import type { CalendarRailEvent, ClusterSearchHit, CentralStreamEvent, PerplexityNewsItem } from '@shared/cluster'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import type { CalendarRailEvent, CentralStreamEvent, PerplexityNewsItem } from '@shared/cluster'
 import { cleanKbExcerpt } from '@shared/assistText'
 import { clusterApi, openExternal, openMeeting } from '../lib/api'
 import { FeedRailChatPanel } from './FeedRailChatPanel'
-import { IconGmail, IconMonday, IconSearch, IconVideoCall } from './Icons'
+import { IconGmail, IconMonday, IconSettings, IconVideoCall } from './Icons'
+import { RailWidgetsConfigSheet } from './RailWidgetsConfig'
+import {
+  getVisibleWidgets,
+  useRailWidgets,
+  widgetLabel,
+  type RailContext,
+  type RailWidgetId
+} from './railWidgetsStore'
 
-type RailTab = 'context' | 'calendar' | 'chat' | 'news'
+type RailTab = RailWidgetId
 type IntentionFilter = 'all' | 'plan' | 'explore' | 'execute'
 
 type RecentItem = {
@@ -16,13 +24,6 @@ type RecentItem = {
   source?: string
   ingestedAt: number
 }
-
-const RAIL_TABS: { id: RailTab; label: string }[] = [
-  { id: 'context', label: 'Context' },
-  { id: 'calendar', label: 'Calendar' },
-  { id: 'chat', label: 'Chat' },
-  { id: 'news', label: 'News' }
-]
 
 const INTENTION_FILTERS: { id: IntentionFilter; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -358,104 +359,6 @@ function useCalendarRail() {
     pplxConnected,
     pplxHint
   }
-}
-
-function RailSearch() {
-  const [query, setQuery] = useState('')
-  const [hits, setHits] = useState<ClusterSearchHit[]>([])
-  const [searching, setSearching] = useState(false)
-  const [open, setOpen] = useState(false)
-  const wrapRef = useRef<HTMLDivElement>(null)
-
-  const runSearch = useCallback(async (q: string) => {
-    const trimmed = q.trim()
-    if (!trimmed) {
-      setHits([])
-      setSearching(false)
-      return
-    }
-    setSearching(true)
-    try {
-      setHits(await clusterApi.search(trimmed))
-    } catch {
-      setHits([])
-    } finally {
-      setSearching(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!query.trim()) {
-      setHits([])
-      setSearching(false)
-      return
-    }
-    const t = setTimeout(() => void runSearch(query), 280)
-    return () => clearTimeout(t)
-  }, [query, runSearch])
-
-  useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [])
-
-  const showResults = open && query.trim().length > 0
-
-  return (
-    <div className="x-search x-rail-search" ref={wrapRef}>
-      <IconSearch className="x-search-icon" />
-      <input
-        value={query}
-        placeholder="Search knowledge & stream"
-        onFocus={() => setOpen(true)}
-        onChange={(e) => {
-          setQuery(e.target.value)
-          setOpen(true)
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault()
-            void runSearch(query)
-            setOpen(true)
-          }
-          if (e.key === 'Escape') {
-            setOpen(false)
-          }
-        }}
-      />
-      {showResults && (
-        <div className="x-search-results" role="listbox">
-          {searching && hits.length === 0 && (
-            <p className="x-search-results-empty">Searching…</p>
-          )}
-          {!searching && hits.length === 0 && (
-            <p className="x-search-results-empty">No matches</p>
-          )}
-          {hits.slice(0, 8).map((hit) => (
-            <button
-              key={hit.id}
-              type="button"
-              className="x-search-hit"
-              role="option"
-              onClick={() => {
-                setQuery(hit.title)
-                setOpen(false)
-              }}
-            >
-              <span className="x-search-hit-title">{hit.title}</span>
-              <span className="x-search-hit-snippet">{hit.snippet}</span>
-              <span className="x-search-hit-source">{hit.source}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
 }
 
 function CalendarDayStrip({
@@ -853,53 +756,105 @@ function ContextPanel() {
 
 export function ContextRail({
   events = [],
-  onOpenHome
+  onOpenHome,
+  railContext = {}
 }: {
   events?: CentralStreamEvent[]
   onOpenHome?: () => void
+  railContext?: RailContext
 }) {
   const [activeTab, setActiveTab] = useState<RailTab>('context')
+  const [configOpen, setConfigOpen] = useState(false)
+  const widgets = useRailWidgets()
+  const visibleWidgets = useMemo(
+    () => getVisibleWidgets(widgets, railContext),
+    [widgets, railContext]
+  )
+  const visibleIds = useMemo(() => new Set(visibleWidgets.map((w) => w.id)), [visibleWidgets])
   const calendar = useCalendarRail()
+
+  useEffect(() => {
+    if (visibleWidgets.length === 0) return
+    if (!visibleIds.has(activeTab)) {
+      setActiveTab(visibleWidgets[0].id)
+    }
+  }, [activeTab, visibleIds, visibleWidgets])
 
   return (
     <>
-      <RailSearch />
-      <div className="x-rail-tabs" role="tablist" aria-label="Right rail">
-        {RAIL_TABS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab.id}
-            className={`x-rail-tab ${activeTab === tab.id ? 'x-rail-tab-active' : ''}`}
-            onClick={() => setActiveTab(tab.id)}
+      {visibleWidgets.length === 0 ? (
+        <>
+          <div className="x-rail-tabs-bar x-rail-tabs-bar-empty">
+            <span className="x-rail-tabs-bar-spacer" />
+            <button
+              type="button"
+              className="x-rail-config-btn"
+              aria-label="Configure sideblade widgets"
+              title="Configure widgets"
+              onClick={() => setConfigOpen(true)}
+            >
+              <IconSettings className="x-rail-config-icon" />
+            </button>
+          </div>
+          <div className="x-rail-empty">
+            <p>No sideblade widgets enabled.</p>
+            <button type="button" className="x-rail-empty-btn" onClick={() => setConfigOpen(true)}>
+              Choose widgets
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="x-rail-tabs-bar">
+            <div className="x-rail-tabs" role="tablist" aria-label="Right rail">
+              {visibleWidgets.map((widget) => (
+                <button
+                  key={widget.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === widget.id}
+                  className={`x-rail-tab ${activeTab === widget.id ? 'x-rail-tab-active' : ''}`}
+                  onClick={() => setActiveTab(widget.id)}
+                >
+                  {widgetLabel(widget.id)}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="x-rail-config-btn"
+              aria-label="Configure sideblade widgets"
+              title="Configure widgets"
+              onClick={() => setConfigOpen(true)}
+            >
+              <IconSettings className="x-rail-config-icon" />
+            </button>
+          </div>
+          <div
+            className={`x-rail-panel${activeTab === 'chat' ? ' x-rail-panel-chat' : ''}`}
+            role="tabpanel"
           >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-      <div
-        className={`x-rail-panel${activeTab === 'chat' ? ' x-rail-panel-chat' : ''}`}
-        role="tabpanel"
-      >
-        {activeTab === 'context' && <ContextPanel />}
-        {activeTab === 'calendar' && (
-          <CalendarPanel
-            dayGroups={calendar.dayGroups}
-            allEvents={calendar.events}
-            calendarConnected={calendar.calendarConnected}
-            calendarHint={calendar.calendarHint}
-          />
-        )}
-        {activeTab === 'chat' && <FeedRailChatPanel events={events} onOpenHome={onOpenHome} />}
-        {activeTab === 'news' && (
-          <NewsPanel
-            pplxNews={calendar.pplxNews}
-            pplxConnected={calendar.pplxConnected}
-            pplxHint={calendar.pplxHint}
-          />
-        )}
-      </div>
+            {activeTab === 'context' && <ContextPanel />}
+            {activeTab === 'calendar' && (
+              <CalendarPanel
+                dayGroups={calendar.dayGroups}
+                allEvents={calendar.events}
+                calendarConnected={calendar.calendarConnected}
+                calendarHint={calendar.calendarHint}
+              />
+            )}
+            {activeTab === 'chat' && <FeedRailChatPanel events={events} onOpenHome={onOpenHome} />}
+            {activeTab === 'news' && (
+              <NewsPanel
+                pplxNews={calendar.pplxNews}
+                pplxConnected={calendar.pplxConnected}
+                pplxHint={calendar.pplxHint}
+              />
+            )}
+          </div>
+        </>
+      )}
+      <RailWidgetsConfigSheet open={configOpen} onClose={() => setConfigOpen(false)} />
     </>
   )
 }

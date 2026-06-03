@@ -3,7 +3,7 @@ import type { CalendarRailEvent, CentralStreamEvent } from '@shared/cluster'
 export type WorkspaceTab = {
   id: string
   title: string
-  source: CentralStreamEvent['source'] | 'calendar' | 'meet'
+  source: CentralStreamEvent['source'] | 'calendar' | 'meet' | 'gdocs'
   url: string
   summary: string
   autoOpened?: boolean
@@ -65,6 +65,10 @@ function sourceUrl(event: CentralStreamEvent): string | null {
       return 'https://app.gong.io'
     case 'meet':
       return 'https://meet.google.com'
+    case 'gdocs': {
+      const docUrl = event.meta?.url ? String(event.meta.url) : null
+      return docUrl?.startsWith('http') ? docUrl : null
+    }
     case 'build':
       return 'https://linear.app'
     case 'notch':

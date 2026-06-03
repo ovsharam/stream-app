@@ -1,7 +1,7 @@
 import { useState, type MouseEvent } from 'react'
 import type { CentralStreamEvent } from '@shared/cluster'
 import { parseMeetingActionsMeta } from '@shared/meeting-actions'
-import { openMeeting } from '../lib/api'
+import { openBrowserLink, openMeeting } from '../lib/api'
 import { getFeedVote, setFeedVote } from './feedFeedbackStore'
 import { IconGmail, IconMonday, IconReply, IconRepost, IconShare, IconViews } from './Icons'
 
@@ -204,10 +204,23 @@ function MondayCard({ event }: { event: CentralStreamEvent }) {
 }
 
 function GdocsCard({ event }: { event: CentralStreamEvent }) {
+  const docUrl = event.meta?.url ? String(event.meta.url) : null
   return (
     <>
       <p className="x-post-title x-post-title-inline">{event.title}</p>
       {event.body ? <p className="x-post-body">{event.body}</p> : null}
+      {docUrl?.startsWith('http') ? (
+        <button
+          type="button"
+          className="x-action-btn x-action-btn-primary x-post-doc-btn"
+          onClick={(e) => {
+            e.stopPropagation()
+            openBrowserLink(docUrl, { title: event.title || 'Google Doc', source: 'gdocs' })
+          }}
+        >
+          Open doc
+        </button>
+      ) : null}
     </>
   )
 }
@@ -470,9 +483,9 @@ export function FeedPost({
     if (isGmailThread && threadItemId) openThread()
   }
 
-  const openExternal = (e: MouseEvent, url: string) => {
+  const openLink = (e: MouseEvent, url: string, title?: string) => {
     e.stopPropagation()
-    window.notchDesktop?.openExternal?.(url)
+    openBrowserLink(url, { title })
   }
 
   const hideTitle =
@@ -517,7 +530,7 @@ export function FeedPost({
           <LinkPreview
             url={imageUrl && imageUrl.match(/\.(png|jpe?g|gif|webp)/i) ? imageUrl : linkUrl}
             title={event.title}
-            onClick={(e) => openExternal(e, linkUrl)}
+            onClick={(e) => openLink(e, linkUrl)}
           />
         ) : null}
 
@@ -525,7 +538,7 @@ export function FeedPost({
           <button
             type="button"
             className="x-action-btn x-action-btn-primary x-meeting-doc-btn"
-            onClick={(e) => openExternal(e, googleDocUrl)}
+            onClick={(e) => openLink(e, googleDocUrl, 'Meeting notes')}
           >
             Open Google Doc
           </button>

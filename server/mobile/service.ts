@@ -8,6 +8,8 @@ import { getActiveMeeting, getLatestPrediction } from '../cluster/meetingPipelin
 import { getCachedCalendarEvents } from '../sources/calendar'
 import { retrieveAssistContext } from '../kb/pipeline'
 import { getDatapoint } from '../kb/store'
+import { getCaptureState } from '../sources/captureStore'
+import { getSessionIdFromContext } from '../request-context'
 import { queryClaude, isClaudeConnected } from '../sources/claude'
 import { queryGemini, isGeminiConnected, ensureGeminiFromEnv } from '../sources/gemini'
 import type { StreamItem } from '../../shared/types'
@@ -243,6 +245,12 @@ function chatFallbackResponse(q: string): AssistResult {
   }
 }
 
+function isPlanningQuery(q: string): boolean {
+  return /\btomorrow\b|\bnext day\b|\bplan my\b|\bplan for\b|\bagenda\b|\bschedule\b|\btop priorit/i.test(
+    q
+  )
+}
+
 function buildChatContextBlock(
   q: string,
   latent: ReturnType<typeof retrieveAssistContext>,
@@ -250,6 +258,7 @@ function buildChatContextBlock(
   history?: ChatTurn[]
 ): string {
   const parts: string[] = []
+  const planning = isPlanningQuery(q)
 
   if (history && history.length > 0) {
     parts.push(
@@ -270,18 +279,65 @@ function buildChatContextBlock(
     )
   }
 
-  const feedItems = getRecentItems(20).filter(
+  if (planning) {
+    const calendar = getCachedCalendarEvents()
+    const tomorrow = calendar.filter((e) => e.dayIndex === 1)
+    const today = calendar.filter((e) => e.dayIndex === 0 && !e.ended)
+    parts.push(
+      `Calendar today:\n${
+        today.length
+          ? today
+              .map((e) => `• ${e.timeLabel} — ${e.title}${e.link ? ' (Meet)' : ''}`)
+              .join('\n')
+          : '(no remaining events today)'
+      }`
+    )
+    parts.push(
+      `Calendar tomorrow:\n${
+        tomorrow.length
+          ? tomorrow.map((e) => `• ${e.timeLabel} — ${e.title}`).join('\n')
+          : '(no events synced for tomorrow — connect calendar in Apps)'
+      }`
+    )
+
+    try {
+      const sid = getSessionIdFromContext()
+      const capture = getCaptureState(sid)
+      const openReminders = capture.reminders.filter((r) => !r.done)
+      if (openReminders.length > 0) {
+        parts.push(
+          `Open reminders:\n${openReminders
+            .slice(0, 12)
+            .map((r) => {
+              const profile = capture.profiles.find((p) => p.id === r.profileId)?.label ?? r.profileId
+              return `• [${profile}] ${r.text} — due ${new Date(r.dueAt).toLocaleString()}`
+            })
+            .join('\n')}`
+        )
+      }
+    } catch {
+      /* no session context */
+    }
+  }
+
+  const feedItems = getRecentItems(planning ? 40 : 20).filter(
     (i) => !['gemini', 'claude', 'mobile', 'perplexity'].includes(i.source)
   )
+  const planningSources = new Set(['gmail', 'slack', 'monday', 'meeting', 'gdocs', 'calcom', 'note'])
+  const scopedFeed = planning
+    ? feedItems.filter((i) => planningSources.has(i.source))
+    : feedItems
+
   const includeFeed =
     isAttentionQuery(q) ||
+    planning ||
     /\b(email|inbox|gmail|monday|calendar|meeting|invite|task|attention|today)\b/i.test(q)
-  if (includeFeed && feedItems.length > 0) {
+  if (includeFeed && scopedFeed.length > 0) {
     parts.push(
-      `Recent items from integrations:\n${feedItems
-        .slice(0, 8)
+      `Recent items from integrations:\n${scopedFeed
+        .slice(0, planning ? 12 : 8)
         .map((i) => {
-          const preview = formatChatAssistBody(String(i.bodyFull ?? i.body ?? ''), 500)
+          const preview = formatChatAssistBody(String(i.bodyFull ?? i.body ?? ''), planning ? 700 : 500)
           return `• [${i.source}] ${i.title}${preview ? `: ${preview}` : ''}`
         })
         .join('\n')}`
@@ -291,10 +347,10 @@ function buildChatContextBlock(
   if (latent.chunks.length > 0) {
     parts.push(
       `Knowledge base:\n${latent.chunks
-        .slice(0, 5)
+        .slice(0, planning ? 8 : 5)
         .map((c) => {
           const dp = getDatapoint(c.datapointId)
-          const body = formatChatAssistBody(dp?.body ?? c.excerpt, 800)
+          const body = formatChatAssistBody(dp?.body ?? c.excerpt, planning ? 1000 : 800)
           return `• [${c.source}] ${c.title}${body ? `: ${body}` : ''}`
         })
         .join('\n')}`
@@ -374,7 +430,13 @@ Rules:
 - Do NOT copy-paste the daily inbox digest unless they explicitly ask what needs attention today.
 - Answer the specific question asked (e.g. financial comparisons, prep, summaries).
 - For priority/today questions only, group under: **Tasks**, **Reminders**, **Reviews & FYI**
-- If context lacks the data to answer, say so plainly and suggest connecting Apps or pasting the data — never invent emails, events, or numbers.`
+- If context lacks the data to answer, say so plainly and suggest connecting Apps or pasting the data — never invent emails, events, or numbers.
+${isPlanningQuery(q) ? `
+Planning mode (tomorrow / agenda / priorities):
+- Produce a ranked **Tomorrow agenda** with time blocks where calendar data exists.
+- Separate **Must do**, **Should do**, and **If time** sections.
+- Pull priorities from KB, open tasks (Monday/Gmail), reminders, and recent meetings.
+- End with **Agent handoffs** — 1–3 concrete @cursor or @monday compose commands the user can paste to spin up work (e.g. "@cursor ask: …", "@monday create: …"). Only suggest agents when there is a clear automatable task.` : ''}`
 
   const isAttention = /attention|priorit|today|what needs|open loops/i.test(q)
   const systemPrompt = chat

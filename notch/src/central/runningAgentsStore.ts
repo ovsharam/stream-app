@@ -28,15 +28,20 @@ const abortControllers = new Map<string, AbortController>()
 let agents: RunningAgentEntry[] = []
 let panelDismissed = false
 
+let cachedSnapshot: Snapshot = { agents: [], panelDismissed: false }
+
+function rebuildSnapshot() {
+  const visible = agents.filter((a) => !a.cancelled)
+  cachedSnapshot = { agents: visible, panelDismissed }
+}
+
 function emit() {
+  rebuildSnapshot()
   listeners.forEach((l) => l())
 }
 
 function getSnapshot(): Snapshot {
-  return {
-    agents: agents.filter((a) => !a.cancelled),
-    panelDismissed
-  }
+  return cachedSnapshot
 }
 
 export function subscribeRunningAgents(listener: () => void): () => void {
@@ -245,3 +250,5 @@ function bindExternalAgentEvents() {
 }
 
 bindExternalAgentEvents()
+
+rebuildSnapshot()

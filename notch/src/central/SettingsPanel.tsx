@@ -7,6 +7,7 @@ import {
   type MobileObjective
 } from '../lib/mobile-settings'
 import { getUserRole, setUserRole, type UserRole } from '../lib/user-role'
+import { RailWidgetsConfigList } from './RailWidgetsConfig'
 
 export function useMobileSettings() {
   const [settings, setSettingsState] = useState<MobileClusterSettings>(loadMobileSettings)
@@ -115,6 +116,15 @@ export function SettingsPanel() {
             <option value="v1_ship">V1 ship ASAP</option>
           </select>
         </div>
+      </section>
+
+      <section className="x-settings-section">
+        <h2>Sideblade widgets</h2>
+        <p className="x-settings-desc">
+          Add, remove, and reorder Context, Calendar, Chat, and News on the right rail — like iOS
+          home screen widgets.
+        </p>
+        <RailWidgetsConfigList />
       </section>
 
       <section className="x-settings-section">

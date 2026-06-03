@@ -3,10 +3,12 @@ import type { GmailAccount, GoogleCalendarOption, MondayAccount } from '@shared/
 import { clusterApi, integrationApi, type IntegrationConnections } from '../lib/api'
 import { IconGmail, IconMonday, IconYoutube } from './Icons'
 import { McpAgentsSection } from './McpAgentsSection'
-import { isNavAppDesktop, NAV_APP_CATALOG, type NavApp } from './navAppsStore'
+import { isNavAppDesktop, isNavAppPinned, pinnableEntryById, pinnableEntryForIntegration, type NavApp } from './navAppsStore'
 
 type IntegrationId =
+  | 'youtube'
   | 'gmail'
+  | 'slack'
   | 'monday'
   | 'agents'
   | 'calcom'
@@ -32,12 +34,28 @@ type IntegrationDef = {
 
 const INTEGRATIONS: IntegrationDef[] = [
   {
+    id: 'youtube',
+    name: 'YouTube',
+    tagline: 'Embedded player · mini player when you leave',
+    feeds: 'Sidebar',
+    brandClass: 'x-int-card-youtube',
+    icon: <IconYoutube className="x-int-brand-icon" />
+  },
+  {
     id: 'gmail',
     name: 'Gmail',
     tagline: 'Inbox threads + Google Calendar',
     feeds: 'Feed · Calendar rail',
     brandClass: 'x-int-card-gmail',
     icon: <IconGmail className="x-int-brand-icon" />
+  },
+  {
+    id: 'slack',
+    name: 'Slack',
+    tagline: 'Workspace channels in your feed',
+    feeds: 'Feed',
+    brandClass: 'x-int-card-slack',
+    icon: <span className="x-int-brand-letter">S</span>
   },
   {
     id: 'calcom',
@@ -151,6 +169,44 @@ function StatusBadge({ connected }: { connected: boolean }) {
       {connected ? 'Connected' : 'Not connected'}
     </span>
   )
+}
+
+function openOAuthUrl(url: string, statusMessage: string, setStatus: (s: string) => void) {
+  if (window.notchDesktop?.openExternal) {
+    window.notchDesktop.openExternal(url)
+  } else {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+  setStatus(statusMessage)
+}
+
+function PinIcon({ filled }: { filled?: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} aria-hidden>
+      <path
+        d="M16 3v2h2v13a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5h2V3h8zM9 5v11h6V5H9z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function pinnableForItem(itemId: IntegrationId) {
+  return pinnableEntryForIntegration(itemId) ?? pinnableEntryById(itemId)
+}
+
+function canPinItem(
+  itemId: IntegrationId,
+  connected: boolean,
+  desktop: boolean
+): boolean {
+  if (!desktop) return false
+  const entry = pinnableForItem(itemId)
+  if (!entry) return false
+  if (!entry.integrationId) return true
+  return connected
 }
 
 export function IntegrationsPanel({
@@ -313,10 +369,16 @@ export function IntegrationsPanel({
     loadMondayCreateTarget
   ])
 
+  const feedIntegrationTotal = INTEGRATIONS.filter((i) => i.id !== 'youtube').length
+
   const connectedCount = useMemo(() => {
     if (!connections) return 0
-    return INTEGRATIONS.filter((i) => connections.connected[i.id]).length
-  }, [connections])
+    return INTEGRATIONS.filter((i) => {
+      if (i.id === 'youtube') return false
+      if (i.id === 'agents') return mcpAgentCount > 0
+      return connections.connected[i.id]
+    }).length
+  }, [connections, mcpAgentCount])
 
   const connectGmail = async (addAccount: boolean) => {
     try {
@@ -411,6 +473,10 @@ export function IntegrationsPanel({
       const calCount = gmailAccounts.filter((a) => a.calendarEnabled).length
       return `${gmailAccounts.length} account${gmailAccounts.length === 1 ? '' : 's'} · ${feedCount} in feed · ${calCount} calendar`
     }
+    if (id === 'youtube') return 'Always available'
+    if (id === 'slack' && connections.connected.slack) {
+      return 'Workspace connected'
+    }
     if (id === 'calcom' && connections.connected.calcom) {
       return 'Bookings sync to feed'
     }
@@ -429,6 +495,81 @@ export function IntegrationsPanel({
   }
 
   const renderDetail = () => {
+    if (selected === 'youtube') {
+      const pinned = isNavAppPinned('youtube', navApps)
+      return (
+        <div className="x-int-detail">
+          <div className="x-int-detail-head">
+            <div>
+              <h3>YouTube</h3>
+              <p>Embedded in Notch with a mini player when you switch to Home or Feed.</p>
+            </div>
+            {desktop ? (
+              <button
+                type="button"
+                className="x-int-btn"
+                onClick={() => onOpenNavApp?.('youtube')}
+              >
+                Open
+              </button>
+            ) : null}
+          </div>
+          {desktop ? (
+            <p className="x-int-muted">
+              {pinned ? 'Pinned to sidebar.' : 'Use the pin icon on the card to add YouTube to the sidebar.'}
+            </p>
+          ) : null}
+        </div>
+      )
+    }
+
+    if (selected === 'slack') {
+      const connectSlackOAuth = async () => {
+        try {
+          const { url } = await integrationApi.slackAuthUrl()
+          openOAuthUrl(url, 'Complete Slack sign-in in your browser, then return here.', setStatus)
+        } catch (err) {
+          setStatus(`Slack OAuth failed: ${String(err)}`)
+        }
+      }
+
+      return (
+        <div className="x-int-detail">
+          <div className="x-int-detail-head">
+            <div>
+              <h3>Slack</h3>
+              <p>Connect your workspace with OAuth — channel messages sync into the feed.</p>
+            </div>
+            <button type="button" className="x-int-btn" onClick={() => void connectSlackOAuth()}>
+              {connections?.connected.slack ? 'Reconnect Slack' : 'Connect with Slack'}
+            </button>
+          </div>
+          <p className="x-int-muted">
+            Requires <code>SLACK_CLIENT_ID</code> / <code>SLACK_CLIENT_SECRET</code> in{' '}
+            <code>.env.local</code>.
+          </p>
+          {connections?.connected.slack ? (
+            <div className="x-int-block">
+              <button
+                type="button"
+                className="x-int-btn x-int-btn-ghost"
+                onClick={async () => {
+                  try {
+                    const res = await integrationApi.syncSource('slack')
+                    setStatus(`Synced ${res.count} Slack messages.`)
+                  } catch (err) {
+                    setStatus(`Slack sync failed: ${String(err)}`)
+                  }
+                }}
+              >
+                Sync now
+              </button>
+            </div>
+          ) : null}
+        </div>
+      )
+    }
+
     if (selected === 'gmail') {
       return (
         <div className="x-int-detail">
@@ -699,6 +840,9 @@ export function IntegrationsPanel({
           <div className="x-int-block x-int-block-first">
             <h4>{connections?.connected.monday ? 'Update token' : 'Connect'}</h4>
             <p className="x-int-muted">
+              Monday OAuth is not wired yet — paste an API token from your Monday developer settings.
+            </p>
+            <p className="x-int-muted">
               Use a token with <strong>boards:write</strong> and <strong>updates:write</strong>{' '}
               scopes so meeting approve and <code>@monday</code> compose can create tasks. Read-only
               tokens sync the feed but cannot create items.
@@ -753,6 +897,9 @@ export function IntegrationsPanel({
           </div>
           <div className="x-int-block x-int-block-first">
             <h4>{connections?.connected.github ? 'Update token' : 'Connect'}</h4>
+            <p className="x-int-muted">
+              GitHub app OAuth is not wired yet — use a fine-grained PAT with repo scope for now.
+            </p>
             <div className="x-int-token-stack">
               <input
                 className="x-int-input"
@@ -1331,11 +1478,21 @@ export function IntegrationsPanel({
           <div className="x-int-detail-head">
             <div>
               <h3>Cursor</h3>
-              <p>Cloud agent API key — optional default repo for agent runs.</p>
+              <p>
+                Agent runs use the Cursor Cloud API — connect here, then launch builds from the{' '}
+                <strong>Build</strong> page or <code>@cursor ask:</code> in Feed.
+              </p>
             </div>
           </div>
           <div className="x-int-block x-int-block-first">
-            <h4>{connections?.connected.cursor ? 'Update API key' : 'Connect'}</h4>
+            <h4>API key (required)</h4>
+            <p className="x-int-muted">
+              Cursor does not offer OAuth for cloud agents. Create a key at{' '}
+              <a href="https://cursor.com/settings" target="_blank" rel="noreferrer">
+                cursor.com/settings
+              </a>
+              .
+            </p>
             <div className="x-int-token-stack">
               <input
                 className="x-int-input"
@@ -1384,12 +1541,7 @@ export function IntegrationsPanel({
       const connectCalcomOAuth = async () => {
         try {
           const { url } = await integrationApi.calcomAuthUrl()
-          if (window.notchDesktop?.openExternal) {
-            window.notchDesktop.openExternal(url)
-          } else {
-            window.open(url, '_blank', 'noopener,noreferrer')
-          }
-          setStatus('Complete Cal.com sign-in in your browser, then return here and sync.')
+          openOAuthUrl(url, 'Complete Cal.com sign-in in your browser, then return here and sync.', setStatus)
         } catch (err) {
           setStatus(`Cal.com OAuth failed: ${String(err)}`)
         }
@@ -1400,14 +1552,38 @@ export function IntegrationsPanel({
           <div className="x-int-detail-head">
             <div>
               <h3>Cal.com</h3>
-              <p>
-                API key syncs bookings and powers post-call follow-up scheduling. OAuth is optional
-                if your client is approved.
-              </p>
+              <p>Connect with OAuth when available — API key is under Advanced.</p>
             </div>
+            <button type="button" className="x-int-btn" onClick={() => void connectCalcomOAuth()}>
+              {connections?.connected.calcom ? 'Reconnect Cal.com' : 'Connect with Cal.com'}
+            </button>
           </div>
-          <div className="x-int-block x-int-block-first">
-            <h4>{connections?.connected.calcom ? 'Update API key' : 'Connect'}</h4>
+          {connections?.connected.calcom ? (
+            <div className="x-int-block x-int-block-first">
+              <h4>Sync bookings</h4>
+              <p className="x-int-muted">Pull upcoming and recent past bookings into the stream.</p>
+              <button
+                type="button"
+                className="x-int-btn x-int-btn-secondary"
+                onClick={async () => {
+                  try {
+                    const res = await integrationApi.syncSource('calcom')
+                    setStatus(`Synced ${res.count} Cal.com booking${res.count === 1 ? '' : 's'}`)
+                    await refreshConnections()
+                  } catch (err) {
+                    setStatus(`Cal.com sync failed: ${String(err)}`)
+                  }
+                }}
+              >
+                Sync now
+              </button>
+            </div>
+          ) : null}
+          <div className="x-int-block">
+            <h4>Advanced · API key</h4>
+            <p className="x-int-muted">
+              Fallback if OAuth is not configured in <code>.env.local</code>.
+            </p>
             <div className="x-int-token-stack">
               <input
                 className="x-int-input"
@@ -1427,7 +1603,7 @@ export function IntegrationsPanel({
                 className="x-int-input"
                 value={calcomEventTypeId}
                 onChange={(e) => setCalcomEventTypeId(e.target.value)}
-                placeholder="Event type ID (optional — skips slug lookup)"
+                placeholder="Event type ID (optional)"
               />
               <button
                 type="button"
@@ -1451,53 +1627,9 @@ export function IntegrationsPanel({
                   }
                 }}
               >
-                {connections?.connected.calcom ? 'Update' : 'Connect'}
+                {connections?.connected.calcom ? 'Update API key' : 'Connect with API key'}
               </button>
             </div>
-            <p className="x-int-muted">
-              Create a key at{' '}
-              <a
-                href="https://app.cal.com/settings/developer/api-keys"
-                target="_blank"
-                rel="noreferrer"
-              >
-                app.cal.com/settings/developer/api-keys
-              </a>
-              . Set <code>CALCOM_DEFAULT_EVENT_TYPE_SLUG</code> in <code>.env.local</code> for
-              post-call booking. Post-call routing proposes a <strong>Cal.com follow-up</strong>{' '}
-              action when the call mentions scheduling the next meeting.
-            </p>
-          </div>
-          {connections?.connected.calcom ? (
-            <div className="x-int-block">
-              <h4>Sync bookings</h4>
-              <p className="x-int-muted">Pull upcoming and recent past bookings into the stream.</p>
-              <button
-                type="button"
-                className="x-int-btn x-int-btn-secondary"
-                onClick={async () => {
-                  try {
-                    const res = await integrationApi.syncSource('calcom')
-                    setStatus(`Synced ${res.count} Cal.com booking${res.count === 1 ? '' : 's'}`)
-                    await refreshConnections()
-                  } catch (err) {
-                    setStatus(`Cal.com sync failed: ${String(err)}`)
-                  }
-                }}
-              >
-                Sync now
-              </button>
-            </div>
-          ) : null}
-          <div className="x-int-block">
-            <h4>OAuth (optional)</h4>
-            <p className="x-int-muted">
-              Requires <code>CALCOM_CLIENT_ID</code> / <code>CALCOM_CLIENT_SECRET</code> in{' '}
-              <code>.env.local</code> and Cal.com admin approval.
-            </p>
-            <button type="button" className="x-int-btn x-int-btn-ghost" onClick={() => void connectCalcomOAuth()}>
-              Connect via OAuth
-            </button>
           </div>
         </div>
       )
@@ -1575,10 +1707,12 @@ export function IntegrationsPanel({
           <div className="x-int-detail-head">
             <div>
               <h3>Discord</h3>
-              <p>Bot token plus comma-separated channel IDs for message ingest.</p>
+              <p>Bot token required for channel ingest — Discord user OAuth is not supported for bots.</p>
             </div>
           </div>
-          <div className="x-int-token-stack">
+          <div className="x-int-block x-int-block-first">
+            <h4>Bot connection</h4>
+            <div className="x-int-token-stack">
             <input
               className="x-int-input"
               value={discordToken}
@@ -1615,6 +1749,7 @@ export function IntegrationsPanel({
             >
               {connections?.connected.discord ? 'Update connection' : 'Connect'}
             </button>
+            </div>
           </div>
         </div>
       )
@@ -1628,10 +1763,7 @@ export function IntegrationsPanel({
       <header className="x-int-header">
         <div>
           <h1>Apps</h1>
-          <p>
-            {desktop ? 'Pin desktop apps to the sidebar · ' : ''}
-            {connectedCount} of {INTEGRATIONS.length} feed integrations connected
-          </p>
+          <p>{connectedCount} of {feedIntegrationTotal} integrations connected</p>
         </div>
         <button type="button" className="x-int-btn" onClick={() => void syncAll()}>
           Sync all
@@ -1639,102 +1771,68 @@ export function IntegrationsPanel({
       </header>
 
       <div className="x-int-body">
-        {desktop ? (
-          <section className="x-int-section x-int-desktop-apps">
-            <div className="x-int-section-head">
-              <h2>Desktop apps</h2>
-              <p>Open inside Notch — pin to the sidebar for quick access. Mini player keeps playing when you switch to Feed.</p>
-            </div>
-            <div className="x-int-grid x-int-grid-desktop">
-              {NAV_APP_CATALOG.map((entry) => {
-                const pinned = navApps.some((a) => a.id === entry.id)
-                return (
-                  <div key={entry.id} className={`x-int-card x-int-card-static ${entry.brandClass}`}>
-                    <div className={`x-int-card-icon ${entry.brandClass}`}>
-                      {entry.id === 'youtube' ? (
-                        <IconYoutube className="x-int-brand-icon" />
-                      ) : (
-                        <span className="x-int-brand-letter">{entry.label.slice(0, 2)}</span>
-                      )}
-                    </div>
-                    <div className="x-int-card-body">
-                      <div className="x-int-card-top">
-                        <strong>{entry.label}</strong>
-                        <span className={`x-int-status ${pinned ? 'x-int-status-on' : 'x-int-status-off'}`}>
-                          {pinned ? 'Pinned' : 'Available'}
-                        </span>
-                      </div>
-                      <p>{entry.description}</p>
-                      <span className="x-int-card-meta">Sidebar · Mini player</span>
-                      <div className="x-int-desktop-actions">
-                        {pinned ? (
-                          <>
-                            <button
-                              type="button"
-                              className="x-int-btn"
-                              onClick={() => onOpenNavApp?.(entry.id)}
-                            >
-                              Open
-                            </button>
-                            <button
-                              type="button"
-                              className="x-int-btn x-int-btn-ghost"
-                              onClick={() => onUnpinNavApp?.(entry.id)}
-                            >
-                              Unpin
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            className="x-int-btn"
-                            onClick={() => {
-                              onPinNavApp?.(entry.id)
-                              onOpenNavApp?.(entry.id)
-                            }}
-                          >
-                            Pin to sidebar
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </section>
-        ) : null}
-
         <div className="x-int-feed-layout">
           <div className="x-int-feed-col">
             <div className="x-int-section-head x-int-section-head-col">
-              <h2>Feed integrations</h2>
-              <p>Connect tools — sources flow into your Central feed.</p>
+              <h2>Apps</h2>
+              <p>Connect integrations · tap the pin on any app to add it to the sidebar.</p>
             </div>
             <div className="x-int-grid">
           {INTEGRATIONS.map((item) => {
             const connected =
-              item.id === 'agents'
-                ? mcpAgentCount > 0
-                : (connections?.connected[item.id] ?? false)
+              item.id === 'youtube'
+                ? true
+                : item.id === 'agents'
+                  ? mcpAgentCount > 0
+                  : (connections?.connected[item.id] ?? false)
             const isSelected = selected === item.id
+            const pinnable = pinnableForItem(item.id)
+            const showPin = canPinItem(item.id, connected, desktop)
+            const pinned = pinnable ? isNavAppPinned(pinnable.id, navApps) : false
             return (
-              <button
+              <div
                 key={item.id}
-                type="button"
-                className={`x-int-card ${item.brandClass} ${isSelected ? 'x-int-card-selected' : ''}`}
-                onClick={() => setSelected(item.id)}
+                className={`x-int-card-wrap ${isSelected ? 'x-int-card-wrap-selected' : ''}`}
               >
-                <div className={`x-int-card-icon ${item.brandClass}`}>{item.icon}</div>
-                <div className="x-int-card-body">
-                  <div className="x-int-card-top">
-                    <strong>{item.name}</strong>
-                    <StatusBadge connected={connected} />
+                {showPin ? (
+                  <button
+                    type="button"
+                    className={`x-int-card-pin${pinned ? ' x-int-card-pin-active' : ''}`}
+                    title={pinned ? 'Unpin from sidebar' : 'Pin to sidebar'}
+                    aria-label={pinned ? `Unpin ${item.name}` : `Pin ${item.name} to sidebar`}
+                    aria-pressed={pinned}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (!pinnable) return
+                      if (pinned) onUnpinNavApp?.(pinnable.id)
+                      else onPinNavApp?.(pinnable.id)
+                    }}
+                  >
+                    <PinIcon filled={pinned} />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className={`x-int-card ${item.brandClass} ${isSelected ? 'x-int-card-selected' : ''}`}
+                  onClick={() => setSelected(item.id)}
+                >
+                  <div className={`x-int-card-icon ${item.brandClass}`}>{item.icon}</div>
+                  <div className="x-int-card-body">
+                    <div className="x-int-card-top">
+                      <strong>{item.name}</strong>
+                      {item.id === 'youtube' ? (
+                        <span className={`x-int-status ${pinned ? 'x-int-status-on' : 'x-int-status-off'}`}>
+                          {pinned ? 'Pinned' : 'Available'}
+                        </span>
+                      ) : (
+                        <StatusBadge connected={connected} />
+                      )}
+                    </div>
+                    <p>{item.tagline}</p>
+                    <span className="x-int-card-meta">{cardMeta(item.id)}</span>
                   </div>
-                  <p>{item.tagline}</p>
-                  <span className="x-int-card-meta">{cardMeta(item.id)}</span>
-                </div>
-              </button>
+                </button>
+              </div>
             )
           })}
             </div>

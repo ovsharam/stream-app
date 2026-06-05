@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from 'react'
+import { useEffect } from 'react'
 import { isEmbedAuthPopupUrl } from './embedBrowse'
 import { openBrowserLink } from '../lib/api'
 
@@ -16,11 +16,10 @@ type WebviewNewWindowEvent = Event & {
 }
 
 /** Wire popup / OAuth windows for Electron <webview> (YouTube login, etc.). */
-export function useWebviewPopups(ref: RefObject<HTMLElement | null>, enabled: boolean) {
+export function useWebviewPopups(el: HTMLElement | null) {
   useEffect(() => {
-    if (!enabled) return
-    const el = ref.current as WebviewEl | null
-    if (!el?.addEventListener) return
+    const webview = el as WebviewEl | null
+    if (!webview?.addEventListener) return
 
     const onNewWindow = (event: WebviewNewWindowEvent) => {
       const url = event.url
@@ -31,7 +30,7 @@ export function useWebviewPopups(ref: RefObject<HTMLElement | null>, enabled: bo
       openBrowserLink(url)
     }
 
-    el.addEventListener('new-window', onNewWindow)
-    return () => el.removeEventListener('new-window', onNewWindow)
-  }, [ref, enabled])
+    webview.addEventListener('new-window', onNewWindow)
+    return () => webview.removeEventListener('new-window', onNewWindow)
+  }, [el])
 }

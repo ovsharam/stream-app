@@ -3,6 +3,7 @@ import { app, BrowserView, BrowserWindow, globalShortcut, screen, Tray, nativeIm
 import type { BrowserWindow as BW, Input, Session, WebContents } from 'electron'
 import type { NativeImage } from 'electron'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { spawn } from 'child_process'
 import { existsSync } from 'fs'
 import { AudioTap, resolveWhisperRoot } from './services/AudioTap'
@@ -1064,7 +1065,7 @@ app.whenReady().then(() => {
     openAuthWindow(args)
     return { ok: true }
   })
-  ipcMain.handle('embedded:guestPreloadPath', () => GUEST_PRELOAD)
+  ipcMain.handle('embedded:guestPreloadPath', () => pathToFileURL(GUEST_PRELOAD).href)
 
   console.log('[stream] central + mobile ready · mobile hidden until ⌘⇧M')
 })

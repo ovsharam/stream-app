@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useRef } from 'react'
 import type { EmbedBrowseKind } from './embedBrowse'
 import {
   EMBED_BROWSE_PARTITIONS,
@@ -64,7 +64,7 @@ async function detectEmbedAuthState(el: WebviewEl): Promise<EmbedBrowseAuthState
 }
 
 export function useEmbedBrowseSignIn(
-  ref: RefObject<HTMLElement | null>,
+  el: HTMLElement | null,
   opts: {
     enabled: boolean
     kind: EmbedBrowseKind | null
@@ -79,12 +79,11 @@ export function useEmbedBrowseSignIn(
   const partition = opts.kind ? EMBED_BROWSE_PARTITIONS[opts.kind] : null
 
   useEffect(() => {
-    if (!opts.enabled || !opts.kind || !partition) return
-    const el = ref.current as WebviewEl | null
-    if (!el?.addEventListener) return
+    const webview = el as WebviewEl | null
+    if (!opts.enabled || !opts.kind || !partition || !webview?.addEventListener) return
 
     const check = () => {
-      void detectEmbedAuthState(el).then((state) => onAuthStateRef.current?.(state))
+      void detectEmbedAuthState(webview).then((state) => onAuthStateRef.current?.(state))
     }
 
     const interceptAuthNavigation = (event?: WebviewNavigateEvent) => {
@@ -116,15 +115,15 @@ export function useEmbedBrowseSignIn(
       if (event?.errorCode === -3) onAuthStateRef.current?.('signin')
     }
 
-    el.addEventListener('did-finish-load', check)
-    el.addEventListener('did-navigate-in-page', check)
-    el.addEventListener('did-fail-load', onFailLoad)
-    el.addEventListener('will-navigate', interceptAuthNavigation)
-    el.addEventListener('will-redirect', interceptAuthNavigation)
+    webview.addEventListener('did-finish-load', check)
+    webview.addEventListener('did-navigate-in-page', check)
+    webview.addEventListener('did-fail-load', onFailLoad)
+    webview.addEventListener('will-navigate', interceptAuthNavigation)
+    webview.addEventListener('will-redirect', interceptAuthNavigation)
     const offAuth = window.notchDesktop?.onAuthClosed?.((closedPartition) => {
       if (closedPartition !== partition) return
       onAuthStateRef.current?.('ok')
-      el.reload?.()
+      webview.reload?.()
     })
     const offGoogleSignIn = window.notchDesktop?.onGoogleSignInNeeded?.((closedPartition) => {
       if (closedPartition !== partition) return
@@ -136,14 +135,14 @@ export function useEmbedBrowseSignIn(
     })
 
     return () => {
-      el.removeEventListener('did-finish-load', check)
-      el.removeEventListener('did-navigate-in-page', check)
-      el.removeEventListener('did-fail-load', onFailLoad)
-      el.removeEventListener('will-navigate', interceptAuthNavigation)
-      el.removeEventListener('will-redirect', interceptAuthNavigation)
+      webview.removeEventListener('did-finish-load', check)
+      webview.removeEventListener('did-navigate-in-page', check)
+      webview.removeEventListener('did-fail-load', onFailLoad)
+      webview.removeEventListener('will-navigate', interceptAuthNavigation)
+      webview.removeEventListener('will-redirect', interceptAuthNavigation)
       offAuth?.()
       offGoogleSignIn?.()
       offEmbedSignIn?.()
     }
-  }, [ref, opts.enabled, opts.kind, partition])
+  }, [el, opts.enabled, opts.kind, partition])
 }

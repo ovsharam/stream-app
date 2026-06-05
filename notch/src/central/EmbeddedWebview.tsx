@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useWebviewPopups } from './useWebviewPopups'
 import { useEmbedBrowseSignIn, type EmbedBrowseAuthState } from './useEmbedBrowseSignIn'
 import type { EmbedBrowseKind } from './embedBrowse'
@@ -20,15 +20,16 @@ export function EmbeddedWebview({
   onEmbedAuthState,
   onSignInNeeded
 }: Props) {
-  const ref = useRef<HTMLElement>(null)
-  const needsGuestPreload = Boolean(embedBrowseKind)
-  const [guestPreload, setGuestPreload] = useState<string | null>(needsGuestPreload ? null : '')
-  // Guest-preload gate renders a placeholder first; only wire webview listeners after mount.
-  const webviewMounted = !needsGuestPreload || guestPreload !== null
+  const [webviewEl, setWebviewEl] = useState<HTMLElement | null>(null)
+  const [guestPreload, setGuestPreload] = useState('')
 
-  useWebviewPopups(ref, webviewMounted)
-  useEmbedBrowseSignIn(ref, {
-    enabled: webviewMounted && Boolean(embedBrowseKind),
+  const onWebviewRef = useCallback((node: HTMLElement | null) => {
+    setWebviewEl(node)
+  }, [])
+
+  useWebviewPopups(webviewEl)
+  useEmbedBrowseSignIn(webviewEl, {
+    enabled: Boolean(webviewEl && embedBrowseKind),
     kind: embedBrowseKind ?? null,
     onAuthState: onEmbedAuthState,
     onSignInNeeded
@@ -36,18 +37,20 @@ export function EmbeddedWebview({
 
   useEffect(() => {
     if (!embedBrowseKind) return
-    void window.notchDesktop?.getGuestPreloadPath?.()?.then((path) => {
-      setGuestPreload(path ?? '')
-    })
+    const getter = window.notchDesktop?.getGuestPreloadPath
+    if (!getter) return
+    void getter()
+      .then((path) => {
+        if (path) setGuestPreload(path)
+      })
+      .catch(() => {
+        /* mount without preload */
+      })
   }, [embedBrowseKind])
-
-  if (needsGuestPreload && guestPreload === null) {
-    return <div className={className} aria-busy="true" aria-label="Loading" />
-  }
 
   return (
     <webview
-      ref={ref as RefObject<HTMLElement>}
+      ref={onWebviewRef}
       className={className}
       src={src}
       partition={partition}

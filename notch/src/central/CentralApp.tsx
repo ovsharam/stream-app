@@ -86,6 +86,13 @@ export function CentralApp() {
       return false
     }
   })
+  const [workspaceRailCollapsed, setWorkspaceRailCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('notch.workspaceRailCollapsed') === '1'
+    } catch {
+      return false
+    }
+  })
   const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>(persistedTabs)
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
     persistedActive ?? persistedTabs.at(-1)?.id ?? null
@@ -526,6 +533,18 @@ export function CentralApp() {
     })
   }, [])
 
+  const toggleWorkspaceRail = useCallback(() => {
+    setWorkspaceRailCollapsed((v) => {
+      const next = !v
+      try {
+        localStorage.setItem('notch.workspaceRailCollapsed', next ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }, [])
+
   const focusMeetingEvent = useMemo(
     () => meetingEventByItemId(events, focusMeetingItemId),
     [events, focusMeetingItemId]
@@ -539,6 +558,11 @@ export function CentralApp() {
   }, [focusMeetingItemId, focusMeetingEvent])
 
   const showPostCallRail = Boolean(focusMeetingItemId) && page === 'stream'
+  const contextRailCollapsed = activeWorkspace
+    ? workspaceRailCollapsed
+    : area === 'feed'
+      ? feedRailCollapsed
+      : false
   const showContextRail =
     !threadTarget &&
     !showPostCallRail &&
@@ -549,7 +573,7 @@ export function CentralApp() {
       !activeWorkspace &&
       workspaceTabs.length === 0
     ) &&
-    !(area === 'feed' && feedRailCollapsed)
+    !contextRailCollapsed
 
   const showThreadRail = Boolean(threadTarget) && page === 'stream' && area === 'feed'
   const hasRightRail = showThreadRail || showPostCallRail || showContextRail
@@ -562,7 +586,7 @@ export function CentralApp() {
 
   return (
     <div
-      className={`x-app ${showThreadRail ? 'x-app-thread-open' : ''} ${showPostCallRail ? 'x-app-post-call-open' : ''} ${page === 'navapp' ? 'x-app-nav-app' : page !== 'stream' ? 'x-app-utility' : 'x-app-stream'} ${!hasRightRail ? 'x-app-no-rail' : ''}${homeChatCompactNav ? ' x-app-home-chat' : ''}${navAppMini ? ' x-app-nav-app-mini' : ''}`}
+      className={`x-app ${showThreadRail ? 'x-app-thread-open' : ''} ${showPostCallRail ? 'x-app-post-call-open' : ''} ${activeWorkspace ? 'x-app-workspace-open' : ''} ${page === 'navapp' ? 'x-app-nav-app' : page !== 'stream' ? 'x-app-utility' : 'x-app-stream'} ${!hasRightRail ? 'x-app-no-rail' : ''}${homeChatCompactNav ? ' x-app-home-chat' : ''}${navAppMini ? ' x-app-nav-app-mini' : ''}`}
     >
       {typeof window !== 'undefined' &&
       (window.notchDesktop != null || /Electron/i.test(navigator.userAgent)) ? (
@@ -642,6 +666,9 @@ export function CentralApp() {
               onSelectHome={() => setActiveWorkspaceId(null)}
               onSelectTab={setActiveWorkspaceId}
               onCloseTab={closeWorkspace}
+              showRailToggle={Boolean(activeWorkspaceId)}
+              railCollapsed={workspaceRailCollapsed}
+              onToggleRail={toggleWorkspaceRail}
             />
           )}
           <main

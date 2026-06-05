@@ -8841,16 +8841,33 @@ button.x-home-running-row:hover {
 }
 
 /* In-app workspace tabs (Chrome / Safari style) */
+.x-workspace-tabs-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding-right: 8px;
+  min-height: 40px;
+  border-bottom: 1px solid var(--x-border);
+  background: color-mix(in srgb, var(--x-surface) 92%, var(--x-border));
+  flex-shrink: 0;
+}
+
 .x-workspace-tabs {
   display: flex;
   align-items: flex-end;
   gap: 2px;
   padding: 0 8px;
   min-height: 40px;
-  border-bottom: 1px solid var(--x-border);
-  background: color-mix(in srgb, var(--x-surface) 92%, var(--x-border));
   overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+  border-bottom: none;
+  background: transparent;
+}
+
+.x-workspace-rail-toggle {
   flex-shrink: 0;
+  margin-bottom: 6px;
 }
 
 .x-workspace-tab {

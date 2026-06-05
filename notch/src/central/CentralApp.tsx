@@ -16,8 +16,10 @@ import { SettingsPanel } from './SettingsPanel'
 import { ThemeMenu } from './ThemeMenu'
 import { useTheme } from './useTheme'
 import { ThreadBlade } from './ThreadBlade'
+import { BrowserChrome } from './BrowserChrome'
 import { WorkspaceBrowser } from './WorkspaceBrowser'
-import { WorkspaceTabBar } from './WorkspaceTabBar'
+import { WorkspaceSidebar } from './WorkspaceSidebar'
+import { normalizeBrowserUrl, workspaceTabFromInput } from './browserUrl'
 import { FeedSearchBar, filterFeedEvents } from './FeedSearchBar'
 import { FeedStreamBar, useFeedStreamId } from './FeedStreamBar'
 import { filterEventsByStream } from './feedStreamsStore'
@@ -33,6 +35,8 @@ import { useComposeContacts } from './useComposeContacts'
 import { parseComposeCommand } from '@shared/compose'
 import { clusterApi, integrationApi, openBrowserLink, inferWorkspaceMeta } from '../lib/api'
 import { tabFromCalendarEvent, tabFromUrl, toWorkspaceTab, type WorkspaceTab } from './workspace'
+
+type NotchNavMode = 'expanded' | 'compact' | 'hidden'
 import {
   IconEmoji,
   IconGif,
@@ -93,6 +97,23 @@ export function CentralApp() {
       return false
     }
   })
+  const [notchNavMode, setNotchNavMode] = useState<NotchNavMode>(() => {
+    try {
+      const v = localStorage.getItem('notch.navMode')
+      if (v === 'compact' || v === 'hidden' || v === 'expanded') return v
+    } catch {
+      /* ignore */
+    }
+    return 'expanded'
+  })
+  const [browserSidebarCollapsed, setBrowserSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('notch.browserSidebarCollapsed') === '1'
+    } catch {
+      return false
+    }
+  })
+  const [tabReloadKeys, setTabReloadKeys] = useState<Record<string, number>>({})
   const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>(persistedTabs)
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
     persistedActive ?? persistedTabs.at(-1)?.id ?? null
@@ -330,7 +351,57 @@ export function CentralApp() {
     })
   }
 
+  const navigateWorkspaceTab = useCallback((id: string, input: string) => {
+    const url = normalizeBrowserUrl(input)
+    const meta = inferWorkspaceMeta(url)
+    setWorkspaceTabs((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, url, title: meta.title, source: meta.source } : t))
+    )
+  }, [])
+
+  const newWorkspaceTab = useCallback((input: string) => {
+    const tab = workspaceTabFromInput(input)
+    setWorkspaceTabs((prev) => {
+      const existing = prev.find((t) => t.id === tab.id)
+      if (existing) {
+        setActiveWorkspaceId(existing.id)
+        return prev
+      }
+      setActiveWorkspaceId(tab.id)
+      return [...prev, tab]
+    })
+  }, [])
+
+  const reloadWorkspaceTab = useCallback((id: string) => {
+    setTabReloadKeys((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }))
+  }, [])
+
+  const cycleNotchNav = useCallback(() => {
+    setNotchNavMode((mode) => {
+      const next: NotchNavMode = mode === 'expanded' ? 'compact' : mode === 'compact' ? 'hidden' : 'expanded'
+      try {
+        localStorage.setItem('notch.navMode', next)
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }, [])
+
+  const toggleBrowserSidebar = useCallback(() => {
+    setBrowserSidebarCollapsed((v) => {
+      const next = !v
+      try {
+        localStorage.setItem('notch.browserSidebarCollapsed', next ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }, [])
+
   const activeWorkspace = workspaceTabs.find((t) => t.id === activeWorkspaceId) ?? null
+  const browserMode = workspaceTabs.length > 0
   const composeAction = parseComposeCommand(compose)
   const contextEvent = contextItemId
     ? events.find((e) => streamItemId(e) === contextItemId)
@@ -579,14 +650,14 @@ export function CentralApp() {
   const hasRightRail = showThreadRail || showPostCallRail || showContextRail
 
   const homeChatCompactNav =
-    page === 'stream' && area === 'work' && !activeWorkspace && homeChatRail
+    page === 'stream' && area === 'work' && !activeWorkspace && homeChatRail && !browserMode
 
   const navAppPlayerMode =
     !activeNavApp ? 'off' : page === 'navapp' && !navAppMini ? 'full' : navAppMini ? 'mini' : 'off'
 
   return (
     <div
-      className={`x-app ${showThreadRail ? 'x-app-thread-open' : ''} ${showPostCallRail ? 'x-app-post-call-open' : ''} ${activeWorkspace ? 'x-app-workspace-open' : ''} ${page === 'navapp' ? 'x-app-nav-app' : page !== 'stream' ? 'x-app-utility' : 'x-app-stream'} ${!hasRightRail ? 'x-app-no-rail' : ''}${homeChatCompactNav ? ' x-app-home-chat' : ''}${navAppMini ? ' x-app-nav-app-mini' : ''}`}
+      className={`x-app ${showThreadRail ? 'x-app-thread-open' : ''} ${showPostCallRail ? 'x-app-post-call-open' : ''} ${browserMode ? 'x-app-browser-mode' : ''} ${activeWorkspace ? 'x-app-workspace-open' : ''} ${notchNavMode === 'compact' ? 'x-app-notch-nav-compact' : ''} ${notchNavMode === 'hidden' ? 'x-app-notch-nav-hidden' : ''} ${page === 'navapp' ? 'x-app-nav-app' : page !== 'stream' ? 'x-app-utility' : 'x-app-stream'} ${!hasRightRail ? 'x-app-no-rail' : ''}${homeChatCompactNav ? ' x-app-home-chat' : ''}${navAppMini ? ' x-app-nav-app-mini' : ''}`}
     >
       {typeof window !== 'undefined' &&
       (window.notchDesktop != null || /Electron/i.test(navigator.userAgent)) ? (
@@ -598,7 +669,7 @@ export function CentralApp() {
           area={area}
           tab={tab}
           live={live}
-          compact={homeChatCompactNav}
+          compact={notchNavMode === 'compact'}
           navApps={navApps}
           activeNavAppId={activeNavAppId}
           onNavigate={onNav}
@@ -658,37 +729,170 @@ export function CentralApp() {
           <>
           <div className={`x-channel ${showThreadRail || showPostCallRail ? 'x-channel-has-thread' : ''}`}>
           <div className="x-channel-main">
-          {workspaceTabs.length > 0 && (
-            <WorkspaceTabBar
-              homeLabel={area === 'work' ? 'Home' : 'Feed'}
-              tabs={workspaceTabs}
-              activeWorkspaceId={activeWorkspaceId}
-              activeTab={activeWorkspace}
-              onSelectHome={() => setActiveWorkspaceId(null)}
-              onSelectTab={setActiveWorkspaceId}
-              onCloseTab={closeWorkspace}
-              showRailToggle={Boolean(activeWorkspaceId)}
-              railCollapsed={workspaceRailCollapsed}
-              onToggleRail={toggleWorkspaceRail}
-            />
-          )}
+          {browserMode ? (
+            <div className="x-browser-shell">
+              <WorkspaceSidebar
+                homeLabel={area === 'work' ? 'Home' : 'Feed'}
+                tabs={workspaceTabs}
+                activeTabId={activeWorkspaceId}
+                collapsed={browserSidebarCollapsed}
+                notchNavMode={notchNavMode}
+                onSelectHome={() => setActiveWorkspaceId(null)}
+                onSelectTab={setActiveWorkspaceId}
+                onCloseTab={closeWorkspace}
+                onNewTab={newWorkspaceTab}
+                onToggleCollapsed={toggleBrowserSidebar}
+                onCycleNotchNav={cycleNotchNav}
+              />
+              <div className="x-browser-main">
+                {activeWorkspace ? (
+                  <BrowserChrome
+                    tab={activeWorkspace}
+                    onNavigate={(url) => navigateWorkspaceTab(activeWorkspace.id, url)}
+                    onReload={() => reloadWorkspaceTab(activeWorkspace.id)}
+                    onExternal={() =>
+                      openBrowserLink(activeWorkspace.url, {
+                        forceExternal: true,
+                        title: activeWorkspace.title,
+                        source: activeWorkspace.source
+                      })
+                    }
+                    railCollapsed={workspaceRailCollapsed}
+                    onToggleRail={toggleWorkspaceRail}
+                  />
+                ) : null}
+                <main
+                  className={`x-main x-col-feed x-browser-content ${threadTarget ? 'x-col-feed-in-thread' : ''} ${area === 'work' ? 'x-main-work x-main-home' : ''} ${activeWorkspace ? 'x-main-workspace' : ''}`}
+                >
+                  <WorkspaceBrowser
+                    tabs={workspaceTabs}
+                    activeId={activeWorkspaceId ?? ''}
+                    reloadKeys={tabReloadKeys}
+                  />
+                  {!activeWorkspace ? (
+                    area === 'work' ? (
+                      <WorkView
+                        events={events}
+                        live={live}
+                        syncing={syncing}
+                        onFocusMeeting={setFocusMeetingItemId}
+                        onRefresh={refreshStream}
+                        onOpenSearchHit={openSearchHit}
+                      />
+                    ) : (
+                      <>
+                        <header className="x-topbar">
+                          <div className="x-topbar-tabs" role="tablist" aria-label="Feed filters">
+                            {feedTabs.map((t) => (
+                              <button
+                                key={t.id}
+                                type="button"
+                                role="tab"
+                                aria-selected={tab === t.id}
+                                className={`x-tab ${tab === t.id ? 'active' : ''}`}
+                                onClick={() => setTab(t.id)}
+                              >
+                                {t.label}
+                              </button>
+                            ))}
+                          </div>
+                          <FeedSearchBar
+                            query={feedQuery}
+                            onQueryChange={setFeedQuery}
+                            matchCount={feedFiltered.length}
+                            totalCount={streamFiltered.length}
+                            onSelectHit={openThreadFromSearch}
+                          />
+                          <button
+                            type="button"
+                            className={`x-topbar-rail-toggle x-topbar-rail-toggle-icon${feedRailCollapsed ? ' x-topbar-rail-toggle-collapsed' : ''}`}
+                            aria-label={feedRailCollapsed ? 'Show panel' : 'Hide panel'}
+                            title={feedRailCollapsed ? 'Show panel' : 'Hide panel'}
+                            onClick={toggleFeedRail}
+                          >
+                            {feedRailCollapsed ? '◧' : '◨'}
+                          </button>
+                        </header>
+                        <FeedStreamBar activeStreamId={feedStreamId} onStreamChange={setFeedStreamId} />
+                        <div className="x-compose">
+                          <div className="x-avatar x-avatar-user">A</div>
+                          <div className="x-compose-body">
+                            {contextEvent && (
+                              <div className="x-compose-context">
+                                <span>
+                                  {mondayContext ? 'Updating Monday item:' : 'Replying to:'}{' '}
+                                  {contextEvent.title || contextEvent.body.slice(0, 72)}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="x-compose-context-clear"
+                                  onClick={() => setContextItemId(null)}
+                                  aria-label="Clear reply context"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            )}
+                            {composeToast && <p className="x-compose-toast">{composeToast}</p>}
+                            {composeError && (
+                              <p className="x-compose-note x-compose-note-error">{composeError}</p>
+                            )}
+                            <ComposeInput
+                              value={compose}
+                              onChange={(v) => {
+                                setCompose(v)
+                                setComposeError(null)
+                              }}
+                              onSubmit={() => void submitCompose()}
+                              mentionTargets={contactMentions}
+                              placeholder={
+                                mondayContext
+                                  ? '@monday: comment or move to Done · @monday create: new ticket'
+                                  : '@mind · @claude · @gemini · @cursor · @github · @gdocs · @gong · @perplexity · @gmail · @monday · @slack · @discord · @x'
+                              }
+                              rows={3}
+                            />
+                          </div>
+                        </div>
+                        {feedFiltered.length === 0 && feedQuery.trim() ? (
+                          <p className="x-feed-search-no-results">No posts match “{feedQuery.trim()}”</p>
+                        ) : null}
+                        {feedFiltered.map((e, i) => (
+                          <FeedPost
+                            key={e.id}
+                            event={e}
+                            isNew={live && i === 0}
+                            isContext={contextItemId === streamItemId(e)}
+                            activeThreadId={threadTarget?.itemId ?? null}
+                            onOpenWorkspace={openWorkspace}
+                            onOpenInWork={openMeetingInWork}
+                            onOpenThread={(itemId, day) => {
+                              selectContext(itemId)
+                              setThreadTarget({ itemId, day })
+                            }}
+                            onSelectContext={selectContext}
+                          />
+                        ))}
+                      </>
+                    )
+                  ) : null}
+                </main>
+              </div>
+            </div>
+          ) : (
           <main
-            className={`x-main x-col-feed ${threadTarget ? 'x-col-feed-in-thread' : ''} ${area === 'work' ? 'x-main-work x-main-home' : ''} ${activeWorkspace ? 'x-main-workspace' : ''}`}
+            className={`x-main x-col-feed ${threadTarget ? 'x-col-feed-in-thread' : ''} ${area === 'work' ? 'x-main-work x-main-home' : ''}`}
           >
-            {workspaceTabs.length > 0 ? (
-              <WorkspaceBrowser tabs={workspaceTabs} activeId={activeWorkspaceId ?? ''} />
-            ) : null}
-            {!activeWorkspace ? (
-              area === 'work' ? (
-                <WorkView
-                  events={events}
-                  live={live}
-                  syncing={syncing}
-                  onFocusMeeting={setFocusMeetingItemId}
-                  onRefresh={refreshStream}
-                  onOpenSearchHit={openSearchHit}
-                />
-              ) : (
+            {area === 'work' ? (
+              <WorkView
+                events={events}
+                live={live}
+                syncing={syncing}
+                onFocusMeeting={setFocusMeetingItemId}
+                onRefresh={refreshStream}
+                onOpenSearchHit={openSearchHit}
+              />
+            ) : (
               <>
             <header className="x-topbar">
               <div className="x-topbar-tabs" role="tablist" aria-label="Feed filters">
@@ -802,10 +1006,9 @@ export function CentralApp() {
                     />
                   ))}
               </>
-              )
-            ) : null}
-
+            )}
           </main>
+          )}
           {activeNavApp && navAppPlayerMode === 'mini' ? (
             <NavAppPlayer
               app={activeNavApp}

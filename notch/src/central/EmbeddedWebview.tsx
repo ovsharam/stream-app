@@ -8,15 +8,19 @@ type Props = {
   src: string
   partition: string
   embedBrowseKind?: EmbedBrowseKind | null
+  reloadNonce?: number
   onEmbedAuthState?: (state: EmbedBrowseAuthState) => void
   onSignInNeeded?: () => void
 }
+
+type WebviewEl = HTMLElement & { reload?: () => void }
 
 export function EmbeddedWebview({
   className,
   src,
   partition,
   embedBrowseKind,
+  reloadNonce = 0,
   onEmbedAuthState,
   onSignInNeeded
 }: Props) {
@@ -47,6 +51,12 @@ export function EmbeddedWebview({
         /* mount without preload */
       })
   }, [embedBrowseKind])
+
+  useEffect(() => {
+    if (!reloadNonce) return
+    const el = webviewEl as WebviewEl | null
+    el?.reload?.()
+  }, [reloadNonce, webviewEl])
 
   return (
     <webview

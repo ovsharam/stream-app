@@ -13,9 +13,10 @@ import type { EmbedBrowseAuthState } from './useEmbedBrowseSignIn'
 type Props = {
   tab: WorkspaceTab
   active: boolean
+  reloadNonce?: number
 }
 
-export function WorkspaceView({ tab, active }: Props) {
+export function WorkspaceView({ tab, active, reloadNonce = 0 }: Props) {
   const partition = workspacePartitionForUrl(tab.url, tab.id)
   const embedBrowseKind = embedBrowseKindForUrl(tab.url)
   const [embedAuthState, setEmbedAuthState] = useState<EmbedBrowseAuthState | 'checking'>(() =>
@@ -91,6 +92,7 @@ export function WorkspaceView({ tab, active }: Props) {
         src={tab.url}
         partition={partition}
         embedBrowseKind={embedBrowseKind}
+        reloadNonce={reloadNonce}
         onEmbedAuthState={onEmbedAuthState}
         onSignInNeeded={() => void signInEmbedded()}
       />

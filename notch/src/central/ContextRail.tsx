@@ -694,10 +694,6 @@ function ContextPanel() {
 
   return (
     <div className="x-rail-tab-body">
-      <div className="x-cal-head">
-        <h2>Context</h2>
-        <p className="x-cal-sub">Recent knowledge by intention</p>
-      </div>
       <div className="x-context-filters" role="tablist" aria-label="Filter by intention">
         {INTENTION_FILTERS.map((pill) => (
           <button

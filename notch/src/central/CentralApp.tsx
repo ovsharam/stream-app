@@ -663,6 +663,7 @@ export function CentralApp() {
               homeLabel={area === 'work' ? 'Home' : 'Feed'}
               tabs={workspaceTabs}
               activeWorkspaceId={activeWorkspaceId}
+              activeTab={activeWorkspace}
               onSelectHome={() => setActiveWorkspaceId(null)}
               onSelectTab={setActiveWorkspaceId}
               onCloseTab={closeWorkspace}

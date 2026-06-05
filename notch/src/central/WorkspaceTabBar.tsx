@@ -1,9 +1,11 @@
+import { openBrowserLink } from '../lib/api'
 import type { WorkspaceTab } from './workspace'
 
 type Props = {
   homeLabel: string
   tabs: WorkspaceTab[]
   activeWorkspaceId: string | null
+  activeTab?: WorkspaceTab | null
   onSelectHome: () => void
   onSelectTab: (id: string) => void
   onCloseTab: (id: string) => void
@@ -45,6 +47,7 @@ export function WorkspaceTabBar({
   homeLabel,
   tabs,
   activeWorkspaceId,
+  activeTab,
   onSelectHome,
   onSelectTab,
   onCloseTab,
@@ -55,7 +58,7 @@ export function WorkspaceTabBar({
   if (tabs.length === 0) return null
 
   return (
-    <div className="x-workspace-tabs-row">
+    <header className="x-workspace-chrome">
       <div className="x-workspace-tabs" role="tablist" aria-label="Workspace">
         <button
           type="button"
@@ -98,17 +101,43 @@ export function WorkspaceTabBar({
           </div>
         ))}
       </div>
-      {showRailToggle && onToggleRail ? (
-        <button
-          type="button"
-          className={`x-workspace-rail-toggle x-topbar-rail-toggle${railCollapsed ? ' x-topbar-rail-toggle-collapsed' : ''}`}
-          aria-label={railCollapsed ? 'Show context panel' : 'Hide context panel'}
-          title={railCollapsed ? 'Show context panel' : 'Hide context panel'}
-          onClick={onToggleRail}
-        >
-          {railCollapsed ? '◧ Panel' : '◨ Panel'}
-        </button>
+
+      {activeTab ? (
+        <div className="x-workspace-url" title={activeTab.url}>
+          <span className="x-workspace-url-text">{activeTab.url}</span>
+        </div>
       ) : null}
-    </div>
+
+      <div className="x-workspace-chrome-actions">
+        {activeTab ? (
+          <button
+            type="button"
+            className="x-workspace-icon-btn"
+            aria-label="Open in browser"
+            title="Open in browser"
+            onClick={() =>
+              openBrowserLink(activeTab.url, {
+                forceExternal: true,
+                title: activeTab.title,
+                source: activeTab.source
+              })
+            }
+          >
+            ↗
+          </button>
+        ) : null}
+        {showRailToggle && onToggleRail ? (
+          <button
+            type="button"
+            className={`x-workspace-icon-btn x-workspace-icon-btn-rail${railCollapsed ? ' active' : ''}`}
+            aria-label={railCollapsed ? 'Show panel' : 'Hide panel'}
+            title={railCollapsed ? 'Show panel' : 'Hide panel'}
+            onClick={onToggleRail}
+          >
+            {railCollapsed ? '◧' : '◨'}
+          </button>
+        ) : null}
+      </div>
+    </header>
   )
 }

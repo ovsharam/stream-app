@@ -2995,6 +2995,7 @@ html.x-electron a {
   flex-shrink: 0;
   margin: 0 calc(-1 * var(--x-rail-inset));
   padding: 0 var(--x-rail-inset);
+  min-height: 40px;
   border-bottom: 1px solid var(--x-border);
   background: var(--x-bg);
 }
@@ -3035,12 +3036,12 @@ html.x-electron a {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
-  border-radius: 999px;
-  background: var(--x-search-bg);
+  border-radius: 8px;
+  background: transparent;
   color: var(--x-muted);
   cursor: pointer;
   transition: color 0.12s ease, background 0.12s ease;
@@ -3048,7 +3049,7 @@ html.x-electron a {
 
 .x-rail-config-btn:hover {
   color: var(--x-fg);
-  background: var(--x-surface);
+  background: color-mix(in srgb, var(--x-fg) 6%, transparent);
 }
 
 .x-rail-config-icon {
@@ -3442,14 +3443,14 @@ html.x-electron a {
 .x-rail-tab {
   flex: 1;
   min-width: 0;
-  padding: 10px 4px 9px;
+  padding: 0 4px 9px;
   border: none;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   background: transparent;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   color: var(--x-muted);
   cursor: pointer;
   transition: color 0.12s ease, border-color 0.12s ease;
@@ -8840,56 +8841,49 @@ button.x-home-running-row:hover {
   background: var(--x-accent-hover);
 }
 
-/* In-app workspace tabs (Chrome / Safari style) */
-.x-workspace-tabs-row {
+/* Workspace chrome — unified tab + URL bar */
+.x-workspace-chrome {
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding-right: 8px;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
   min-height: 40px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--x-border);
-  background: color-mix(in srgb, var(--x-surface) 92%, var(--x-border));
+  background: var(--x-bg);
   flex-shrink: 0;
 }
 
 .x-workspace-tabs {
   display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  padding: 0 8px;
-  min-height: 40px;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  max-width: min(42vw, 360px);
   overflow-x: auto;
-  flex: 1;
-  min-width: 0;
-  border-bottom: none;
-  background: transparent;
+  scrollbar-width: none;
 }
 
-.x-workspace-rail-toggle {
-  flex-shrink: 0;
-  margin-bottom: 6px;
+.x-workspace-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .x-workspace-tab {
   display: inline-flex;
-  align-items: stretch;
-  max-width: 200px;
+  align-items: center;
+  max-width: 148px;
   min-width: 0;
-  margin-top: 6px;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: 10px 10px 0 0;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
   background: transparent;
   color: var(--x-muted);
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
 .x-workspace-tab-home {
-  max-width: 120px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 12px 8px;
+  gap: 5px;
+  padding: 0 10px;
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
@@ -8898,14 +8892,15 @@ button.x-home-running-row:hover {
 .x-workspace-tab-main {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
+  height: 100%;
   border: none;
   background: none;
   color: inherit;
   font-size: 12px;
   font-weight: 600;
-  padding: 7px 10px 8px;
+  padding: 0 0 0 8px;
   cursor: pointer;
 }
 
@@ -8922,14 +8917,14 @@ button.x-home-running-row:hover {
 
 .x-workspace-tab-icon {
   flex-shrink: 0;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 9px;
   border-radius: 4px;
-  background: var(--x-border);
+  background: color-mix(in srgb, var(--x-fg) 8%, transparent);
   color: var(--x-muted);
 }
 
@@ -8954,32 +8949,113 @@ button.x-home-running-row:hover {
 }
 
 .x-workspace-tab.active {
-  background: var(--x-bg);
-  border-color: var(--x-border);
+  background: color-mix(in srgb, var(--x-fg) 6%, var(--x-surface));
   color: var(--x-fg);
-  margin-bottom: -1px;
-  z-index: 1;
-  box-shadow: 0 -1px 0 var(--x-bg);
 }
 
 .x-workspace-tab-auto:not(.active) {
-  opacity: 0.88;
+  opacity: 0.82;
 }
 
 .x-workspace-close {
   border: none;
   background: none;
   color: inherit;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1;
-  padding: 0 8px 0 2px;
+  width: 22px;
+  height: 28px;
+  padding: 0;
   cursor: pointer;
-  opacity: 0.55;
-  align-self: center;
+  opacity: 0.45;
+  flex-shrink: 0;
 }
 
 .x-workspace-close:hover {
   opacity: 1;
+}
+
+.x-workspace-url {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--x-fg) 4%, transparent);
+}
+
+.x-workspace-url-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--x-muted);
+}
+
+.x-workspace-chrome-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.x-workspace-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--x-muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.x-workspace-icon-btn:hover {
+  background: color-mix(in srgb, var(--x-fg) 6%, transparent);
+  color: var(--x-fg);
+}
+
+.x-workspace-icon-btn-rail.active {
+  color: var(--x-accent);
+  background: color-mix(in srgb, var(--x-accent) 10%, transparent);
+}
+
+/* Workspace + rail: flush aligned chrome row */
+.x-app-workspace-open .x-rail {
+  padding-top: 0;
+}
+
+.x-app-workspace-open .x-rail-tabs-bar {
+  height: 40px;
+  min-height: 40px;
+  align-items: center;
+  background: var(--x-bg);
+}
+
+.x-app-workspace-open .x-rail-tab {
+  padding: 0 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.x-app-workspace-open .x-rail-config-btn {
+  width: 28px;
+  height: 28px;
+}
+
+.x-app-workspace-open .x-rail-config-icon {
+  width: 15px;
+  height: 15px;
 }
 
 .x-main-workspace {

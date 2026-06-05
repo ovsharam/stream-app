@@ -60,19 +60,6 @@ export function WorkspaceView({ tab, active }: Props) {
 
   return (
     <section className={`x-workspace${active ? ' x-workspace-active' : ''}`} aria-hidden={!active}>
-      <div className="x-workspace-toolbar">
-        <span className="x-workspace-toolbar-url" title={tab.url}>
-          {tab.url}
-        </span>
-        <button
-          type="button"
-          className="x-workspace-external"
-          onClick={() => openBrowserLink(tab.url, { forceExternal: true, title: tab.title, source: tab.source })}
-          title="Open in system browser"
-        >
-          ↗
-        </button>
-      </div>
       {showSignInGate ? (
         <div className="x-workspace-signin-gate">
           {embedAuthState === 'checking' ? (

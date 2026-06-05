@@ -4,7 +4,10 @@ import { webFrame } from 'electron'
 const PAGE_SPOOF = `(function() {
   try {
     Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true });
-    Object.defineProperty(navigator, 'credentials', { value: undefined, configurable: true, writable: true });
+    var h = location.hostname || '';
+    if (h.endsWith('linkedin.com')) {
+      Object.defineProperty(navigator, 'credentials', { value: undefined, configurable: true, writable: true });
+    }
   } catch {}
 })();`
 

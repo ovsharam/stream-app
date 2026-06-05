@@ -23,10 +23,12 @@ export function EmbeddedWebview({
   const ref = useRef<HTMLElement>(null)
   const needsGuestPreload = Boolean(embedBrowseKind)
   const [guestPreload, setGuestPreload] = useState<string | null>(needsGuestPreload ? null : '')
+  // Guest-preload gate renders a placeholder first; only wire webview listeners after mount.
+  const webviewMounted = !needsGuestPreload || guestPreload !== null
 
-  useWebviewPopups(ref, true)
+  useWebviewPopups(ref, webviewMounted)
   useEmbedBrowseSignIn(ref, {
-    enabled: Boolean(embedBrowseKind),
+    enabled: webviewMounted && Boolean(embedBrowseKind),
     kind: embedBrowseKind ?? null,
     onAuthState: onEmbedAuthState,
     onSignInNeeded
@@ -34,7 +36,7 @@ export function EmbeddedWebview({
 
   useEffect(() => {
     if (!embedBrowseKind) return
-    void window.notchDesktop?.getGuestPreloadPath?.().then((path) => {
+    void window.notchDesktop?.getGuestPreloadPath?.()?.then((path) => {
       setGuestPreload(path ?? '')
     })
   }, [embedBrowseKind])

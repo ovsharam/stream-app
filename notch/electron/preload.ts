@@ -85,11 +85,27 @@ contextBridge.exposeInMainWorld('notchDesktop', {
     ipcRenderer.on('embedded:auth-closed', handler)
     return () => ipcRenderer.removeListener('embedded:auth-closed', handler)
   },
+  onGoogleSignInNeeded: (cb: (partition: string) => void) => {
+    const handler = (_: unknown, partition: string) => cb(partition)
+    ipcRenderer.on('embedded:google-signin-needed', handler)
+    return () => ipcRenderer.removeListener('embedded:google-signin-needed', handler)
+  },
+  onEmbedSignInNeeded: (cb: (partition: string) => void) => {
+    const handler = (_: unknown, partition: string) => cb(partition)
+    ipcRenderer.on('embedded:embed-signin-needed', handler)
+    return () => ipcRenderer.removeListener('embedded:embed-signin-needed', handler)
+  },
   onNavAppRendererReady: (cb: () => void) => {
     const handler = () => cb()
     ipcRenderer.on('navapp:renderer-ready', handler)
     return () => ipcRenderer.removeListener('navapp:renderer-ready', handler)
-  }
+  },
+  onOpenUrl: (cb: (url: string) => void) => {
+    const handler = (_: unknown, url: string) => cb(url)
+    ipcRenderer.on('embedded:open-url', handler)
+    return () => ipcRenderer.removeListener('embedded:open-url', handler)
+  },
+  getGuestPreloadPath: () => ipcRenderer.invoke('embedded:guestPreloadPath') as Promise<string>
 })
 
 declare global {
@@ -155,7 +171,11 @@ declare global {
       setNavAppTheme?: (theme: string) => Promise<{ ok: boolean }>
       openAuthWindow?: (args: { partition: string; url: string; title?: string }) => Promise<{ ok: boolean }>
       onAuthClosed?: (cb: (partition: string) => void) => () => void
+      onGoogleSignInNeeded?: (cb: (partition: string) => void) => () => void
+      onEmbedSignInNeeded?: (cb: (partition: string) => void) => () => void
       onNavAppRendererReady?: (cb: () => void) => () => void
+      onOpenUrl?: (cb: (url: string) => void) => () => void
+      getGuestPreloadPath?: () => Promise<string>
     }
   }
 }

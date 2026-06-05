@@ -1,13 +1,52 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { CentralStreamEvent } from '@shared/cluster'
 import { captureApi, openBrowserLink } from '../lib/api'
 import { parseMeetingActionsMeta, parseMeetingNextSteps } from '@shared/meeting-actions'
 import { MeetingActionCards, MeetingActionRunAllButton, useMeetingActionApprovals } from './MeetingActionCards'
 
+const POST_CALL_STEPS = [
+  'Wrapping up transcript…',
+  'Extracting scope & next steps…',
+  'Routing tasks…'
+] as const
+
+export function PostCallProgress({ syncing }: { syncing?: boolean }) {
+  const [stepIndex, setStepIndex] = useState(0)
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setStepIndex((i) => (i + 1) % POST_CALL_STEPS.length)
+    }, 1800)
+    return () => window.clearInterval(interval)
+  }, [])
+
+  return (
+    <div className="x-post-call-progress">
+      <ul className="x-post-call-progress-steps">
+        {POST_CALL_STEPS.map((label, i) => (
+          <li
+            key={label}
+            className={`x-post-call-progress-step ${i === stepIndex ? 'x-post-call-progress-step-active' : i < stepIndex ? 'x-post-call-progress-step-done' : ''}`}
+          >
+            {label}
+          </li>
+        ))}
+      </ul>
+      {syncing ? (
+        <span className="x-sync-pulse" aria-live="polite">
+          <span className="x-sync-pulse-dot" aria-hidden />
+          Syncing
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
 type Props = {
   event: CentralStreamEvent
   onDismiss?: () => void
   onRefresh?: () => void
+  variant?: 'page' | 'rail'
 }
 
 function formatWhen(ts: CentralStreamEvent['timestamp']): string | undefined {
@@ -45,7 +84,7 @@ function Chevron() {
   )
 }
 
-export function PostCallTaskDeck({ event, onDismiss, onRefresh }: Props) {
+export function PostCallTaskDeck({ event, onDismiss, onRefresh, variant = 'page' }: Props) {
   const meta = event.meta ?? {}
   const nextSteps = parseMeetingNextSteps(meta)
   const actions = parseMeetingActionsMeta(meta)
@@ -76,8 +115,13 @@ export function PostCallTaskDeck({ event, onDismiss, onRefresh }: Props) {
   }
 
   return (
-    <article className="x-post-call-deck x-post-call-deck-ios">
+    <article className={`x-post-call-deck x-post-call-deck-ios${variant === 'rail' ? ' x-post-call-deck-rail' : ''}`}>
       <header className="x-post-call-nav">
+        {variant === 'rail' && onDismiss ? (
+          <button type="button" className="x-post-call-rail-back" onClick={onDismiss}>
+            ← Back
+          </button>
+        ) : null}
         <div className="x-post-call-nav-main">
           {heading !== 'Call wrap-up' ? (
             <p className="x-post-call-nav-eyebrow">Call wrap-up</p>
@@ -85,7 +129,7 @@ export function PostCallTaskDeck({ event, onDismiss, onRefresh }: Props) {
           <h1 className="x-post-call-nav-title">{heading}</h1>
           {when ? <p className="x-post-call-nav-sub">{when}</p> : null}
         </div>
-        {onDismiss ? (
+        {onDismiss && variant !== 'rail' ? (
           <button type="button" className="x-post-call-done" onClick={onDismiss}>
             Done
           </button>

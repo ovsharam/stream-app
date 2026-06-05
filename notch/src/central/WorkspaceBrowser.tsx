@@ -9,10 +9,12 @@ type Props = {
 /** Keeps one webview mounted per tab so switching tabs does not reload Google Docs / Meet. */
 export function WorkspaceBrowser({ tabs, activeId }: Props) {
   return (
-    <div className="x-workspace-browser">
-      {tabs.map((tab) => (
-        <WorkspaceView key={tab.id} tab={tab} active={tab.id === activeId} />
-      ))}
+    <div className={`x-workspace-browser-host${activeId ? ' x-workspace-browser-host-active' : ''}`}>
+      <div className="x-workspace-browser">
+        {tabs.map((tab) => (
+          <WorkspaceView key={tab.id} tab={tab} active={tab.id === activeId} />
+        ))}
+      </div>
     </div>
   )
 }

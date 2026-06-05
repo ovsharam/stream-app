@@ -122,6 +122,12 @@ import {
   updateReminder,
   deleteReminder
 } from './sources/captureStore'
+import {
+  getContactsState,
+  getLastContactsError,
+  syncGmailContacts,
+  expandMentionsWithContacts
+} from './sources/contactsStore'
 import { scoreFdeDecision } from './scoring/fde-scorer'
 import {
   setBrowserContext,
@@ -145,7 +151,16 @@ import { cleanKbExcerpt, normalizeAssistResult, normalizeChatAssistResult } from
 import { toThreadUpdate } from './cluster/threadUtils'
 import { readSessionId, getSessionId } from './session'
 import { runWithSession } from './request-context'
-import { fetchCalendarEvents, getCachedCalendarEvents, syncCalendar, getLastCalendarError, calendarNeedsReconnect, listGoogleCalendars, setEnabledCalendarIds } from './sources/calendar'
+import {
+  fetchCalendarEvents,
+  getCachedCalendarEvents,
+  syncCalendar,
+  getLastCalendarError,
+  calendarNeedsReconnect,
+  listGoogleCalendars,
+  setEnabledCalendarIds,
+  getCachedGoogleCalendars
+} from './sources/calendar'
 
 function serializeContext(ctx: ReturnType<typeof getActiveContext>) {
   return {
@@ -175,12 +190,44 @@ export function createRouter(io?: SocketServer): Router {
     res.json(items.map(streamItemToApi))
   })
 
+  router.get('/auth/google/status', async (_req, res) => {
+    const { getGoogleApiStatus } = await import('./sources/googleRateLimit')
+    res.json(getGoogleApiStatus())
+  })
+
+  router.post('/auth/google/clear-rate-limit', async (_req, res) => {
+    const { clearGoogleRateLimit } = await import('./sources/googleRateLimit')
+    const { clearLastGmailError } = await import('./sources/gmail')
+    const { clearLastCalendarError } = await import('./sources/calendar')
+    const { clearLastContactsError } = await import('./sources/contactsStore')
+    clearGoogleRateLimit()
+    clearLastGmailError()
+    clearLastCalendarError()
+    clearLastContactsError()
+    res.json({ ok: true })
+  })
+
   router.get('/connections', async (_req, res) => {
+    try {
     const demo = process.env.DEMO_MODE === '1'
     const gmailError = getLastGmailError()
     const calendarError = getLastCalendarError()
-    const gmailConnected = demo || (await isGmailConnected())
-    const gdocsConnected = demo || (await isGdocsConnected())
+    const contactsError = getLastContactsError()
+    const { getGoogleApiStatus } = await import('./sources/googleRateLimit')
+    const googleStatus = getGoogleApiStatus()
+    let gmailConnected = false
+    try {
+      gmailConnected = demo || (await isGmailConnected())
+    } catch (err) {
+      console.warn('[connections] gmail status check failed:', err)
+      gmailConnected = false
+    }
+    let gdocsConnected = false
+    try {
+      gdocsConnected = demo || (await isGdocsConnected())
+    } catch {
+      gdocsConnected = demo || gmailConnected
+    }
     const gdocsError = getLastGdocsError()
     const gdocsEnable = gdocsApiEnableUrls(gdocsError)
     const gdocsProject = googleOAuthProjectNumber()
@@ -238,13 +285,15 @@ export function createRouter(io?: SocketServer): Router {
         : {
             gmail: gmailError ?? undefined,
             calendar: calendarError ?? undefined,
-            gdocs: gdocsError ?? undefined
+            gdocs: gdocsError ?? undefined,
+            contacts: contactsError ?? undefined
           },
       googleApiEnable: demo
         ? {}
         : {
             gmail: googleApiNeedsEnable(gmailError) ? googleApiEnableUrl(gmailError) : undefined,
             calendar: googleApiNeedsEnable(calendarError) ? googleApiEnableUrl(calendarError) : undefined,
+            contacts: googleApiNeedsEnable(contactsError) ? googleApiEnableUrl(contactsError) : undefined,
             gdocsDrive: gdocsNeedsApiEnable(gdocsError)
               ? gdocsEnable.drive
               : gdocsDefaultEnable?.drive,
@@ -252,9 +301,14 @@ export function createRouter(io?: SocketServer): Router {
               ? gdocsEnable.docs
               : gdocsDefaultEnable?.docs
           },
+      googleApi: demo ? undefined : googleStatus,
       onboardingComplete:
         demo || (getNested<boolean>(['preferences', 'onboardingComplete']) ?? false)
     })
+    } catch (err) {
+      console.error('[connections] status failed:', err)
+      res.status(500).json({ error: String(err) })
+    }
   })
 
   router.post('/connections/onboarding-complete', (_req, res) => {
@@ -299,23 +353,40 @@ export function createRouter(io?: SocketServer): Router {
     try {
       await runWithSession(sessionId, async () => {
         await handleGmailCallback(code, sessionId)
-        await syncGmail(io)
       })
-      res.send(successHtml('Gmail connected — you can close this tab and return to Notch.'))
+      res.send(
+        successHtml(
+          'Gmail connected — close this tab and return to Notch. Use Sync now in Apps when ready (wait if Google rate-limited you).'
+        )
+      )
     } catch (err) {
       res.status(500).send(errorHtml(String(err)))
     }
   })
 
-  router.post('/auth/gmail/sync', async (_req, res) => {
+  router.post('/auth/gmail/sync', async (req, res) => {
+    const sid = getSessionId(req, res)
     const items = await syncGmail(io)
     const error = getLastGmailError()
+    try {
+      await syncGmailContacts(sid)
+    } catch (err) {
+      console.warn('[contacts] sync during gmail manual sync failed:', err)
+    }
     res.json({
       count: items.length,
       error: error ?? undefined,
       needsApiEnable: googleApiNeedsEnable(error),
       enableUrl: googleApiEnableUrl(error) ?? undefined
     })
+  })
+
+  router.post('/auth/gmail/disconnect', async (req, res) => {
+    const sid = getSessionId(req, res)
+    const { purgeLegacyGmailToken } = await import('./sources/gmailAccounts')
+    purgeLegacyGmailToken(sid)
+    setConnection('gmail', false)
+    res.json({ ok: true })
   })
 
   // Slack auth
@@ -682,6 +753,21 @@ export function createRouter(io?: SocketServer): Router {
     )
   })
 
+  router.get('/contacts', (req, res) => {
+    const sid = getSessionId(req, res)
+    res.json(getContactsState(sid))
+  })
+
+  router.post('/contacts/sync', async (req, res) => {
+    const sid = getSessionId(req, res)
+    try {
+      const state = await syncGmailContacts(sid)
+      res.json(state)
+    } catch (err) {
+      res.status(400).json({ error: String(err) })
+    }
+  })
+
   router.post('/capture/note', async (req, res) => {
     const sid = getSessionId(req, res)
     const { text, title, profileId, destinations } = req.body as {
@@ -768,7 +854,7 @@ export function createRouter(io?: SocketServer): Router {
     }
   })
 
-  router.post('/sync/all', async (_req, res) => {
+  router.post('/sync/all', async (req, res) => {
     if (process.env.DEMO_MODE === '1') {
       res.json({
         gmail: 0,
@@ -788,33 +874,36 @@ export function createRouter(io?: SocketServer): Router {
       })
       return
     }
+    const { getGoogleApiStatus } = await import('./sources/googleRateLimit')
+    const googleStatus = getGoogleApiStatus()
     const results = await Promise.allSettled([
-      syncGmail(io),
       syncSlack(io),
       syncX(io),
       syncMonday(io),
       syncDiscord(io),
-      syncCalendar(),
       syncGithub(io),
-      syncGdocs(io),
       syncGong(io),
       syncClaude(io),
       syncPerplexity(io),
       syncCalcom(io)
     ])
     res.json({
-      gmail: results[0].status === 'fulfilled' ? results[0].value.length : 0,
-      slack: results[1].status === 'fulfilled' ? results[1].value.length : 0,
-      x: results[2].status === 'fulfilled' ? results[2].value.length : 0,
-      monday: results[3].status === 'fulfilled' ? results[3].value.length : 0,
-      discord: results[4].status === 'fulfilled' ? results[4].value.length : 0,
-      calendar: results[5].status === 'fulfilled' ? results[5].value.length : 0,
-      github: results[6].status === 'fulfilled' ? results[6].value.length : 0,
-      gdocs: results[7].status === 'fulfilled' ? results[7].value.length : 0,
-      gong: results[8].status === 'fulfilled' ? results[8].value.length : 0,
-      claude: results[9].status === 'fulfilled' ? results[9].value.length : 0,
-      perplexity: results[10].status === 'fulfilled' ? results[10].value.length : 0,
-      calcom: results[11].status === 'fulfilled' ? results[11].value.length : 0,
+      gmail: 0,
+      slack: results[0].status === 'fulfilled' ? results[0].value.length : 0,
+      x: results[1].status === 'fulfilled' ? results[1].value.length : 0,
+      monday: results[2].status === 'fulfilled' ? results[2].value.length : 0,
+      discord: results[3].status === 'fulfilled' ? results[3].value.length : 0,
+      calendar: 0,
+      github: results[4].status === 'fulfilled' ? results[4].value.length : 0,
+      gdocs: 0,
+      gong: results[5].status === 'fulfilled' ? results[5].value.length : 0,
+      claude: results[6].status === 'fulfilled' ? results[6].value.length : 0,
+      perplexity: results[7].status === 'fulfilled' ? results[7].value.length : 0,
+      calcom: results[8].status === 'fulfilled' ? results[8].value.length : 0,
+      contacts: 0,
+      googleManualOnly: true,
+      googleBlocked: googleStatus.blocked,
+      googleBlockedUntil: googleStatus.blockedUntil,
       kbIngested: ingestRecentStream(80)
     })
   })
@@ -942,6 +1031,8 @@ export function createRouter(io?: SocketServer): Router {
   })
 
   router.get('/cluster/calendar', async (_req, res) => {
+    const { googleApiBlockedMessage } = await import('./sources/googleRateLimit')
+
     const pplxRail = getPerplexityNewsRail()
     const perplexityState = {
       connected: isPerplexityConnected(),
@@ -956,38 +1047,32 @@ export function createRouter(io?: SocketServer): Router {
       res.json({ events: [], connected: false, perplexity: perplexityState })
       return
     }
-    try {
-      const events = await syncCalendar()
-      const error = getLastCalendarError()
-      res.json({
-        events,
-        connected: true,
-        error: error ?? undefined,
-        needsReconnect: calendarNeedsReconnect(error),
-        perplexity: perplexityState
-      })
-    } catch (err) {
-      const message = String(err)
-      res.json({
-        events: [],
-        connected: true,
-        error: message,
-        needsReconnect: calendarNeedsReconnect(message),
-        perplexity: perplexityState
-      })
-    }
+
+    const blocked = googleApiBlockedMessage()
+    const events = getCachedCalendarEvents()
+    const error = blocked ?? getLastCalendarError()
+    res.json({
+      events,
+      connected: true,
+      error: error ?? undefined,
+      needsReconnect: calendarNeedsReconnect(error ?? null),
+      perplexity: perplexityState
+    })
   })
 
-  router.get('/cluster/calendars', async (_req, res) => {
+  router.get('/cluster/calendars', async (req, res) => {
     if (!(await isGmailConnected())) {
       res.json({ calendars: [], error: 'Connect Gmail first' })
       return
     }
+    const refresh = req.query.refresh === '1' || req.query.refresh === 'true'
     try {
-      const calendars = await listGoogleCalendars()
-      res.json({ calendars })
+      const calendars = refresh
+        ? await listGoogleCalendars(true)
+        : getCachedGoogleCalendars()
+      res.json({ calendars, error: getLastCalendarError() ?? undefined })
     } catch (err) {
-      res.json({ calendars: [], error: String(err) })
+      res.json({ calendars: getCachedGoogleCalendars(), error: String(err) })
     }
   })
 
@@ -1002,8 +1087,8 @@ export function createRouter(io?: SocketServer): Router {
       return
     }
     setEnabledCalendarIds(calendarIds.filter((id) => typeof id === 'string' && id.trim()))
-    await syncCalendar()
-    res.json({ ok: true, calendars: await listGoogleCalendars() })
+    await syncCalendar(true)
+    res.json({ ok: true, calendars: await listGoogleCalendars(true) })
   })
 
   router.get('/cluster/gmail/accounts', async (_req, res) => {
@@ -1015,14 +1100,12 @@ export function createRouter(io?: SocketServer): Router {
     const accountId = req.params.accountId
     const body = req.body as { feedEnabled?: boolean; calendarEnabled?: boolean }
     const accounts = (await updateGmailAccount(accountId, body)).map(toPublicAccount)
-    await syncGmail(io)
     res.json({ ok: true, accounts })
   })
 
   router.delete('/cluster/gmail/accounts/:accountId', async (req, res) => {
     const accountId = req.params.accountId
     const accounts = (await removeGmailAccount(accountId)).map(toPublicAccount)
-    await syncCalendar()
     res.json({ ok: true, accounts })
   })
 
@@ -1358,7 +1441,8 @@ export function createRouter(io?: SocketServer): Router {
   })
 
   router.post('/cluster/action', async (req, res) => {
-    const raw = String(req.body.text ?? '').trim()
+    const sid = getSessionId(req, res)
+    const raw = expandMentionsWithContacts(String(req.body.text ?? '').trim(), sid)
     const contextItemId = req.body.contextItemId ? String(req.body.contextItemId) : undefined
     const parsed = parseComposeCommand(raw)
     if (!parsed) {

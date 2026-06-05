@@ -3,15 +3,22 @@ import type { Server as SocketServer } from 'socket.io'
 import { normalizeGmailThread } from '../normalizer'
 import { upsertItems, itemExists, getRecentItems } from '../db'
 import type { StreamItem } from '../../shared/types'
-import { getOAuth2Client, GOOGLE_SCOPES, authClientForTokens } from './googleOAuth'
-import { syncCalendar } from './calendar'
+import { getOAuth2Client, GOOGLE_SCOPES, authClientForTokens, GOOGLE_REQUEST_OPTS } from './googleOAuth'
 import {
   upsertGmailAccount,
   feedEnabledAccounts,
   hasGmailAccounts,
   accountSlug,
+  purgeLegacyGmailToken,
   type GmailAccountRecord
 } from './gmailAccounts'
+import {
+  googleApiBlockedMessage,
+  isGoogleApiBlocked,
+  markGoogleRateLimited,
+  effectiveGoogleSyncError,
+  assertGoogleApiAllowed
+} from './googleRateLimit'
 
 export function getGmailAuthUrl(sessionId: string, addAccount = false): string {
   const oauth2 = getOAuth2Client()
@@ -24,35 +31,57 @@ export function getGmailAuthUrl(sessionId: string, addAccount = false): string {
 }
 
 export async function handleGmailCallback(code: string, sessionId: string): Promise<void> {
+  const blocked = googleApiBlockedMessage()
+  if (blocked) throw new Error(blocked)
+
   const oauth2 = getOAuth2Client()
-  const { tokens } = await oauth2.getToken(code)
-  await upsertGmailAccount(tokens as Record<string, unknown>, sessionId)
+  let tokens: Record<string, unknown>
+  try {
+    const res = await oauth2.getToken(code)
+    tokens = res.tokens as Record<string, unknown>
+  } catch (err) {
+    markGoogleRateLimited(err, 'gmail.oauth')
+    const retryMsg = googleApiBlockedMessage()
+    throw new Error(retryMsg ?? (err instanceof Error ? err.message : String(err)))
+  }
+
+  purgeLegacyGmailToken(sessionId)
+  await upsertGmailAccount(tokens, sessionId)
 }
 
 async function fetchGmailThreadsForAccount(
   account: GmailAccountRecord,
-  limit = 50
+  limit = 8
 ): Promise<StreamItem[]> {
+  assertGoogleApiAllowed(`gmail.threads:${account.email}`)
   const oauth2 = getOAuth2Client()
   oauth2.setCredentials(account.tokens)
   const gmail = google.gmail({ version: 'v1', auth: oauth2 })
 
-  const listRes = await gmail.users.threads.list({
-    userId: 'me',
-    maxResults: limit,
-    q: 'in:inbox -category:promotions -category:social'
-  })
+  const listRes = await gmail.users.threads.list(
+    {
+      userId: 'me',
+      maxResults: limit,
+      q: 'in:inbox -category:promotions -category:social'
+    },
+    GOOGLE_REQUEST_OPTS
+  )
 
   const items: StreamItem[] = []
   const slug = accountSlug(account.email)
 
   for (const thread of listRes.data.threads ?? []) {
     if (!thread.id) continue
-    const detail = await gmail.users.threads.get({
-      userId: 'me',
-      id: thread.id,
-      format: 'full'
-    })
+
+    const detail = await gmail.users.threads.get(
+      {
+        userId: 'me',
+        id: thread.id,
+        format: 'metadata',
+        metadataHeaders: ['Subject', 'From', 'Date']
+      },
+      GOOGLE_REQUEST_OPTS
+    )
 
     const messages = detail.data.messages ?? []
     const latest = messages[messages.length - 1]
@@ -69,22 +98,13 @@ async function fetchGmailThreadsForAccount(
       email: fromMatch?.[2]?.trim() || fromRaw
     }
 
-    let body = ''
-    const parts = latest.payload?.parts ?? []
-    const plain = parts.find((p) => p.mimeType === 'text/plain')
-    if (plain?.body?.data) {
-      body = Buffer.from(plain.body.data, 'base64').toString('utf-8')
-    } else if (latest.payload?.body?.data) {
-      body = Buffer.from(latest.payload.body.data, 'base64').toString('utf-8')
-    }
-
     const normalized = normalizeGmailThread({
       id: `${slug}-${thread.id}`,
-      snippet: detail.data.snippet ?? undefined,
+      snippet: detail.data.snippet ?? thread.snippet ?? undefined,
       subject: getHeader('Subject') ?? undefined,
       from,
       date: new Date(parseInt(latest.internalDate ?? '0', 10)),
-      body,
+      body: detail.data.snippet ?? thread.snippet ?? '',
       labelIds: latest.labelIds ?? undefined,
       metadata: {
         threadId: thread.id,
@@ -102,8 +122,12 @@ async function fetchGmailThreadsForAccount(
 
 let lastGmailError: string | null = null
 
+export function clearLastGmailError(): void {
+  lastGmailError = null
+}
+
 export function getLastGmailError(): string | null {
-  return lastGmailError
+  return effectiveGoogleSyncError(lastGmailError)
 }
 
 export function googleApiNeedsEnable(error: string | null): boolean {
@@ -119,10 +143,19 @@ export function googleApiEnableUrl(error: string | null): string | null {
   if (/gmail/i.test(error)) {
     return 'https://console.cloud.google.com/apis/library/gmail.googleapis.com'
   }
+  if (/people|contacts/i.test(error)) {
+    return 'https://console.cloud.google.com/apis/library/people.googleapis.com'
+  }
   return 'https://console.cloud.google.com/apis/dashboard'
 }
 
 export async function syncGmail(io?: SocketServer): Promise<StreamItem[]> {
+  const blocked = googleApiBlockedMessage()
+  if (blocked) {
+    lastGmailError = blocked
+    return []
+  }
+
   const accounts = await feedEnabledAccounts()
   if (accounts.length === 0) return []
 
@@ -131,12 +164,24 @@ export async function syncGmail(io?: SocketServer): Promise<StreamItem[]> {
 
   for (const account of accounts) {
     try {
-      const items = await fetchGmailThreadsForAccount(account, 50)
+      const items = await fetchGmailThreadsForAccount(account, 15)
       allItems.push(...items)
     } catch (err) {
+      markGoogleRateLimited(err, 'gmail.sync')
       const message = err instanceof Error ? err.message : String(err)
       errors.push(`${account.email}: ${message}`)
       console.error('[gmail] sync failed for', account.email, err)
+      if (/invalid_grant|token has been expired|token has been revoked/i.test(message)) {
+        try {
+          const { removeGmailAccount } = await import('./gmailAccounts')
+          await removeGmailAccount(account.id)
+          const { setConnection } = await import('../store')
+          setConnection('gmail', false)
+          console.warn('[gmail] removed revoked account', account.email)
+        } catch {
+          /* best effort */
+        }
+      }
     }
   }
 
@@ -148,7 +193,7 @@ export async function syncGmail(io?: SocketServer): Promise<StreamItem[]> {
     }
   }
 
-  await syncCalendar()
+  // Calendar sync is handled separately via /cluster/calendar (cached) — avoid doubling API calls.
 
   if (errors.length > 0 && allItems.length === 0) {
     lastGmailError = errors.join(' · ')

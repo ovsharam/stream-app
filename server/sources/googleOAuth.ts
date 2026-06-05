@@ -9,11 +9,15 @@ export function googleOAuthProjectNumber(): string | null {
 }
 
 export const GOOGLE_SCOPES = [
+  'openid',
+  'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/gmail.compose',
   'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/calendar.readonly',
+  'https://www.googleapis.com/auth/contacts.readonly',
+  'https://www.googleapis.com/auth/contacts.other.readonly',
   'https://www.googleapis.com/auth/documents',
   'https://www.googleapis.com/auth/drive.readonly',
   'https://www.googleapis.com/auth/drive.file'
@@ -43,6 +47,9 @@ export function authClientForTokens(tokens: Record<string, unknown>) {
   oauth2.setCredentials(tokens)
   return oauth2
 }
+
+/** Do not retry 429s — retries burn quota and extend user-rate limits. */
+export const GOOGLE_REQUEST_OPTS = { retry: false } as const
 
 export async function isGoogleConnected(): Promise<boolean> {
   return (await calendarEnabledAccounts()).length > 0

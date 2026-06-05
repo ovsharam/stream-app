@@ -3,7 +3,7 @@ import type { CalendarRailEvent, CentralStreamEvent } from '@shared/cluster'
 export type WorkspaceTab = {
   id: string
   title: string
-  source: CentralStreamEvent['source'] | 'calendar' | 'meet' | 'gdocs'
+  source: CentralStreamEvent['source'] | 'calendar' | 'meet' | 'gdocs' | 'youtube' | 'calcom' | 'linkedin'
   url: string
   summary: string
   autoOpened?: boolean
@@ -48,6 +48,13 @@ function sourceUrl(event: CentralStreamEvent): string | null {
     return String(event.meta.googleDocUrl)
   }
 
+  const metaUrl = event.meta?.url ? String(event.meta.url) : null
+  if (metaUrl?.startsWith('http')) return metaUrl
+
+  if (event.meta?.bookingUid) {
+    return `https://app.cal.com/bookings/${String(event.meta.bookingUid)}`
+  }
+
   switch (event.source) {
     case 'slack':
       return 'https://app.slack.com/client'
@@ -69,6 +76,12 @@ function sourceUrl(event: CentralStreamEvent): string | null {
       const docUrl = event.meta?.url ? String(event.meta.url) : null
       return docUrl?.startsWith('http') ? docUrl : null
     }
+    case 'calcom': {
+      const uid =
+        (event.meta?.bookingUid ? String(event.meta.bookingUid) : '') ||
+        String(event.meta?.itemId ?? event.id).replace(/^calcom-/, '').replace(/^ext-calcom-/, '')
+      return uid ? `https://app.cal.com/bookings/${uid}` : 'https://app.cal.com/bookings/upcoming'
+    }
     case 'build':
       return 'https://linear.app'
     case 'notch':
@@ -86,13 +99,18 @@ export function toWorkspaceTab(event: CentralStreamEvent): WorkspaceTab | null {
   const title =
     event.meetingLink || event.source === 'meet'
       ? event.title || 'Google Meet'
-      : event.source.charAt(0).toUpperCase() + event.source.slice(1)
+      : event.title || event.source.charAt(0).toUpperCase() + event.source.slice(1)
 
   return {
     id: `${event.source}-${event.id}`,
     title,
-    source: event.source,
+    source: event.source === 'calcom' ? 'calcom' : event.source,
     url,
     summary: event.title || event.body
   }
+}
+
+/** URL to open when clicking a feed item for in-app verification. */
+export function feedEventBrowseUrl(event: CentralStreamEvent): string | null {
+  return sourceUrl(event)
 }

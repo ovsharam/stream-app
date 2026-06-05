@@ -266,6 +266,9 @@ function externalEvents(now: number): CentralStreamEvent[] {
           : {}),
         ...(item.metadata?.projectLabel ? { projectLabel: String(item.metadata.projectLabel) } : {}),
         ...(item.metadata?.url ? { url: String(item.metadata.url) } : {}),
+        ...(item.metadata?.bookingUid
+          ? { bookingUid: String(item.metadata.bookingUid) }
+          : {}),
         ...(item.metadata?.channel ? { channel: String(item.metadata.channel) } : {}),
         ...(item.metadata?.channelName ? { channelName: String(item.metadata.channelName) } : {}),
         ...(item.metadata?.subject ? { subject: String(item.metadata.subject) } : {}),

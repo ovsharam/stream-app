@@ -2,6 +2,7 @@ import { useState, type MouseEvent } from 'react'
 import type { CentralStreamEvent } from '@shared/cluster'
 import { parseMeetingActionsMeta } from '@shared/meeting-actions'
 import { openBrowserLink, openMeeting } from '../lib/api'
+import { feedEventBrowseUrl } from './workspace'
 import { getFeedVote, setFeedVote } from './feedFeedbackStore'
 import { IconGmail, IconMonday, IconReply, IconRepost, IconShare, IconViews } from './Icons'
 
@@ -204,24 +205,35 @@ function MondayCard({ event }: { event: CentralStreamEvent }) {
 }
 
 function GdocsCard({ event }: { event: CentralStreamEvent }) {
-  const docUrl = event.meta?.url ? String(event.meta.url) : null
   return (
     <>
       <p className="x-post-title x-post-title-inline">{event.title}</p>
-      {event.body ? <p className="x-post-body">{event.body}</p> : null}
-      {docUrl?.startsWith('http') ? (
-        <button
-          type="button"
-          className="x-action-btn x-action-btn-primary x-post-doc-btn"
-          onClick={(e) => {
-            e.stopPropagation()
-            openBrowserLink(docUrl, { title: event.title || 'Google Doc', source: 'gdocs' })
-          }}
-        >
-          Open doc
-        </button>
+      {event.body && event.body !== event.title ? (
+        <p className="x-post-body">{event.body}</p>
       ) : null}
     </>
+  )
+}
+
+function PostInlineActions({
+  items
+}: {
+  items: { label: string; onClick: (e: MouseEvent) => void }[]
+}) {
+  if (items.length === 0) return null
+  return (
+    <div className="x-post-cta-row">
+      {items.map((item, index) => (
+        <button
+          key={item.label}
+          type="button"
+          className={`x-post-cta ${index === 0 ? 'x-post-cta-primary' : 'x-post-cta-secondary'}`}
+          onClick={item.onClick}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -480,6 +492,10 @@ export function FeedPost({
 
   const handlePostClick = () => {
     selectContext()
+    if (feedEventBrowseUrl(event)) {
+      onOpenWorkspace?.(event)
+      return
+    }
     if (isGmailThread && threadItemId) openThread()
   }
 
@@ -490,12 +506,39 @@ export function FeedPost({
 
   const hideTitle =
     event.kind === 'transcript_live' ||
-    ['gmail', 'github', 'gdocs', 'x', 'slack', 'discord'].includes(event.source) ||
+    ['gmail', 'github', 'gdocs', 'x', 'slack', 'discord', 'meeting'].includes(event.source) ||
     isMondayThread
+  const hasBrowseTarget = Boolean(feedEventBrowseUrl(event))
+
+  const inlineActions: { label: string; onClick: (e: MouseEvent) => void }[] = []
+  if (googleDocUrl) {
+    inlineActions.push({
+      label: 'Open notes',
+      onClick: (e) => openLink(e, googleDocUrl, 'Meeting notes')
+    })
+  } else if (event.source === 'gdocs' && linkUrl?.startsWith('http')) {
+    inlineActions.push({
+      label: 'Open doc',
+      onClick: (e) => openLink(e, linkUrl, event.title || 'Google Doc')
+    })
+  }
+  if (
+    event.source === 'meeting' &&
+    parseMeetingActionsMeta(event.meta)?.proposedActions.length &&
+    onOpenInWork
+  ) {
+    inlineActions.push({
+      label: 'Review tasks',
+      onClick: (e) => {
+        e.stopPropagation()
+        onOpenInWork(threadItemId)
+      }
+    })
+  }
 
   return (
     <article
-      className={`x-post x-post-${event.source} ${isNew ? 'x-post-new' : ''} ${isContext ? 'x-post-context' : ''} ${isActionable(event) ? 'x-post-actionable' : ''} ${threadActive ? 'x-post-thread-active' : ''} ${isThreadable ? 'x-post-threadable' : ''}`}
+      className={`x-post x-post-${event.source} ${isNew ? 'x-post-new' : ''} ${isContext ? 'x-post-context' : ''} ${isActionable(event) ? 'x-post-actionable' : ''} ${threadActive ? 'x-post-thread-active' : ''} ${isThreadable ? 'x-post-threadable' : ''}${hasBrowseTarget ? ' x-post-browseable' : ''}`}
       onClick={handlePostClick}
     >
       <FeedAvatar source={event.source} />
@@ -534,34 +577,11 @@ export function FeedPost({
           />
         ) : null}
 
-        {googleDocUrl ? (
-          <button
-            type="button"
-            className="x-action-btn x-action-btn-primary x-meeting-doc-btn"
-            onClick={(e) => openLink(e, googleDocUrl, 'Meeting notes')}
-          >
-            Open Google Doc
-          </button>
-        ) : null}
-
         {googleDocError && !googleDocUrl ? (
-          <p className="x-int-alert x-meeting-doc-error">{googleDocError}</p>
+          <p className="x-post-note x-post-note-error">{googleDocError}</p>
         ) : null}
 
-        {event.source === 'meeting' &&
-        parseMeetingActionsMeta(event.meta)?.proposedActions.length &&
-        onOpenInWork ? (
-          <button
-            type="button"
-            className="x-action-btn x-meeting-work-link"
-            onClick={(e) => {
-              e.stopPropagation()
-              onOpenInWork(threadItemId)
-            }}
-          >
-            Review post-call tasks in Work →
-          </button>
-        ) : null}
+        <PostInlineActions items={inlineActions} />
 
         {event.joinable && event.meetingLink && (
           <div className="x-action-card x-action-card-meet">

@@ -1,4 +1,5 @@
 import { useEffect, type RefObject } from 'react'
+import { isEmbedAuthPopupUrl } from './embedBrowse'
 import { openBrowserLink } from '../lib/api'
 
 type WebviewEl = HTMLElement & {
@@ -24,6 +25,8 @@ export function useWebviewPopups(ref: RefObject<HTMLElement | null>, enabled: bo
     const onNewWindow = (event: WebviewNewWindowEvent) => {
       const url = event.url
       if (!url || !/^https?:\/\//i.test(url)) return
+      // Let Electron open Google/LinkedIn auth in-process (same session partition).
+      if (isEmbedAuthPopupUrl(url)) return
       event.preventDefault?.()
       openBrowserLink(url)
     }

@@ -28,7 +28,18 @@ function loadSessions(): HomeChatSession[] {
     const raw = localStorage.getItem(SESSIONS_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw) as HomeChatSession[]
-    return Array.isArray(parsed) ? parsed.filter((s) => s.messages?.length > 0) : []
+    return Array.isArray(parsed)
+      ? parsed
+          .filter((s) => s.messages?.length > 0)
+          .map((s) => ({
+            ...s,
+            messages: s.messages.map((m) =>
+              m.loading
+                ? { ...m, loading: false, error: m.error ?? 'Request interrupted.' }
+                : m
+            )
+          }))
+      : []
   } catch {
     return []
   }

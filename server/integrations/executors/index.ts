@@ -24,7 +24,12 @@ import {
 } from '../../sources/github'
 import { isGdocsConnected, createGoogleDoc, appendGoogleDoc, syncGdocs } from '../../sources/gdocs'
 import { isGongConnected, addGongCallNote, syncGong } from '../../sources/gong'
-import { executeCalcomCompose, isCalcomConnected } from '../../sources/calcom'
+import {
+  createCalcomBooking,
+  isCalcomConnected,
+  parseCalcomBookBody,
+  syncCalcom
+} from '../../sources/calcom'
 import { runMind } from '../../kb/mindExecutor'
 import type { ComposeCommand } from '../../../shared/compose'
 import { parseComposeCommand } from '../../../shared/compose'
@@ -314,11 +319,17 @@ async function runGong(ctx: ActionRunContext): Promise<ActionRunResult> {
 async function runCalcom(ctx: ActionRunContext): Promise<ActionRunResult> {
   if (!isCalcomConnected()) return fail('calcom', 'Cal.com not connected — Apps → Cal.com')
   if (ctx.parsed.intent !== 'book') {
-    return fail('calcom', 'Use @calcom book: slug / email / name / auto / notes')
+    return fail('calcom', 'Use @cal book June 10 2026 1pm guests are client@co.com')
   }
-  const result = await executeCalcomCompose(ctx.raw)
-  if (!result.ok) return fail('calcom', result.message)
-  return ok('calcom', result.message)
+  try {
+    const input = parseCalcomBookBody(ctx.parsed.body)
+    const result = await createCalcomBooking(input)
+    if (!result.ok) return fail('calcom', result.message)
+    void syncCalcom(ctx.io).catch(() => undefined)
+    return ok('calcom', result.message)
+  } catch (err) {
+    return fail('calcom', err instanceof Error ? err.message : String(err))
+  }
 }
 
 export function registerIntegrationExecutors(): void {

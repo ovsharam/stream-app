@@ -408,6 +408,7 @@ export function normalizeCalcomBooking(booking: Record<string, unknown>): Stream
     metadata: {
       itemId: `calcom-${uid}`,
       bookingUid: uid,
+      url: `https://app.cal.com/bookings/${uid}`,
       status,
       startTime: start.toISOString(),
       endTime: end?.toISOString(),

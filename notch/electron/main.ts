@@ -9,6 +9,9 @@ import { AudioTap, resolveWhisperRoot } from './services/AudioTap'
 import { CallSessionManager } from './services/CallSessionManager'
 
 const isDev = !app.isPackaged
+const GUEST_PRELOAD = join(__dirname, 'guest-preload.js')
+
+app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled')
 const mobileOnly = process.argv.includes('--mobile-only')
 const SIM = process.env.SIMULATION_MODE === 'true' || process.env.DEMO_MODE === '1'
 const HOTKEY = 'CommandOrControl+Shift+M'
@@ -397,6 +400,27 @@ function configureEmbeddedSession(sess: Session): void {
     callback(true)
   })
   sess.setPermissionCheckHandler(() => true)
+  sess.webRequest.onBeforeSendHeaders({ urls: ['https://*/*'] }, (details, callback) => {
+    const headers = {
+      ...details.requestHeaders,
+      'User-Agent': CHROME_USER_AGENT,
+      'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"macOS"'
+    }
+    callback({ requestHeaders: headers })
+  })
+}
+
+/** LinkedIn passkey probe breaks Electron webviews — block and spoof credentials in guest-preload. */
+function configureLinkedInBrowseSession(sess: Session): void {
+  sess.webRequest.onBeforeRequest({ urls: ['*://*.linkedin.com/*'] }, (details, callback) => {
+    if (details.url.includes('checkpoint/pk/initiateLogin')) {
+      callback({ cancel: true })
+      return
+    }
+    callback({})
+  })
 }
 
 function suspendNavBrowserView(): void {
@@ -541,7 +565,7 @@ function openAuthWindow(args: { partition: string; url: string; title?: string }
   }
 
   const win = new BrowserWindow({
-    ...popupWindowOptions(centralWindow, sess),
+    ...popupWindowOptions(null, sess),
     width: 960,
     height: 780,
     title: args.title ?? 'Sign in'
@@ -578,7 +602,8 @@ function popupWindowOptions(parent: BrowserWindow | null, sess: Session): Electr
       session: sess,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: false,
+      preload: GUEST_PRELOAD
     }
   }
 }
@@ -600,6 +625,87 @@ function isNavAppAuthUrl(url: string): boolean {
   } catch {
     return false
   }
+}
+
+function isGoogleOAuthUrl(url: string): boolean {
+  try {
+    const { hostname, pathname } = new URL(url)
+    return hostname === 'accounts.google.com' && pathname.startsWith('/o/oauth2/')
+  } catch {
+    return false
+  }
+}
+
+function isGoogleDirectSignInUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url)
+    return hostname === 'accounts.google.com' && !isGoogleOAuthUrl(url)
+  } catch {
+    return false
+  }
+}
+
+function isLinkedInAuthUrl(url: string): boolean {
+  try {
+    const { hostname, pathname } = new URL(url)
+    if (!hostname.endsWith('linkedin.com')) return false
+    return (
+      pathname.startsWith('/login') ||
+      pathname.startsWith('/checkpoint') ||
+      pathname.startsWith('/authwall') ||
+      pathname.startsWith('/uas/')
+    )
+  } catch {
+    return false
+  }
+}
+
+function isEmbedBrowsePartition(partition: string): boolean {
+  return partition === 'persist:google-browse' || partition === 'persist:linkedin-browse'
+}
+
+function partitionForSession(sess: Session): string | null {
+  for (const part of ['persist:google-browse', 'persist:linkedin-browse'] as const) {
+    if (sess === session.fromPartition(part)) return part
+  }
+  return null
+}
+
+function notifyGoogleSignInNeeded(partition: string): void {
+  if (centralWindow && !centralWindow.isDestroyed()) {
+    centralWindow.webContents.send('embedded:google-signin-needed', partition)
+  }
+}
+
+function notifyEmbedSignInNeeded(partition: string): void {
+  if (centralWindow && !centralWindow.isDestroyed()) {
+    centralWindow.webContents.send('embedded:embed-signin-needed', partition)
+  }
+}
+
+function wireEmbedBrowseAuthNavigation(contents: WebContents, partition: string): void {
+  if (!isEmbedBrowsePartition(partition)) return
+
+  const intercept = (event: Electron.Event, url: string) => {
+    if (partition === 'persist:google-browse') {
+      if (!isNavAppAuthUrl(url)) return
+      event.preventDefault()
+      if (isGoogleDirectSignInUrl(url)) {
+        notifyGoogleSignInNeeded(partition)
+        return
+      }
+      openAuthWindow({ partition, url, title: 'Sign in to Google' })
+      return
+    }
+    if (partition === 'persist:linkedin-browse' && isLinkedInAuthUrl(url)) {
+      event.preventDefault()
+      notifyEmbedSignInNeeded(partition)
+      openAuthWindow({ partition, url, title: 'Sign in to LinkedIn' })
+    }
+  }
+
+  contents.on('will-navigate', intercept)
+  contents.on('will-redirect', intercept)
 }
 
 function openNavAppAuthWindow(partition: string, url: string, title?: string): void {
@@ -666,17 +772,25 @@ function configureGuestWebContents(contents: WebContents): void {
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       return { action: 'deny' as const }
     }
-    return {
-      action: 'allow' as const,
-      overrideBrowserWindowOptions: popupWindowOptions(centralWindow, contents.session)
+    if (isNavAppAuthUrl(url)) {
+      return {
+        action: 'allow' as const,
+        overrideBrowserWindowOptions: popupWindowOptions(centralWindow, contents.session)
+      }
     }
+    if (centralWindow && !centralWindow.isDestroyed()) {
+      centralWindow.webContents.send('embedded:open-url', url)
+    }
+    return { action: 'deny' as const }
   })
 }
 
 function setupEmbeddedBrowsing(): void {
-  for (const part of ['persist:stream-central', 'persist:nav-app-youtube', 'persist:nav-app-cursor']) {
+  for (const part of ['persist:stream-central', 'persist:google-browse', 'persist:linkedin-browse', 'persist:nav-app-youtube', 'persist:nav-app-cursor']) {
     try {
-      configureEmbeddedSession(session.fromPartition(part))
+      const sess = session.fromPartition(part)
+      configureEmbeddedSession(sess)
+      if (part === 'persist:linkedin-browse') configureLinkedInBrowseSession(sess)
     } catch {
       /* partition may not exist yet */
     }
@@ -686,6 +800,8 @@ function setupEmbeddedBrowsing(): void {
     const type = contents.getType()
     if (type === 'webview') {
       configureGuestWebContents(contents)
+      const part = partitionForSession(contents.session)
+      if (part) wireEmbedBrowseAuthNavigation(contents, part)
       return
     }
     if (type === 'window') {
@@ -814,6 +930,20 @@ function createTrayIcon(): NativeImage {
   return nativeImage.createFromBuffer(canvas, { width: size, height: size })
 }
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (centralWindow && !centralWindow.isDestroyed()) {
+      if (centralWindow.isMinimized()) centralWindow.restore()
+      centralWindow.show()
+      centralWindow.focus()
+    } else if (!mobileOnly) {
+      centralWindow = createCentralWindow()
+    }
+  })
+
 app.whenReady().then(() => {
   setupEmbeddedBrowsing()
   mobileWindow = createMobileWindow()
@@ -934,9 +1064,12 @@ app.whenReady().then(() => {
     openAuthWindow(args)
     return { ok: true }
   })
+  ipcMain.handle('embedded:guestPreloadPath', () => GUEST_PRELOAD)
 
   console.log('[stream] central + mobile ready · mobile hidden until ⌘⇧M')
 })
+
+} // gotSingleInstanceLock
 
 app.on('will-quit', () => {
   if (!SIM) void callSession?.end().catch(() => {})

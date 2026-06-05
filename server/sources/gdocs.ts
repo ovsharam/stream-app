@@ -64,6 +64,13 @@ async function docsClient(accountId?: string) {
 }
 
 export async function syncGdocs(io?: SocketServer): Promise<StreamItem[]> {
+  const { googleApiBlockedMessage } = await import('./googleRateLimit')
+  const blocked = googleApiBlockedMessage()
+  if (blocked) {
+    lastGdocsError = blocked
+    return []
+  }
+
   if (!(await isGdocsConnected())) return []
 
   try {

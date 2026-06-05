@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CentralStreamEvent } from '@shared/cluster'
-import { clusterApi, integrationApi } from '../lib/api'
+import { clusterApi } from '../lib/api'
 import { connectStreamSocket } from '../lib/streamSocket'
 import { getUserRole } from '../lib/user-role'
 
-const AUTO_SYNC_MS = 5000
 const POLL_LIVE_MS = 400
 const POLL_RECENT_MS = 800
 const POLL_IDLE_MS = 2500
 const RECENT_WINDOW_MS = 30_000
 const DEBOUNCE_MS = 50
-
-const DEMO_UI =
-  typeof import.meta !== 'undefined' &&
-  (import.meta as { env?: { VITE_DEMO_MODE?: string } }).env?.VITE_DEMO_MODE === '1'
 
 function isLiveEvent(e: CentralStreamEvent): boolean {
   return (
@@ -56,7 +51,6 @@ export function useCentralStream() {
   const [live, setLive] = useState(false)
   const [syncing, setSyncing] = useState(false)
 
-  const lastAutoSyncMs = useRef(0)
   const lastSyncMs = useRef(0)
   const liveRef = useRef(false)
   const inFlightRef = useRef(false)
@@ -77,12 +71,6 @@ export function useCentralStream() {
     }
 
     try {
-      const now = Date.now()
-      if (!DEMO_UI && now - lastAutoSyncMs.current >= AUTO_SYNC_MS) {
-        lastAutoSyncMs.current = now
-        void integrationApi.syncAll().catch(() => undefined)
-      }
-
       const incoming = await clusterApi.stream(getUserRole())
       lastSyncMs.current = Date.now()
 

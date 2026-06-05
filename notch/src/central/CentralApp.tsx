@@ -3,6 +3,8 @@ import type { ClusterSearchHit } from '@shared/cluster'
 import { FeedPost } from './FeedPost'
 import { HomeChatProvider } from './homeChatContext'
 import { WorkView } from './WorkView'
+import { PostCallTaskDeck, PostCallProgress } from './PostCallTaskDeck'
+import { meetingEventByItemId } from './meetingFocus'
 import { ContextRail } from './ContextRail'
 import { IntegrationsPanel } from './IntegrationsPanel'
 import { BuildAgentsView } from './BuildAgentsView'
@@ -27,6 +29,7 @@ import {
   updateAgentStatus
 } from './runningAgentsStore'
 import { ComposeInput } from './ComposeInput'
+import { useComposeContacts } from './useComposeContacts'
 import { parseComposeCommand } from '@shared/compose'
 import { clusterApi, integrationApi, openBrowserLink, inferWorkspaceMeta } from '../lib/api'
 import { tabFromCalendarEvent, tabFromUrl, toWorkspaceTab, type WorkspaceTab } from './workspace'
@@ -69,6 +72,7 @@ export function CentralApp() {
   const [composeBusy, setComposeBusy] = useState(false)
   const [composeToast, setComposeToast] = useState<string | null>(null)
   const [composeError, setComposeError] = useState<string | null>(null)
+  const { mentionTargets: contactMentions } = useComposeContacts()
   const [contextItemId, setContextItemId] = useState<string | null>(null)
   const [themeOpen, setThemeOpen] = useState(false)
   const themeBtnRef = useRef<HTMLButtonElement>(null)
@@ -162,7 +166,7 @@ export function CentralApp() {
     if (!app) return
     if (app.surface === 'workspace') {
       const meta = inferWorkspaceMeta(app.url)
-      openBrowserLink(app.url, { title: app.label, source: meta.source })
+      openBrowserLink(app.url, { title: app.label, source: meta.source, id: `nav-${app.id}` })
       return
     }
     setPage('navapp')
@@ -245,7 +249,6 @@ export function CentralApp() {
   const openMeetingInWork = (itemId: string) => {
     withNavAppLeave(() => {
       setPage('stream')
-      setArea('work')
       setFocusMeetingItemId(itemId)
     })
   }
@@ -457,6 +460,13 @@ export function CentralApp() {
   }, [])
 
   useEffect(() => {
+    return window.notchDesktop?.onOpenUrl?.((url) => {
+      const meta = inferWorkspaceMeta(url)
+      openBrowserLink(url, { title: meta.title, source: meta.source })
+    })
+  }, [])
+
+  useEffect(() => {
     if (page !== 'stream') return
 
     const shadeUpcoming = async () => {
@@ -516,24 +526,43 @@ export function CentralApp() {
     })
   }, [])
 
+  const focusMeetingEvent = useMemo(
+    () => meetingEventByItemId(events, focusMeetingItemId),
+    [events, focusMeetingItemId]
+  )
+
+  useEffect(() => {
+    if (!focusMeetingItemId || focusMeetingEvent) return
+    const onPush = () => refreshStream()
+    window.addEventListener('notch:stream-push', onPush)
+    return () => window.removeEventListener('notch:stream-push', onPush)
+  }, [focusMeetingItemId, focusMeetingEvent])
+
+  const showPostCallRail = Boolean(focusMeetingItemId) && page === 'stream'
   const showContextRail =
     !threadTarget &&
+    !showPostCallRail &&
     page !== 'navapp' &&
-    !(page === 'stream' && area === 'work' && !activeWorkspace) &&
+    !(
+      page === 'stream' &&
+      area === 'work' &&
+      !activeWorkspace &&
+      workspaceTabs.length === 0
+    ) &&
     !(area === 'feed' && feedRailCollapsed)
 
   const showThreadRail = Boolean(threadTarget) && page === 'stream' && area === 'feed'
-  const hasRightRail = showThreadRail || showContextRail
+  const hasRightRail = showThreadRail || showPostCallRail || showContextRail
 
   const homeChatCompactNav =
-    page === 'stream' && area === 'work' && !activeWorkspace && !focusMeetingItemId && homeChatRail
+    page === 'stream' && area === 'work' && !activeWorkspace && homeChatRail
 
   const navAppPlayerMode =
     !activeNavApp ? 'off' : page === 'navapp' && !navAppMini ? 'full' : navAppMini ? 'mini' : 'off'
 
   return (
     <div
-      className={`x-app ${showThreadRail ? 'x-app-thread-open' : ''} ${page === 'navapp' ? 'x-app-nav-app' : page !== 'stream' ? 'x-app-utility' : 'x-app-stream'} ${!hasRightRail ? 'x-app-no-rail' : ''}${homeChatCompactNav ? ' x-app-home-chat' : ''}${navAppMini ? ' x-app-nav-app-mini' : ''}`}
+      className={`x-app ${showThreadRail ? 'x-app-thread-open' : ''} ${showPostCallRail ? 'x-app-post-call-open' : ''} ${page === 'navapp' ? 'x-app-nav-app' : page !== 'stream' ? 'x-app-utility' : 'x-app-stream'} ${!hasRightRail ? 'x-app-no-rail' : ''}${homeChatCompactNav ? ' x-app-home-chat' : ''}${navAppMini ? ' x-app-nav-app-mini' : ''}`}
     >
       {typeof window !== 'undefined' &&
       (window.notchDesktop != null || /Electron/i.test(navigator.userAgent)) ? (
@@ -603,7 +632,7 @@ export function CentralApp() {
       ) : (
         <HomeChatProvider onRailChange={setHomeChatRail}>
           <>
-          <div className={`x-channel ${showThreadRail ? 'x-channel-has-thread' : ''}`}>
+          <div className={`x-channel ${showThreadRail || showPostCallRail ? 'x-channel-has-thread' : ''}`}>
           <div className="x-channel-main">
           {workspaceTabs.length > 0 && (
             <WorkspaceTabBar
@@ -618,19 +647,20 @@ export function CentralApp() {
           <main
             className={`x-main x-col-feed ${threadTarget ? 'x-col-feed-in-thread' : ''} ${area === 'work' ? 'x-main-work x-main-home' : ''} ${activeWorkspace ? 'x-main-workspace' : ''}`}
           >
-            {activeWorkspace ? (
-              <WorkspaceBrowser tabs={workspaceTabs} activeId={activeWorkspace.id} />
-            ) : area === 'work' ? (
-              <WorkView
-                events={events}
-                live={live}
-                syncing={syncing}
-                focusMeetingItemId={focusMeetingItemId}
-                onFocusMeeting={setFocusMeetingItemId}
-                onRefresh={refreshStream}
-                onOpenSearchHit={openSearchHit}
-              />
-            ) : (
+            {workspaceTabs.length > 0 ? (
+              <WorkspaceBrowser tabs={workspaceTabs} activeId={activeWorkspaceId ?? ''} />
+            ) : null}
+            {!activeWorkspace ? (
+              area === 'work' ? (
+                <WorkView
+                  events={events}
+                  live={live}
+                  syncing={syncing}
+                  onFocusMeeting={setFocusMeetingItemId}
+                  onRefresh={refreshStream}
+                  onOpenSearchHit={openSearchHit}
+                />
+              ) : (
               <>
             <header className="x-topbar">
               <div className="x-topbar-tabs" role="tablist" aria-label="Feed filters">
@@ -697,6 +727,7 @@ export function CentralApp() {
                           if (composeError) setComposeError(null)
                         }}
                         onSubmit={() => void submitCompose()}
+                        mentionTargets={contactMentions}
                         placeholder={
                           mondayContext
                             ? '@monday: comment or move to Done · @monday create: new ticket'
@@ -743,7 +774,8 @@ export function CentralApp() {
                     />
                   ))}
               </>
-            )}
+              )
+            ) : null}
 
           </main>
           {activeNavApp && navAppPlayerMode === 'mini' ? (
@@ -770,6 +802,34 @@ export function CentralApp() {
                 contextItemId={contextItemId ?? threadTarget.itemId}
                 onClose={() => setThreadTarget(null)}
               />
+            </aside>
+          ) : showPostCallRail ? (
+            <aside className="x-rail x-col-rail x-rail-thread x-rail-post-call">
+              {focusMeetingEvent ? (
+                <PostCallTaskDeck
+                  event={focusMeetingEvent}
+                  variant="rail"
+                  onDismiss={() => setFocusMeetingItemId(null)}
+                  onRefresh={refreshStream}
+                />
+              ) : (
+                <div className="x-post-call-rail-loading">
+                  <header className="x-post-call-nav x-post-call-nav-rail">
+                    <button
+                      type="button"
+                      className="x-post-call-rail-back"
+                      onClick={() => setFocusMeetingItemId(null)}
+                    >
+                      ← Back
+                    </button>
+                    <div className="x-post-call-nav-main">
+                      <h1 className="x-post-call-nav-title">Processing call</h1>
+                      <p className="x-post-call-nav-sub">Extracting scope and next steps</p>
+                    </div>
+                  </header>
+                  <PostCallProgress syncing={syncing} />
+                </div>
+              )}
             </aside>
           ) : showContextRail ? (
             <aside className="x-rail x-col-rail">

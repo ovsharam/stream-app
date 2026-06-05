@@ -33,10 +33,17 @@ export const PINNABLE_APPS: NavAppCatalogEntry[] = [
     id: 'youtube',
     label: 'YouTube',
     url: 'https://www.youtube.com',
-    miniPlayer: true,
-    surface: 'embed',
-    description: 'Watch and listen in Notch — keeps playing in a mini player when you switch to Feed.',
+    surface: 'workspace',
+    description: 'YouTube in an in-app tab.',
     brandClass: 'x-int-card-youtube'
+  },
+  {
+    id: 'linkedin',
+    label: 'LinkedIn',
+    url: 'https://www.linkedin.com/feed/',
+    surface: 'workspace',
+    description: 'LinkedIn feed, messages, and notifications in an in-app tab.',
+    brandClass: 'x-int-card-linkedin'
   },
   {
     id: 'gmail',
@@ -132,11 +139,13 @@ function syncCatalogNavAppUrls(apps: NavApp[]): NavApp[] {
   const next = withoutCursor.map((app) => {
     const entry = PINNABLE_APPS.find((c) => c.id === app.id)
     if (!entry) return app
+    const entryMiniPlayer = entry.miniPlayer ?? false
+    const appMiniPlayer = app.miniPlayer ?? false
     if (
       app.url === entry.url &&
       app.label === entry.label &&
       app.surface === entry.surface &&
-      app.miniPlayer === (entry.miniPlayer ?? app.miniPlayer)
+      appMiniPlayer === entryMiniPlayer
     ) {
       return app
     }
@@ -145,7 +154,7 @@ function syncCatalogNavAppUrls(apps: NavApp[]): NavApp[] {
       ...app,
       url: entry.url,
       label: entry.label,
-      miniPlayer: entry.miniPlayer ?? app.miniPlayer,
+      miniPlayer: entryMiniPlayer,
       surface: entry.surface
     }
   })

@@ -8,13 +8,11 @@ import { initStore } from './store'
 import { createApp } from './createApp'
 import { streamItemToApi } from '../shared/serialize'
 import { seedDemoData } from './demoSeed'
-import { syncGmail } from './sources/gmail'
 import { syncSlack, startSlackSocketMode } from './sources/slack'
 import { syncX, startXPolling } from './sources/x'
 import { syncMonday } from './sources/monday'
 import { syncDiscord } from './sources/discord'
 import { syncGithub } from './sources/github'
-import { syncGdocs } from './sources/gdocs'
 import { syncGong } from './sources/gong'
 import { syncCalcom } from './sources/calcom'
 import { syncClaude } from './sources/claude'
@@ -68,13 +66,11 @@ async function main(): Promise<void> {
 
   async function backgroundSync(): Promise<void> {
     await Promise.allSettled([
-      syncGmail(io),
       syncSlack(io),
       syncX(io),
       syncMonday(io),
       syncDiscord(io),
       syncGithub(io),
-      syncGdocs(io),
       syncGong(io),
       syncClaude(io),
       syncPerplexity(io),
@@ -90,7 +86,7 @@ async function main(): Promise<void> {
   httpServer.listen(PORT, () => {
     console.log(`[server] STREAM API ready on :${PORT}`)
     void backgroundSync()
-    setInterval(() => void backgroundSync(), 8000)
+    setInterval(() => void backgroundSync(), 30 * 60_000)
     void startSlackSocketMode(io).catch((e) =>
       console.warn('[slack] socket mode skipped:', e.message)
     )

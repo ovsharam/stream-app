@@ -32,36 +32,108 @@ function writeStore(sid: string, accounts: GmailAccountRecord[]): void {
   session.setToken(sid, STORE_KEY, { accounts })
 }
 
+function emailFromIdToken(idToken: unknown): string | null {
+  if (typeof idToken !== 'string' || !idToken.includes('.')) return null
+  try {
+    const payload = idToken.split('.')[1]
+    const json = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+      email?: string
+    }
+    const email = json.email?.trim()
+    return email || null
+  } catch {
+    return null
+  }
+}
+
+export function formatGoogleRateLimitError(err: unknown): string | null {
+  const msg = err instanceof Error ? err.message : String(err)
+  if (!/user-rate limit|rate limit|quota exceeded|too many requests/i.test(msg)) return null
+  const retry = msg.match(/retry after ([0-9TZ:.+-]+)/i)?.[1]
+  if (retry) {
+    const when = new Date(retry)
+    const label = Number.isNaN(when.getTime())
+      ? retry
+      : when.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+    return `Google API rate limit — wait until about ${label}, then try again. Your account may already be connected; return to Notch and check Apps → Gmail before reconnecting.`
+  }
+  return 'Google API rate limit — wait a few minutes before reconnecting. Your account may already be connected; check Apps → Gmail in Notch first.'
+}
+
 export async function resolveEmailForTokens(
   tokens: Record<string, unknown>
 ): Promise<string> {
+  const fromJwt = emailFromIdToken(tokens.id_token)
+  if (fromJwt) return fromJwt
+
+  const { markGoogleRateLimited, googleApiBlockedMessage } = await import('./googleRateLimit')
+  const blocked = googleApiBlockedMessage()
+  if (blocked) throw new Error(blocked)
+
   const oauth2 = getOAuth2Client()
   oauth2.setCredentials(tokens)
   const gmail = google.gmail({ version: 'v1', auth: oauth2 })
-  const profile = await gmail.users.getProfile({ userId: 'me' })
-  const email = profile.data.emailAddress
-  if (!email) throw new Error('Could not resolve Gmail account email')
-  return email
+  try {
+    const profile = await gmail.users.getProfile({ userId: 'me' })
+    const email = profile.data.emailAddress
+    if (!email) throw new Error('Could not resolve Gmail account email')
+    return email
+  } catch (err) {
+    markGoogleRateLimited(err)
+    const friendly = formatGoogleRateLimitError(err)
+    if (friendly) throw new Error(friendly)
+    throw err
+  }
+}
+
+function isInvalidGrantError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /invalid_grant|token has been expired|token has been revoked/i.test(msg)
+}
+
+export function purgeLegacyGmailToken(sessionId?: string): void {
+  const sid = resolveSessionId(sessionId)
+  session.setToken(sid, 'gmail', null)
+  writeStore(sid, [])
 }
 
 export async function migrateLegacyGmailToken(sid: string): Promise<GmailAccountRecord[]> {
   const existing = readStore(sid)
   if (existing.length > 0) return existing
 
-  const legacy = session.getToken(sid, 'gmail')
+  const legacy = session.getToken(sid, 'gmail') as Record<string, unknown> | null
   if (!legacy) return []
 
-  const email = await resolveEmailForTokens(legacy)
-  const account: GmailAccountRecord = {
-    id: accountIdForEmail(email),
-    email,
-    tokens: legacy,
-    feedEnabled: true,
-    calendarEnabled: true,
-    addedAt: Date.now()
+  const email =
+    emailFromIdToken(legacy.id_token) ??
+    (typeof legacy.email === 'string' ? legacy.email.trim() : null)
+
+  if (!email) {
+    console.warn('[gmail] legacy token missing email — purge and reconnect with current scopes')
+    purgeLegacyGmailToken(sid)
+    return []
   }
-  writeStore(sid, [account])
-  return [account]
+
+  try {
+    const account: GmailAccountRecord = {
+      id: accountIdForEmail(email),
+      email,
+      tokens: legacy,
+      feedEnabled: true,
+      calendarEnabled: true,
+      addedAt: Date.now()
+    }
+    writeStore(sid, [account])
+    return [account]
+  } catch (err) {
+    if (isInvalidGrantError(err)) {
+      purgeLegacyGmailToken(sid)
+      const { setConnection } = await import('../store')
+      setConnection('gmail', false)
+    }
+    console.warn('[gmail] legacy token migration skipped:', err)
+    return []
+  }
 }
 
 export async function listGmailAccounts(sessionId?: string): Promise<GmailAccountRecord[]> {
@@ -71,14 +143,22 @@ export async function listGmailAccounts(sessionId?: string): Promise<GmailAccoun
   return migrateLegacyGmailToken(sid)
 }
 
+/** Save Gmail OAuth tokens without calling Google APIs (safe during rate limits). */
 export async function upsertGmailAccount(
   tokens: Record<string, unknown>,
   sessionId?: string
 ): Promise<GmailAccountRecord> {
   const sid = resolveSessionId(sessionId)
-  const email = await resolveEmailForTokens(tokens)
+  const email =
+    emailFromIdToken(tokens.id_token) ??
+    (typeof tokens.email === 'string' ? tokens.email.trim() : '')
+  if (!email) {
+    throw new Error(
+      'Gmail authorized but email was not returned — wait for the Google rate limit to clear, then connect again.'
+    )
+  }
   const id = accountIdForEmail(email)
-  const accounts = await listGmailAccounts(sid)
+  const accounts = readStore(sid)
   const existing = accounts.find((a) => a.id === id)
 
   const next: GmailAccountRecord = {
@@ -94,6 +174,8 @@ export async function upsertGmailAccount(
     (a, b) => a.addedAt - b.addedAt
   )
   writeStore(sid, merged)
+  const { setConnection } = await import('../store')
+  setConnection('gmail', true)
   return next
 }
 
@@ -168,7 +250,10 @@ export async function feedEnabledAccountsAnySession(): Promise<GmailAccountRecor
     for (const row of legacy) {
       try {
         const tokens = JSON.parse(row.token_json) as Record<string, unknown>
-        const email = await resolveEmailForTokens(tokens)
+        const email =
+          emailFromIdToken(tokens.id_token) ??
+          (typeof tokens.email === 'string' ? tokens.email : null)
+        if (!email) continue
         return [
           {
             id: accountIdForEmail(email),

@@ -1,13 +1,29 @@
 import { google } from 'googleapis'
 import type { CalendarRailEvent } from '../../shared/cluster'
-import { authClientForTokens, isGoogleConnected } from './googleOAuth'
+import { authClientForTokens, isGoogleConnected, GOOGLE_REQUEST_OPTS } from './googleOAuth'
 import { calendarEnabledAccounts, type GmailAccountRecord } from './gmailAccounts'
 import { getNested, setNested } from '../store'
 import type { GoogleCalendarOption } from '../../shared/cluster'
+import {
+  googleApiBlockedMessage,
+  isGoogleApiBlocked,
+  markGoogleRateLimited,
+  effectiveGoogleSyncError,
+  assertGoogleApiAllowed
+} from './googleRateLimit'
+
+/** Server-side cache TTL — clients may poll often; avoid hitting Google every request. */
+export const CALENDAR_CACHE_MS = 5 * 60_000
 
 let cachedEvents: CalendarRailEvent[] = []
 let cachedAt = 0
+let cachedCalendarOptions: GoogleCalendarOption[] = []
+let cachedCalendarOptionsAt = 0
 let lastCalendarError: string | null = null
+
+export function clearLastCalendarError(): void {
+  lastCalendarError = null
+}
 
 const COMPOSITE_SEP = '::'
 
@@ -225,8 +241,20 @@ async function resolveCalendarIdsForAccount(
   return listGoogleSelectedCalendarIds(calendar)
 }
 
-export async function listGoogleCalendars(): Promise<GoogleCalendarOption[]> {
-  if (!(await isGoogleConnected())) return []
+export async function listGoogleCalendars(refresh = false): Promise<GoogleCalendarOption[]> {
+  const blocked = googleApiBlockedMessage()
+  if (blocked) {
+    lastCalendarError = blocked
+    return cachedCalendarOptions
+  }
+
+  if (!refresh && cachedCalendarOptionsAt > 0) {
+    return cachedCalendarOptions
+  }
+
+  if (!(await isGoogleConnected())) return cachedCalendarOptions
+
+  assertGoogleApiAllowed('calendar.listGoogleCalendars')
 
   const accounts = await calendarEnabledAccounts()
   const enabledIds = getNested<string[]>(['preferences', 'calendarIds'])
@@ -234,35 +262,48 @@ export async function listGoogleCalendars(): Promise<GoogleCalendarOption[]> {
   const options: GoogleCalendarOption[] = []
 
   for (const account of accounts) {
-    const auth = authClientForTokens(account.tokens)
-    const calendar = google.calendar({ version: 'v3', auth })
-    const res = await calendar.calendarList.list({ minAccessRole: 'reader' })
+    try {
+      const auth = authClientForTokens(account.tokens)
+      const calendar = google.calendar({ version: 'v3', auth })
+      const res = await calendar.calendarList.list({ minAccessRole: 'reader' }, GOOGLE_REQUEST_OPTS)
 
-    for (const item of res.data.items ?? []) {
-      if (!item.id || !item.summary) continue
-      const composite = compositeCalendarId(account.id, item.id)
-      options.push({
-        id: composite,
-        name: item.summaryOverride || item.summary || item.id,
-        primary: item.primary === true,
-        enabled: calendarEnabled(
-          account.id,
-          item.id,
-          item.primary === true,
-          item.selected,
-          enabledSet
-        ),
-        accountId: account.id,
-        accountEmail: account.email
-      })
+      for (const item of res.data.items ?? []) {
+        if (!item.id || !item.summary) continue
+        const composite = compositeCalendarId(account.id, item.id)
+        options.push({
+          id: composite,
+          name: item.summaryOverride || item.summary || item.id,
+          primary: item.primary === true,
+          enabled: calendarEnabled(
+            account.id,
+            item.id,
+            item.primary === true,
+            item.selected,
+            enabledSet
+          ),
+          accountId: account.id,
+          accountEmail: account.email
+        })
+      }
+    } catch (err) {
+      markGoogleRateLimited(err, 'calendar.events')
+      const message = err instanceof Error ? err.message : String(err)
+      lastCalendarError = message
+      console.error('[calendar] list failed for', account.email, err)
     }
   }
 
-  return options.sort((a, b) => {
+  cachedCalendarOptions = options.sort((a, b) => {
     if (a.accountEmail !== b.accountEmail) return a.accountEmail!.localeCompare(b.accountEmail!)
     if (a.primary !== b.primary) return a.primary ? -1 : 1
     return a.name.localeCompare(b.name)
   })
+  cachedCalendarOptionsAt = Date.now()
+  return cachedCalendarOptions
+}
+
+export function getCachedGoogleCalendars(): GoogleCalendarOption[] {
+  return cachedCalendarOptions
 }
 
 export function setEnabledCalendarIds(calendarIds: string[]): void {
@@ -270,8 +311,13 @@ export function setEnabledCalendarIds(calendarIds: string[]): void {
 }
 
 export async function fetchCalendarEvents(): Promise<CalendarRailEvent[]> {
+  const blocked = googleApiBlockedMessage()
+  if (blocked) throw new Error(blocked)
+
   const accounts = await calendarEnabledAccounts()
   if (accounts.length === 0) return []
+
+  assertGoogleApiAllowed('calendar.fetchEvents')
 
   const now = new Date()
   const timeMin = startOfLocalDay(now).toISOString()
@@ -279,24 +325,34 @@ export async function fetchCalendarEvents(): Promise<CalendarRailEvent[]> {
   const byId = new Map<string, CalendarRailEvent>()
 
   for (const account of accounts) {
-    const auth = authClientForTokens(account.tokens)
-    const calendar = google.calendar({ version: 'v3', auth })
-    const calendarIds = await resolveCalendarIdsForAccount(account, calendar)
+    try {
+      const auth = authClientForTokens(account.tokens)
+      const calendar = google.calendar({ version: 'v3', auth })
+      const calendarIds = await resolveCalendarIdsForAccount(account, calendar)
 
-    for (const calendarId of calendarIds) {
-      const res = await calendar.events.list({
-        calendarId,
-        timeMin,
-        timeMax,
-        maxResults: 40,
-        singleEvents: true,
-        orderBy: 'startTime'
-      })
+      for (const calendarId of calendarIds) {
+        const res = await calendar.events.list(
+          {
+            calendarId,
+            timeMin,
+            timeMax,
+            maxResults: 40,
+            singleEvents: true,
+            orderBy: 'startTime'
+          },
+          GOOGLE_REQUEST_OPTS
+        )
 
-      for (const event of res.data.items ?? []) {
-        const rail = toRailEvent(event, now, account.id)
-        if (rail) byId.set(rail.id, rail)
+        for (const event of res.data.items ?? []) {
+          const rail = toRailEvent(event, now, account.id)
+          if (rail) byId.set(rail.id, rail)
+        }
       }
+    } catch (err) {
+      markGoogleRateLimited(err, 'calendar.events')
+      const message = err instanceof Error ? err.message : String(err)
+      lastCalendarError = message
+      console.error('[calendar] events failed for', account.email, err)
     }
   }
 
@@ -305,12 +361,23 @@ export async function fetchCalendarEvents(): Promise<CalendarRailEvent[]> {
   return rail
 }
 
-export async function syncCalendar(): Promise<CalendarRailEvent[]> {
+export async function syncCalendar(refresh = false): Promise<CalendarRailEvent[]> {
+  const blocked = googleApiBlockedMessage()
+  if (blocked) {
+    lastCalendarError = blocked
+    return cachedEvents
+  }
+
+  if (!refresh) {
+    return cachedEvents
+  }
+
   try {
     cachedEvents = await fetchCalendarEvents()
     cachedAt = Date.now()
     return cachedEvents
   } catch (err) {
+    markGoogleRateLimited(err, 'calendar.sync')
     const message = err instanceof Error ? err.message : String(err)
     lastCalendarError = message
     console.error('[calendar] sync failed:', err)
@@ -327,7 +394,7 @@ export function getCalendarCacheAgeMs(): number {
 }
 
 export function getLastCalendarError(): string | null {
-  return lastCalendarError
+  return effectiveGoogleSyncError(lastCalendarError)
 }
 
 export function calendarNeedsReconnect(error: string | null): boolean {

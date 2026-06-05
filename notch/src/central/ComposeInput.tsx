@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  formatComposeHighlight,
+  filterComposeMentionTargets,
   getActiveComposeContext,
+  getComposeMentionDraft,
+  listComposeMentionTargets,
+  type ComposeMentionTarget,
   type ComposeSuggestion
 } from '@shared/compose'
 
@@ -12,7 +15,13 @@ type Props = {
   placeholder?: string
   rows?: number
   className?: string
+  /** Extra @mention targets (MCP agents, contacts, etc.) */
+  mentionTargets?: ComposeMentionTarget[]
 }
+
+type MenuItem =
+  | { kind: 'mention'; target: ComposeMentionTarget }
+  | { kind: 'command'; suggestion: ComposeSuggestion; provider: string }
 
 export function ComposeInput({
   value,
@@ -20,26 +29,57 @@ export function ComposeInput({
   onSubmit,
   placeholder,
   rows = 3,
-  className = ''
+  className = '',
+  mentionTargets = []
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const highlightRef = useRef<HTMLDivElement>(null)
   const [cursor, setCursor] = useState(0)
+  const [activeIndex, setActiveIndex] = useState(0)
 
-  const highlightHtml = useMemo(() => formatComposeHighlight(value), [value])
+  const allMentionTargets = useMemo(
+    () => listComposeMentionTargets(mentionTargets),
+    [mentionTargets]
+  )
 
-  const context = useMemo(
+  const mentionDraft = useMemo(
+    () => getComposeMentionDraft(value, cursor),
+    [value, cursor]
+  )
+
+  const commandContext = useMemo(
     () => getActiveComposeContext(value, cursor),
     [value, cursor]
   )
 
-  const syncScroll = useCallback(() => {
-    const ta = textareaRef.current
-    const hl = highlightRef.current
-    if (!ta || !hl) return
-    hl.scrollTop = ta.scrollTop
-    hl.scrollLeft = ta.scrollLeft
-  }, [])
+  const menuItems = useMemo((): MenuItem[] => {
+    if (mentionDraft) {
+      return filterComposeMentionTargets(mentionDraft.query, allMentionTargets).map(
+        (target) => ({ kind: 'mention', target })
+      )
+    }
+    if (commandContext?.suggestions.length) {
+      return commandContext.suggestions.map((suggestion) => ({
+        kind: 'command',
+        suggestion,
+        provider: commandContext.provider
+      }))
+    }
+    return []
+  }, [mentionDraft, allMentionTargets, commandContext])
+
+  const mentionEmptyHint =
+    mentionDraft &&
+    mentionDraft.query.length > 0 &&
+    menuItems.length === 0 &&
+    !allMentionTargets.some((t) => t.kind === 'person')
+      ? 'No contacts loaded — Apps → Gmail → Sync contacts (reconnect Gmail first if 0).'
+      : mentionDraft && mentionDraft.query.length > 0 && menuItems.length === 0
+        ? `No match for "@${mentionDraft.query}" — sync contacts in Apps → Gmail.`
+        : null
+
+  useEffect(() => {
+    setActiveIndex(0)
+  }, [menuItems.length, mentionDraft?.query, commandContext?.rest])
 
   const syncCursor = useCallback(() => {
     const ta = textareaRef.current
@@ -47,20 +87,10 @@ export function ComposeInput({
     setCursor(ta.selectionStart ?? value.length)
   }, [value.length])
 
-  useEffect(() => {
-    syncScroll()
-  }, [value, syncScroll])
-
-  const applySuggestion = (suggestion: ComposeSuggestion) => {
-    const ctx = getActiveComposeContext(value, cursor)
-    if (!ctx) return
-    const prefix = value.slice(0, ctx.tagStart)
-    const afterAt = `@${ctx.providerToken}`
-    const suffix = value.slice(cursor)
-    const spacer = suggestion.insert && !suggestion.insert.startsWith(' ') ? ' ' : ''
-    const next = `${prefix}${afterAt}${spacer}${suggestion.insert}${suffix}`
+  const replaceRange = (start: number, end: number, insert: string) => {
+    const next = `${value.slice(0, start)}${insert}${value.slice(end)}`
     onChange(next)
-    const newCursor = `${prefix}${afterAt}${spacer}${suggestion.insert}`.length
+    const newCursor = start + insert.length
     requestAnimationFrame(() => {
       const ta = textareaRef.current
       if (!ta) return
@@ -70,20 +100,34 @@ export function ComposeInput({
     })
   }
 
+  const applyMention = (target: ComposeMentionTarget) => {
+    if (!mentionDraft) return
+    replaceRange(mentionDraft.start, mentionDraft.end, `@${target.token} `)
+  }
+
+  const applyCommand = (suggestion: ComposeSuggestion) => {
+    const ctx = getActiveComposeContext(value, cursor)
+    if (!ctx) return
+    const afterAt = `@${ctx.providerToken}`
+    const spacer = suggestion.insert && !suggestion.insert.startsWith(' ') ? ' ' : ''
+    replaceRange(ctx.tagStart, cursor, `${afterAt}${spacer}${suggestion.insert}`)
+  }
+
+  const applyActiveItem = () => {
+    const item = menuItems[activeIndex]
+    if (!item) return
+    if (item.kind === 'mention') applyMention(item.target)
+    else applyCommand(item.suggestion)
+  }
+
   return (
     <div className={`x-compose-input-shell ${className}`.trim()}>
       <div className="x-compose-input-wrap">
-        <div
-          ref={highlightRef}
-          className="x-compose-input-highlight"
-          aria-hidden
-          dangerouslySetInnerHTML={{ __html: highlightHtml || '<br/>' }}
-        />
         <textarea
           ref={textareaRef}
           value={value}
           rows={rows}
-          className="x-compose-input x-compose-input-overlay"
+          className="x-compose-input"
           placeholder={placeholder}
           spellCheck
           onChange={(e) => {
@@ -93,39 +137,102 @@ export function ComposeInput({
           onSelect={syncCursor}
           onKeyUp={syncCursor}
           onClick={syncCursor}
-          onScroll={syncScroll}
           onKeyDown={(e) => {
+            if (menuItems.length > 0) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault()
+                setActiveIndex((i) => (i + 1) % menuItems.length)
+                return
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault()
+                setActiveIndex((i) => (i - 1 + menuItems.length) % menuItems.length)
+                return
+              }
+              if (e.key === 'Tab' || (e.key === 'Enter' && !e.metaKey && !e.ctrlKey)) {
+                e.preventDefault()
+                applyActiveItem()
+                return
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                if (mentionDraft) {
+                  replaceRange(mentionDraft.start, mentionDraft.end, '')
+                }
+                return
+              }
+            }
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
               e.preventDefault()
               onSubmit?.()
             }
-            if (e.key === 'Tab' && context?.suggestions[0]) {
-              e.preventDefault()
-              applySuggestion(context.suggestions[0])
-            }
           }}
         />
+        {menuItems.length > 0 ? (
+          <div
+            className="x-compose-menu"
+            role="listbox"
+            aria-label={mentionDraft ? 'Mention suggestions' : 'Command suggestions'}
+          >
+            {menuItems.map((item, index) => {
+              if (item.kind === 'mention') {
+                return (
+                  <button
+                    key={`m-${item.target.kind}-${item.target.email ?? item.target.token}`}
+                    type="button"
+                    role="option"
+                    aria-selected={index === activeIndex}
+                    className={`x-compose-menu-item${index === activeIndex ? ' x-compose-menu-item-active' : ''}`}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      applyMention(item.target)
+                    }}
+                    onMouseEnter={() => setActiveIndex(index)}
+                  >
+                    <span className={`x-compose-menu-kind x-compose-menu-kind-${item.target.kind}`}>
+                      {item.target.kind}
+                    </span>
+                    <span className="x-compose-menu-main">
+                      <span className="x-compose-menu-label">@{item.target.token}</span>
+                      <span className="x-compose-menu-name">{item.target.label}</span>
+                    </span>
+                    {item.target.hint ? (
+                      <span className="x-compose-menu-hint">{item.target.hint}</span>
+                    ) : null}
+                  </button>
+                )
+              }
+              return (
+                <button
+                  key={`c-${item.provider}-${item.suggestion.label}`}
+                  type="button"
+                  role="option"
+                  aria-selected={index === activeIndex}
+                  className={`x-compose-menu-item${index === activeIndex ? ' x-compose-menu-item-active' : ''}`}
+                  title={item.suggestion.hint}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    applyCommand(item.suggestion)
+                  }}
+                  onMouseEnter={() => setActiveIndex(index)}
+                >
+                  <span className="x-compose-menu-kind x-compose-menu-kind-cmd">cmd</span>
+                  <span className="x-compose-menu-main">
+                    <span className="x-compose-menu-label">{item.suggestion.label}</span>
+                  </span>
+                  {item.suggestion.hint ? (
+                    <span className="x-compose-menu-hint">{item.suggestion.hint}</span>
+                  ) : null}
+                </button>
+              )
+            })}
+          </div>
+        ) : mentionEmptyHint ? (
+          <div className="x-compose-menu x-compose-menu-hint" role="status">
+            {mentionEmptyHint}
+          </div>
+        ) : null}
       </div>
-      {context && context.suggestions.length > 0 ? (
-        <div className="x-compose-suggestions" role="listbox" aria-label={`${context.provider} commands`}>
-          {context.suggestions.map((s) => (
-            <button
-              key={`${context.provider}-${s.label}`}
-              type="button"
-              role="option"
-              className="x-compose-suggestion"
-              title={s.hint}
-              onMouseDown={(e) => {
-                e.preventDefault()
-                applySuggestion(s)
-              }}
-            >
-              <span className="x-compose-suggestion-label">{s.label}</span>
-              {s.hint ? <span className="x-compose-suggestion-hint">{s.hint}</span> : null}
-            </button>
-          ))}
-        </div>
-      ) : null}
     </div>
   )
 }

@@ -108,7 +108,7 @@ Demo-only hotkeys (`⌘⇧D` / `⌘⇧E`) apply only in `dev:notch:demo`.
 - **No calendar** — connect Gmail in Apps; enable calendar on an account.
 - **No client after call** — ensure `ANTHROPIC_API_KEY` is set; check API logs; confirm `NOTCH_PROTOTYPE=1`.
 - **Monday tasks fail** — token needs `boards:write` and `updates:write` scopes.
-- **Whisper/audio** — see `notch/scripts/setup-whisper.sh` for local transcription setup.
+- **Whisper/audio** — run `bash notch/scripts/setup-whisper.sh` (or tray → Setup meeting transcription). Re-run if live transcription fails with `libwhisper.1.dylib` / `@rpath` errors after a macOS reboot or `/tmp` cleanup.
 
 ## Scripts reference
 

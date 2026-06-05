@@ -4,6 +4,7 @@ import { normalizeCalcomBooking } from '../normalizer'
 import { upsertItem, itemExists } from '../db'
 import { getToken, setToken, setConnection } from '../store'
 import type { StreamItem } from '../../shared/types'
+import { expandMentionsWithContacts } from './contactsStore'
 
 const CALCOM_AUTH_URL = 'https://app.cal.com/auth/oauth2/authorize'
 const CALCOM_TOKEN_URL = 'https://api.cal.com/v2/auth/oauth2/token'
@@ -139,6 +140,13 @@ export async function handleCalcomCallback(code: string, state: string): Promise
     }
   } catch {
     /* profile optional */
+  }
+
+  try {
+    const types = await fetchCalcomEventTypes()
+    if (types[0]) cacheDefaultEventType(types[0])
+  } catch {
+    /* event types optional at connect */
   }
 }
 
@@ -282,6 +290,13 @@ export async function syncCalcom(io?: SocketServer): Promise<StreamItem[]> {
   if (!getToken('calcom')) return []
 
   try {
+    const types = await fetchCalcomEventTypes()
+    if (types[0]) cacheDefaultEventType(types[0])
+  } catch {
+    /* continue sync even if event type discovery fails */
+  }
+
+  try {
     const items = await fetchCalcomBookings(24)
     const newItems = items.filter((i) => !itemExists(i.id))
     for (const item of items) upsertItem(item)
@@ -350,6 +365,13 @@ export async function connectCalcomWithApiKey(
   } catch {
     /* optional */
   }
+
+  try {
+    const types = await fetchCalcomEventTypes()
+    if (types[0]) cacheDefaultEventType(types[0])
+  } catch {
+    /* optional */
+  }
 }
 
 export function calcomAccountLabel(): string | undefined {
@@ -366,6 +388,8 @@ export type CalcomBookInput = {
   start?: string
   notes?: string
   timeZone?: string
+  /** Additional guest emails beyond the primary attendee */
+  guests?: string[]
 }
 
 export type CalcomBookResult = {
@@ -382,7 +406,9 @@ function calcomUsername(): string {
 }
 
 function defaultEventSlug(): string {
-  return String(process.env.CALCOM_DEFAULT_EVENT_TYPE_SLUG ?? '30min').trim() || '30min'
+  const fromToken = String(getToken('calcom')?.defaultEventSlug ?? '').trim()
+  if (fromToken) return fromToken
+  return String(process.env.CALCOM_DEFAULT_EVENT_TYPE_SLUG ?? '').trim()
 }
 
 function defaultTimeZone(): string {
@@ -428,6 +454,116 @@ async function calcomApiPost<T>(path: string, body: Record<string, unknown>): Pr
 
 type CalEventType = { id: number; slug?: string; title?: string }
 
+function isCalEventType(row: unknown): row is CalEventType {
+  return !!row && typeof row === 'object' && Number((row as CalEventType).id) > 0
+}
+
+function eventTypeRows(payload: unknown): CalEventType[] {
+  const data = unwrapData<unknown>(payload)
+  const out: CalEventType[] = []
+
+  const push = (rows: unknown) => {
+    if (!Array.isArray(rows)) return
+    for (const row of rows) {
+      if (isCalEventType(row)) out.push(row)
+    }
+  }
+
+  push(data)
+  if (out.length > 0) return out
+
+  if (data && typeof data === 'object') {
+    push((data as { eventTypes?: unknown[] }).eventTypes)
+    const groups = (data as { eventTypeGroups?: unknown[] }).eventTypeGroups
+    if (Array.isArray(groups)) {
+      for (const group of groups) {
+        push((group as { eventTypes?: unknown[] }).eventTypes)
+      }
+    }
+  }
+
+  if (out.length > 0) return out
+  if (Array.isArray(payload)) return payload.filter(isCalEventType)
+  return out
+}
+
+async function calcomApiGet<T>(
+  path: string,
+  query?: Record<string, string>,
+  apiVersion = CALCOM_API_VERSION
+): Promise<T> {
+  const { token, oauth } = await getCalcomBearer()
+  const url = new URL(`${CALCOM_API}${path}`)
+  if (query) {
+    for (const [key, value] of Object.entries(query)) {
+      if (value) url.searchParams.set(key, value)
+    }
+  }
+
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/json',
+    'cal-api-version': apiVersion
+  }
+
+  let res = await fetch(url, { headers })
+  if (res.status === 401 && oauth) {
+    const refreshed = await refreshCalcomAccessToken()
+    res = await fetch(url, { headers: { ...headers, Authorization: `Bearer ${refreshed}` } })
+  }
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(err || `Cal.com API ${res.status}`)
+  }
+  return (await res.json()) as T
+}
+
+function cacheDefaultEventType(event: CalEventType): void {
+  if (!event.id) return
+  const current = getToken('calcom') ?? {}
+  setToken('calcom', {
+    ...current,
+    eventTypeId: Number(current.eventTypeId) > 0 ? current.eventTypeId : event.id,
+    defaultEventSlug: String(current.defaultEventSlug ?? event.slug ?? '').trim() || event.slug
+  })
+}
+
+export async function fetchCalcomEventTypes(opts?: {
+  username?: string
+  slug?: string
+}): Promise<CalEventType[]> {
+  const username = (opts?.username ?? calcomUsername()).trim()
+  const slug = opts?.slug?.trim()
+  const attempts: Array<{ query?: Record<string, string>; version: string }> = [
+    { version: CALCOM_API_VERSION },
+    { version: '2024-06-14' }
+  ]
+
+  if (username) {
+    attempts.unshift({ query: slug ? { username, eventSlug: slug } : { username }, version: CALCOM_API_VERSION })
+    attempts.push({ query: { username }, version: '2024-06-14' })
+  }
+
+  const seen = new Set<number>()
+  const merged: CalEventType[] = []
+
+  for (const attempt of attempts) {
+    try {
+      const payload = await calcomApiGet<unknown>('/event-types', attempt.query, attempt.version)
+      for (const row of eventTypeRows(payload)) {
+        if (!row.id || seen.has(row.id)) continue
+        seen.add(row.id)
+        merged.push(row)
+      }
+    } catch {
+      /* try next strategy */
+    }
+  }
+
+  return merged
+}
+
 function defaultEventTypeId(): number | undefined {
   const fromToken = Number(getToken('calcom')?.eventTypeId)
   if (fromToken > 0) return fromToken
@@ -437,37 +573,40 @@ function defaultEventTypeId(): number | undefined {
 
 async function resolveEventType(slug?: string): Promise<CalEventType> {
   const configuredId = defaultEventTypeId()
+  const preferredSlug = (slug ?? defaultEventSlug()).trim()
+  const list = await fetchCalcomEventTypes(preferredSlug ? { slug: preferredSlug } : undefined)
+
+  if (list.length > 0) {
+    const hit =
+      (preferredSlug
+        ? list.find((e) => e.slug === preferredSlug) ??
+          list.find((e) => String(e.slug ?? '').includes(preferredSlug))
+        : undefined) ?? list[0]
+    if (hit?.id) {
+      cacheDefaultEventType(hit)
+      return hit
+    }
+  }
+
   if (configuredId) {
-    return { id: configuredId, slug: slug ?? defaultEventSlug() }
+    const fromList = list.find((e) => e.id === configuredId)
+    return { id: configuredId, slug: fromList?.slug ?? (preferredSlug || undefined) }
   }
 
-  const needle = (slug ?? defaultEventSlug()).trim()
+  if (list.length > 0) {
+    cacheDefaultEventType(list[0])
+    return list[0]
+  }
+
   const username = calcomUsername()
-
-  let list: CalEventType[] = []
-  try {
-    const payload = username
-      ? await calcomApi<unknown>('/event-types', { username })
-      : await calcomApi<unknown>('/event-types')
-    const rows = unwrapData<CalEventType[]>(payload) ?? []
-    list = Array.isArray(rows) ? rows : []
-  } catch {
-    list = []
-  }
-
-  const hit =
-    list.find((e) => e.slug === needle) ??
-    list.find((e) => String(e.slug ?? '').includes(needle)) ??
-    list[0]
-
-  if (hit?.id) return hit
-
   if (!username) {
     throw new Error(
-      'Cal.com event type not found — set CALCOM_EVENT_TYPE_ID or CALCOM_USERNAME in .env.local'
+      'Cal.com event type not found — reconnect in Apps → Cal.com or set CALCOM_EVENT_TYPE_ID in Advanced settings'
     )
   }
-  throw new Error(`Cal.com event type not found for slug "${needle}"`)
+  throw new Error(
+    `Cal.com event type not found${preferredSlug ? ` for "${preferredSlug}"` : ''} — add your event type ID under Apps → Cal.com → Advanced`
+  )
 }
 
 function parseIsoStart(value?: string): string | null {
@@ -513,22 +652,226 @@ async function pickNextSlot(eventTypeId: number, timeZone: string): Promise<stri
   return new Date(`${day}T${first}Z`).toISOString()
 }
 
+const MONTH_INDEX: Record<string, number> = {
+  january: 0,
+  jan: 0,
+  february: 1,
+  feb: 1,
+  march: 2,
+  mar: 2,
+  april: 3,
+  apr: 3,
+  may: 4,
+  june: 5,
+  jun: 5,
+  july: 6,
+  jul: 6,
+  august: 7,
+  aug: 7,
+  september: 8,
+  sep: 8,
+  sept: 8,
+  october: 9,
+  oct: 9,
+  november: 10,
+  nov: 10,
+  december: 11,
+  dec: 11
+}
+
+const EMAIL_RE = /[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi
+
+function nameFromEmail(email: string): string {
+  const local = email.split('@')[0] ?? 'Guest'
+  return local
+    .split(/[._+-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ')
+}
+
+function applyAmPm(hour: number, ampm?: string): number {
+  if (!ampm) return hour
+  if (ampm === 'am') return hour === 12 ? 0 : hour
+  return hour === 12 ? 12 : hour + 12
+}
+
+function parseClock(text: string): { hour: number; minute: number } | null {
+  const lower = text.toLowerCase()
+  const range = lower.match(
+    /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:-|–|to)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/
+  )
+  if (range) {
+    let hour = Number(range[1])
+    const minute = Number(range[2] ?? 0)
+    const startMeridiem = range[3] ?? range[6]
+    hour = applyAmPm(hour, startMeridiem)
+    return { hour, minute }
+  }
+
+  const single = lower.match(/\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/)
+  if (single) {
+    return {
+      hour: applyAmPm(Number(single[1]), single[3]),
+      minute: Number(single[2] ?? 0)
+    }
+  }
+
+  const twentyFour = lower.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/)
+  if (twentyFour) {
+    return { hour: Number(twentyFour[1]), minute: Number(twentyFour[2]) }
+  }
+
+  return null
+}
+
+function parseCalendarDate(text: string, hour: number, minute: number): Date | null {
+  const lower = text.toLowerCase()
+  const now = new Date()
+
+  const iso = lower.match(/\b(\d{4})-(\d{2})-(\d{2})\b/)
+  if (iso) {
+    return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]), hour, minute, 0, 0)
+  }
+
+  const slash = lower.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/)
+  if (slash) {
+    const month = Number(slash[1]) - 1
+    const day = Number(slash[2])
+    let year = slash[3] ? Number(slash[3]) : now.getFullYear()
+    if (year < 100) year += 2000
+    return new Date(year, month, day, hour, minute, 0, 0)
+  }
+
+  const monthFirst = lower.match(
+    /\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b/
+  )
+  if (monthFirst) {
+    const month = MONTH_INDEX[monthFirst[1]]
+    if (month == null) return null
+    const day = Number(monthFirst[2])
+    const year = monthFirst[3] ? Number(monthFirst[3]) : now.getFullYear()
+    return new Date(year, month, day, hour, minute, 0, 0)
+  }
+
+  const dayFirst = lower.match(
+    /\b(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)(?:,?\s+(\d{4}))?\b/
+  )
+  if (dayFirst) {
+    const month = MONTH_INDEX[dayFirst[2]]
+    if (month == null) return null
+    const day = Number(dayFirst[1])
+    const year = dayFirst[3] ? Number(dayFirst[3]) : now.getFullYear()
+    return new Date(year, month, day, hour, minute, 0, 0)
+  }
+
+  const weekday = lower.match(
+    /\b(next\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\b/
+  )
+  if (weekday) {
+    const dayMap: Record<string, number> = {
+      sunday: 0,
+      sun: 0,
+      monday: 1,
+      mon: 1,
+      tuesday: 2,
+      tue: 2,
+      tues: 2,
+      wednesday: 3,
+      wed: 3,
+      thursday: 4,
+      thu: 4,
+      thur: 4,
+      thurs: 4,
+      friday: 5,
+      fri: 5,
+      saturday: 6,
+      sat: 6
+    }
+    const target = dayMap[weekday[2]]
+    if (target == null) return null
+    const date = new Date(now)
+    date.setHours(hour, minute, 0, 0)
+    let addDays = (target - date.getDay() + 7) % 7
+    if (weekday[1] && addDays === 0) addDays = 7
+    date.setDate(date.getDate() + addDays)
+    return date
+  }
+
+  return null
+}
+
+function parseNaturalDateTime(text: string): Date | null {
+  const clock = parseClock(text) ?? { hour: 9, minute: 0 }
+  return parseCalendarDate(text, clock.hour, clock.minute)
+}
+
+function stripGuestPhrases(text: string): string {
+  return text
+    .replace(/guests?\s+(are|include|includes|:)/gi, ' ')
+    .replace(/\bincluding\b/gi, ' ')
+    .replace(/\b(with|and|plus|for)\b/gi, ' ')
+    .replace(/(^|[\s(,])@[a-z0-9_.-]+/gi, ' ')
+    .replace(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi, ' ')
+    .replace(/\b(pst|pdt|est|edt|cst|cdt|mst|mdt|utc|gmt)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function parseTimeZoneFromText(text: string): string | undefined {
+  const lower = text.toLowerCase()
+  if (/\b(pst|pdt|pacific)\b/.test(lower)) return 'America/Los_Angeles'
+  if (/\b(mst|mdt|mountain)\b/.test(lower)) return 'America/Denver'
+  if (/\b(cst|cdt|central)\b/.test(lower)) return 'America/Chicago'
+  if (/\b(est|edt|eastern)\b/.test(lower)) return 'America/New_York'
+  if (/\butc\b/.test(lower)) return 'UTC'
+  return undefined
+}
+
 export function parseCalcomBookBody(body: string): CalcomBookInput {
-  const parts = body.split(' / ').map((p) => p.trim()).filter(Boolean)
-  if (parts.length < 3) {
-    throw new Error('Use @calcom book: event-slug / email / name / start-or-auto / notes')
+  const trimmed = body.trim()
+  if (trimmed.includes(' / ')) {
+    const parts = trimmed.split(' / ').map((p) => p.trim()).filter(Boolean)
+    if (parts.length >= 3 && parts[1].includes('@')) {
+      const [eventTypeSlug, attendeeEmail, attendeeName, startRaw, ...noteParts] = parts
+      if (!attendeeEmail.includes('@')) {
+        throw new Error('Attendee email is required — include client email from the call')
+      }
+      return {
+        eventTypeSlug,
+        attendeeEmail,
+        attendeeName,
+        start: startRaw && startRaw !== 'auto' ? startRaw : undefined,
+        notes: noteParts.join(' / ') || undefined,
+        timeZone: defaultTimeZone()
+      }
+    }
   }
-  const [eventTypeSlug, attendeeEmail, attendeeName, startRaw, ...noteParts] = parts
-  if (!attendeeEmail.includes('@')) {
-    throw new Error('Attendee email is required — include client email from the call')
+
+  const emails = [...trimmed.matchAll(EMAIL_RE)].map((m) => m[0].toLowerCase())
+  if (emails.length === 0) {
+    throw new Error(
+      'Include at least one guest — sync contacts in Apps → Gmail, then use @name (e.g. @martin) or paste emails.'
+    )
   }
+
+  const dateText = stripGuestPhrases(trimmed)
+  const when = parseNaturalDateTime(dateText)
+  if (!when) {
+    throw new Error(
+      'Could not parse date/time — try "@cal book @martin for July 10 2026 2:30pm PST"'
+    )
+  }
+
+  const extraGuests = emails.slice(1)
+  const timeZone = parseTimeZoneFromText(trimmed) ?? defaultTimeZone()
+
   return {
-    eventTypeSlug,
-    attendeeEmail,
-    attendeeName,
-    start: startRaw && startRaw !== 'auto' ? startRaw : undefined,
-    notes: noteParts.join(' / ') || undefined,
-    timeZone: defaultTimeZone()
+    attendeeEmail: emails[0],
+    attendeeName: nameFromEmail(emails[0]),
+    start: when.toISOString(),
+    guests: extraGuests.length > 0 ? extraGuests : undefined,
+    timeZone
   }
 }
 
@@ -558,8 +901,12 @@ export async function createCalcomBooking(input: CalcomBookInput): Promise<Calco
     metadata: input.notes ? { notes: input.notes } : undefined
   }
 
-  if (username && input.eventTypeSlug) {
-    payload.eventTypeSlug = input.eventTypeSlug ?? eventType.slug ?? defaultEventSlug()
+  if (input.guests?.length) {
+    payload.guests = input.guests
+  }
+
+  if (username && eventType.slug) {
+    payload.eventTypeSlug = eventType.slug
     payload.username = username
   } else {
     payload.eventTypeId = eventType.id
@@ -581,9 +928,13 @@ export async function createCalcomBooking(input: CalcomBookInput): Promise<Calco
 }
 
 export async function executeCalcomCompose(composeText: string): Promise<CalcomBookResult> {
-  const match = composeText.match(/^@calcom\s+book\s*:\s*(.+)$/is)
+  const expanded = expandMentionsWithContacts(composeText)
+  const match = expanded.match(/^@(?:calcom|cal)\s+book\s*:?\s+(.+)$/is)
   if (!match?.[1]) {
-    return { ok: false, message: 'Use @calcom book: event-slug / email / name / auto / notes' }
+    return {
+      ok: false,
+      message: 'Use @cal book June 10 2026 1pm guests are client@co.com'
+    }
   }
   try {
     const input = parseCalcomBookBody(match[1].trim())

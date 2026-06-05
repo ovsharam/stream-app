@@ -76,7 +76,7 @@ export function parseComposeCommand(raw: string): ComposeCommand | null {
     }
   }
 
-  const calcomBook = rest.match(/^book\s*:\s*(.+)$/is)
+  const calcomBook = rest.match(/^book\s*:?\s+(.+)$/is)
   if (provider === 'calcom' && calcomBook) {
     return {
       provider,
@@ -226,6 +226,144 @@ export type ComposeSuggestion = {
   hint?: string
 }
 
+export type ComposeMentionKind = 'app' | 'agent' | 'person'
+
+export type ComposeMentionTarget = {
+  /** Token without @ — e.g. monday, cursor, martin */
+  token: string
+  label: string
+  kind: ComposeMentionKind
+  hint?: string
+  email?: string
+}
+
+const COMPOSE_MENTION_META: Record<
+  ComposeProvider,
+  { label: string; kind: ComposeMentionKind; hint?: string }
+> = {
+  monday: { label: 'Monday', kind: 'app', hint: 'Boards & tasks' },
+  gmail: { label: 'Gmail', kind: 'app', hint: 'Email' },
+  slack: { label: 'Slack', kind: 'app', hint: 'Channels' },
+  discord: { label: 'Discord', kind: 'app', hint: 'Channels' },
+  x: { label: 'X', kind: 'app', hint: 'Posts' },
+  perplexity: { label: 'Perplexity', kind: 'agent', hint: 'Research' },
+  claude: { label: 'Claude', kind: 'agent', hint: 'AI assistant' },
+  cursor: { label: 'Cursor', kind: 'agent', hint: 'Build agent' },
+  github: { label: 'GitHub', kind: 'app', hint: 'Issues & PRs' },
+  gemini: { label: 'Gemini', kind: 'agent', hint: 'Google AI' },
+  gdocs: { label: 'Google Docs', kind: 'app', hint: 'Documents' },
+  gong: { label: 'Gong', kind: 'app', hint: 'Call notes' },
+  mind: { label: 'Mind', kind: 'agent', hint: 'Personal KB' },
+  calcom: { label: 'Cal.com', kind: 'app', hint: 'Scheduling' }
+}
+
+/** Default @mention targets for compose autocomplete. */
+export function listComposeMentionTargets(
+  extra: ComposeMentionTarget[] = []
+): ComposeMentionTarget[] {
+  const seen = new Set<string>()
+  const out: ComposeMentionTarget[] = []
+  for (const provider of COMPOSE_PROVIDERS) {
+    const meta = COMPOSE_MENTION_META[provider]
+    seen.add(provider)
+    out.push({
+      token: provider,
+      label: meta.label,
+      kind: meta.kind,
+      hint: meta.hint
+    })
+  }
+  for (const [alias, provider] of Object.entries(PROVIDER_ALIASES)) {
+    if (alias === provider || seen.has(alias)) continue
+    const meta = COMPOSE_MENTION_META[provider]
+    out.push({
+      token: alias,
+      label: meta.label,
+      kind: meta.kind,
+      hint: meta.hint
+    })
+  }
+  for (const t of extra) {
+    const key =
+      t.kind === 'person' ? `person:${(t.email ?? t.token).toLowerCase()}` : t.token.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(t)
+  }
+  return out
+}
+
+/** Partial @mention being typed at the cursor (before provider is committed). */
+export function getComposeMentionDraft(
+  text: string,
+  cursor: number
+): { query: string; start: number; end: number } | null {
+  const before = text.slice(0, cursor)
+  const match = before.match(/(?:^|[\s\n])@([a-z0-9_.-]*)$/i)
+  if (!match) return null
+  return { query: match[1] ?? '', start: before.lastIndexOf('@'), end: cursor }
+}
+
+export function filterComposeMentionTargets(
+  query: string,
+  targets: ComposeMentionTarget[]
+): ComposeMentionTarget[] {
+  const q = query.trim().toLowerCase()
+  const ranked = targets
+    .map((t) => {
+      const token = t.token.toLowerCase()
+      const label = t.label.toLowerCase()
+      const email = t.email?.toLowerCase() ?? ''
+      const first = label.split(/\s+/)[0] ?? ''
+      let score = 0
+      if (!q) score = t.kind === 'person' ? 1 : 2
+      else if (t.kind !== 'person' && resolveComposeProvider(token) && token.startsWith(q)) score = 6
+      else if (token === q || first === q) score = 5
+      else if (token.startsWith(q) || first.startsWith(q)) score = 4
+      else if (label.startsWith(q)) score = 3
+      else if (email.startsWith(q)) score = 3
+      else if (token.includes(q) || label.includes(q) || email.includes(q)) score = 1
+      return { t, score }
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score
+      if (a.t.kind === 'person' && b.t.kind !== 'person') return -1
+      if (b.t.kind === 'person' && a.t.kind !== 'person') return 1
+      return a.t.label.localeCompare(b.t.label)
+    })
+  return ranked.slice(0, 10).map((x) => x.t)
+}
+
+/** Replace @mention tokens with contact emails before running compose actions. */
+export function expandContactMentions(
+  text: string,
+  contacts: Array<{ mentionToken: string; email: string; name: string }>
+): string {
+  if (!contacts.length) return text
+  const byToken = new Map(contacts.map((c) => [c.mentionToken.toLowerCase(), c]))
+  const byAlias = new Map<string, (typeof contacts)[0]>()
+  for (const c of contacts) {
+    const nameKey = c.name.trim().toLowerCase()
+    if (nameKey && !byAlias.has(nameKey)) byAlias.set(nameKey, c)
+    const first = c.name.split(/\s+/)[0]?.toLowerCase()
+    if (first && !byAlias.has(first)) byAlias.set(first, c)
+    const slug = c.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+    if (slug && !byAlias.has(slug)) byAlias.set(slug, c)
+  }
+
+  return text.replace(/(^|[\s(,])@([a-z0-9_.-]+)/gi, (full, lead, token) => {
+    if (resolveComposeProvider(token)) return full
+    const key = token.toLowerCase()
+    const hit = byToken.get(key) ?? byAlias.get(key)
+    if (!hit) return full
+    return `${lead}${hit.email}`
+  })
+}
+
 /** Short command chips shown after @provider in compose — only where relevant. */
 export const COMPOSE_SUGGESTIONS: Partial<Record<ComposeProvider, ComposeSuggestion[]>> = {
   monday: [
@@ -257,7 +395,7 @@ export const COMPOSE_SUGGESTIONS: Partial<Record<ComposeProvider, ComposeSuggest
   ],
   gong: [{ label: '#ID note:', insert: '#CALL_ID note: ', hint: 'Call note' }],
   mind: [{ label: 'capture', insert: '', hint: 'Freeform KB note' }],
-  calcom: [{ label: 'book:', insert: 'book: ', hint: 'Schedule meeting' }]
+  calcom: [{ label: 'book', insert: 'book @name for July 10 2:30pm PST', hint: '@cal book @martin @apoorva …' }]
 }
 
 export function resolveComposeProvider(token: string): ComposeProvider | null {
@@ -271,13 +409,31 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
 }
 
-/** HTML for mirror layer — @provider tags styled blue. */
-export function formatComposeHighlight(text: string): string {
-  const escaped = escapeHtml(text)
-  return escaped.replace(/(^|[\s\n])@([a-z0-9_]+)\b/gi, (full, lead, tag) => {
-    if (!resolveComposeProvider(tag)) return full
-    return `${lead}<span class="x-compose-tag">@${tag}</span>`
-  })
+/** HTML for mirror layer — only committed @provider tags are styled (not the one being typed). */
+export function formatComposeHighlight(text: string, cursor: number = text.length): string {
+  const draft = getComposeMentionDraft(text, cursor)
+  let out = ''
+  let i = 0
+  while (i < text.length) {
+    const ch = text[i]
+    if (ch === '@' && (i === 0 || /[\s\n]/.test(text[i - 1] ?? ''))) {
+      const tokenMatch = text.slice(i + 1).match(/^([a-z0-9_]+)/i)
+      if (tokenMatch?.[1] && resolveComposeProvider(tokenMatch[1])) {
+        const tagEnd = i + 1 + tokenMatch[1].length
+        const inDraft = draft && i === draft.start && cursor <= draft.end
+        out += escapeHtml(text.slice(i, tagEnd))
+        if (!inDraft) {
+          out = out.slice(0, out.length - tokenMatch[1].length - 1)
+          out += `<span class="x-compose-tag">@${escapeHtml(tokenMatch[1])}</span>`
+        }
+        i = tagEnd
+        continue
+      }
+    }
+    out += escapeHtml(ch)
+    i += 1
+  }
+  return out
 }
 
 export function getActiveComposeContext(
@@ -290,6 +446,8 @@ export function getActiveComposeContext(
   rest: string
   suggestions: ComposeSuggestion[]
 } | null {
+  if (getComposeMentionDraft(text, cursor)) return null
+
   const before = text.slice(0, cursor)
   const match = before.match(/(?:^|[\s\n])@([a-z0-9_]+)\b([\s\S]*)$/i)
   if (!match?.[1]) return null
@@ -370,8 +528,9 @@ export const COMPOSE_HELP: { provider: ComposeProvider; examples: string[] }[] =
   {
     provider: 'calcom',
     examples: [
-      '@calcom book: 30min / client@co.com / Jane Doe / auto / Follow-up on webhook scope',
-      '@calcom book: discovery / lead@acme.com / Alex / 2026-06-05T15:00:00Z / Technical deep-dive'
+      '@cal book June 10 2026 1-2pm guests are client@co.com and partner@co.com',
+      '@calcom book: 30min / client@co.com / Jane Doe / auto / Follow-up from call',
+      '@cal book Tuesday 3pm with lead@acme.com'
     ]
   }
 ]

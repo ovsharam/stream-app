@@ -147,6 +147,7 @@ export type StreamSource =
   | 'salesforce'
   | 'build'
   | 'insight'
+  | 'calcom'
 
 export type StreamEventKind =
   | 'transcript_live'

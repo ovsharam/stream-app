@@ -3,6 +3,7 @@ import {
   IconApps,
   IconBookmark,
   IconGlobe,
+  IconLinkedin,
   IconNotch,
   IconPlus,
   IconPortal,
@@ -114,6 +115,8 @@ function NavIcon({ id }: { id: string }) {
       return <IconSettings className={cls} />
     case 'youtube':
       return <IconYoutube className={cls} />
+    case 'linkedin':
+      return <IconLinkedin className={cls} />
     case 'gmail':
     case 'slack':
     case 'discord':

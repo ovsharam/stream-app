@@ -1,10 +1,22 @@
 #!/usr/bin/env bash
-# Installs whisper.cpp + ggml-medium.en for Stream meeting transcription (M1 Mac).
+# Installs whisper.cpp + ggml-medium.en for Stream meeting transcription (macOS).
 set -euo pipefail
 
 WHISPER_DIR="${STREAM_WHISPER_DIR:-$HOME/Library/Application Support/stream-app/whisper}"
 BUILD_DIR="${STREAM_WHISPER_BUILD:-/tmp/whisper.cpp-build}"
 MODEL="medium.en"
+STREAM_BIN="$WHISPER_DIR/stream"
+
+# Dynamic whisper.cpp builds reference @rpath libs under BUILD_DIR (/tmp). macOS may
+# clean /tmp, leaving a copied binary that fails with "Library not loaded: libwhisper".
+whisper_binary_ok() {
+  local bin="$1"
+  [[ -x "$bin" ]] || return 1
+  if /usr/bin/otool -L "$bin" 2>/dev/null | grep -q '@rpath/libwhisper'; then
+    return 1
+  fi
+  return 0
+}
 
 echo "==> Stream whisper setup"
 echo "    install dir: $WHISPER_DIR"
@@ -23,39 +35,46 @@ if ! command -v cmake >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -x "$WHISPER_DIR/stream" ]]; then
-  echo "==> Building whisper.cpp (Metal + SDL2)…"
+if ! whisper_binary_ok "$STREAM_BIN"; then
+  if [[ -x "$STREAM_BIN" ]]; then
+    echo "==> Removing broken whisper binary (stale @rpath to build dir)…"
+    rm -f "$STREAM_BIN"
+  fi
+
+  echo "==> Building whisper.cpp (Metal + SDL2, static)…"
   rm -rf "$BUILD_DIR"
   git clone --depth 1 https://github.com/ggerganov/whisper.cpp "$BUILD_DIR"
   cd "$BUILD_DIR"
 
-  # Newer whisper.cpp uses cmake + the examples are gated by WHISPER_SDL2.
-  cmake -B build -DGGML_METAL=1 -DWHISPER_SDL2=1
+  # Static link so the installed binary does not depend on dylibs left in /tmp.
+  cmake -B build \
+    -DGGML_METAL=1 \
+    -DGGML_METAL_EMBED_LIBRARY=1 \
+    -DWHISPER_SDL2=1 \
+    -DBUILD_SHARED_LIBS=OFF
   cmake --build build --config Release -j
 
-  # Find the stream binary across whisper.cpp build layout variations.
-  STREAM_BIN=""
+  # Use whisper-stream only — build/bin/stream is a deprecated stub that exits immediately.
+  STREAM_SRC=""
   for candidate in \
     "$BUILD_DIR/build/bin/whisper-stream" \
-    "$BUILD_DIR/build/bin/stream" \
-    "$BUILD_DIR/build/examples/stream/stream" \
     "$BUILD_DIR/build/examples/stream/whisper-stream"; do
     if [[ -x "$candidate" ]]; then
-      STREAM_BIN="$candidate"
+      STREAM_SRC="$candidate"
       break
     fi
   done
 
-  if [[ -z "$STREAM_BIN" ]]; then
-    echo "⚠  Could not find built stream binary. Inspect:"
-    find "$BUILD_DIR/build" -name "*stream*" -type f 2>/dev/null || true
+  if [[ -z "$STREAM_SRC" ]]; then
+    echo "⚠  Could not find built whisper-stream binary. Inspect:"
+    find "$BUILD_DIR/build" -name "*whisper-stream*" -type f 2>/dev/null || true
     exit 1
   fi
 
-  cp "$STREAM_BIN" "$WHISPER_DIR/stream"
-  chmod +x "$WHISPER_DIR/stream"
+  cp "$STREAM_SRC" "$STREAM_BIN"
+  chmod +x "$STREAM_BIN"
 
-  # Bundle Metal kernels next to the binary (whisper.cpp reads ggml-metal.metal from CWD or binary dir).
+  # Fallback for non-embedded Metal builds (harmless when Metal is embedded).
   for metal in "$BUILD_DIR/build/bin/ggml-metal.metal" "$BUILD_DIR/ggml/src/ggml-metal/ggml-metal.metal"; do
     if [[ -f "$metal" ]]; then
       cp "$metal" "$WHISPER_DIR/" 2>/dev/null || true
@@ -63,7 +82,13 @@ if [[ ! -x "$WHISPER_DIR/stream" ]]; then
     fi
   done
 
-  echo "    binary: $WHISPER_DIR/stream"
+  if ! whisper_binary_ok "$STREAM_BIN"; then
+    echo "⚠  Installed binary still references @rpath dylibs — build may have failed to static-link."
+    /usr/bin/otool -L "$STREAM_BIN" 2>/dev/null || true
+    exit 1
+  fi
+
+  echo "    binary: $STREAM_BIN"
 else
   echo "==> Binary already present"
 fi

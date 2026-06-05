@@ -11,6 +11,7 @@ import {
   createAgentAbortSignal,
   dismissRunningAgentsPanel,
   startAgent,
+  stopAgent,
   stopAll,
   updateAgentStatus,
   useMergedRunningAgents,
@@ -67,6 +68,9 @@ export function HomeChat({
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const genRef = useRef(0)
+  const activeRequestRef = useRef<{ agentId: string; assistantId: string; gen: number } | null>(
+    null
+  )
 
   const streamAgents = useMemo(
     () => buildRunningAgents({ events, liveCapture }),
@@ -90,6 +94,48 @@ export function HomeChat({
     el.scrollTop = el.scrollHeight
   }, [messages])
 
+  const finishAssistantMessage = (
+    assistantId: string,
+    patch: Pick<HomeChatMessage, 'content' | 'assist' | 'error'>
+  ) => {
+    onMessagesChange((prev) =>
+      prev.map((m) =>
+        m.id === assistantId
+          ? {
+              ...m,
+              loading: false,
+              content: patch.content,
+              assist: patch.assist,
+              error: patch.error
+            }
+          : m
+      )
+    )
+  }
+
+  const stopRequest = () => {
+    const req = activeRequestRef.current
+    if (!req) return
+    stopAgent(req.agentId)
+    genRef.current += 1
+    activeRequestRef.current = null
+    setBusy(false)
+    finishAssistantMessage(req.assistantId, { content: '', error: 'Stopped.' })
+    inputRef.current?.focus()
+  }
+
+  useEffect(() => {
+    if (!busy) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        stopRequest()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [busy])
+
   const sendMessage = async (text?: string) => {
     const trimmed = (text ?? input).trim()
     if (!trimmed || busy) return
@@ -111,6 +157,7 @@ export function HomeChat({
 
     const agentId = startAgent({ title: agentTitle(trimmed), status: 'Thinking…' })
     const signal = createAgentAbortSignal(agentId)
+    activeRequestRef.current = { agentId, assistantId, gen }
 
     const history = messages
       .filter((m) => !m.loading && m.content.trim())
@@ -141,27 +188,27 @@ export function HomeChat({
       error = err instanceof Error ? err.message : 'Could not reach assist'
     } finally {
       completeAgent(agentId)
+      if (activeRequestRef.current?.assistantId === assistantId) {
+        activeRequestRef.current = null
+      }
       if (gen === genRef.current) {
         setBusy(false)
         inputRef.current?.focus()
       }
     }
 
-    if (aborted || gen !== genRef.current) return
+    if (aborted || gen !== genRef.current) {
+      if (aborted && gen === genRef.current) {
+        finishAssistantMessage(assistantId, { content: '', error: 'Stopped.' })
+      }
+      return
+    }
 
-    onMessagesChange((prev) =>
-      prev.map((m) =>
-        m.id === assistantId
-          ? {
-              ...m,
-              loading: false,
-              content: assist?.response ?? '',
-              assist: assist ?? undefined,
-              error
-            }
-          : m
-      )
-    )
+    finishAssistantMessage(assistantId, {
+      content: assist?.response ?? '',
+      assist: assist ?? undefined,
+      error
+    })
   }
 
   const now = new Date()
@@ -309,35 +356,50 @@ export function HomeChat({
               value={input}
               rows={1}
               placeholder="Message Notch…"
-              disabled={busy}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
-                  void sendMessage()
+                  if (busy) stopRequest()
+                  else void sendMessage()
                 }
               }}
             />
-            <button
-              type="button"
-              className="x-home-composer-send"
-              disabled={!input.trim() || busy}
-              onClick={() => void sendMessage()}
-              aria-label="Send message"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                <path
-                  d="M12 19V5M12 5L6 11M12 5L18 11"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
+            {busy ? (
+              <button
+                type="button"
+                className="x-home-composer-send x-home-composer-stop"
+                onClick={stopRequest}
+                aria-label="Stop response"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                  <rect x="6" y="6" width="12" height="12" rx="1" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="x-home-composer-send"
+                disabled={!input.trim()}
+                onClick={() => void sendMessage()}
+                aria-label="Send message"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path
+                    d="M12 19V5M12 5L6 11M12 5L18 11"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            )}
           </div>
           {!compact ? (
-            <p className="x-home-dock-hint">Enter to send · Shift+Enter for new line</p>
+            <p className="x-home-dock-hint">
+              {busy ? 'Stop with the button or Esc · Shift+Enter for new line' : 'Enter to send · Shift+Enter for new line'}
+            </p>
           ) : null}
         </div>
         </div>

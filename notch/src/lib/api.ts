@@ -52,6 +52,11 @@ async function json<T>(
     if (err instanceof Error && err.name === 'AbortError') {
       throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s — check Integrations and try again`)
     }
+    if (err instanceof TypeError && /failed to fetch/i.test(err.message)) {
+      throw new Error(
+        'Cannot reach the Stream API at localhost:3131 — run npm run dev:notch (or dev:api) and try again'
+      )
+    }
     throw err
   } finally {
     clearTimeout(timer)
@@ -149,9 +154,9 @@ export const clusterApi = {
     ),
   calendar: () =>
     json<import('@shared/cluster').CalendarRailResponse>('/cluster/calendar'),
-  calendars: () =>
+  calendars: (refresh = false) =>
     json<{ calendars: import('@shared/cluster').GoogleCalendarOption[]; error?: string }>(
-      '/cluster/calendars'
+      `/cluster/calendars${refresh ? '?refresh=1' : ''}`
     ),
   saveCalendars: (calendarIds: string[]) =>
     json<{ ok: boolean; calendars: import('@shared/cluster').GoogleCalendarOption[] }>(
@@ -267,12 +272,27 @@ export const captureApi = {
     )
 }
 
+export const contactsApi = {
+  state: () => json<import('@shared/contacts').ContactsState>('/contacts'),
+  sync: () =>
+    json<import('@shared/contacts').ContactsState>('/contacts/sync', {
+      method: 'POST',
+      body: '{}'
+    })
+}
+
 export type IntegrationConnections = {
   connections: Record<string, boolean>
   configured: Record<string, boolean>
   connected: Record<string, boolean>
   syncErrors?: Record<string, string | undefined>
   googleApiEnable?: Record<string, string | undefined>
+  googleApi?: {
+    blocked: boolean
+    blockedUntilMs: number | null
+    blockedUntil: string | null
+    lastReason: string | null
+  }
   onboardingComplete: boolean
 }
 
@@ -283,6 +303,8 @@ export const integrationApi = {
     json<{ url: string; simulated?: boolean }>(
       `/auth/gmail${addAccount ? '?addAccount=1' : ''}`
     ),
+  gmailDisconnect: () =>
+    json<{ ok: boolean }>('/auth/gmail/disconnect', { method: 'POST', body: '{}' }),
   slackAuthUrl: () => json<{ url: string }>('/auth/slack'),
   xAuthUrl: () => json<{ url: string; state: string }>('/auth/x'),
   calcomAuthUrl: () =>
@@ -421,7 +443,7 @@ export function shouldForceExternal(url: string): boolean {
 
 export function inferWorkspaceMeta(url: string): {
   title: string
-  source: 'meet' | 'gmail' | 'calendar' | 'gdocs' | 'monday' | 'slack'
+  source: 'meet' | 'gmail' | 'calendar' | 'gdocs' | 'monday' | 'slack' | 'youtube' | 'discord' | 'github' | 'calcom' | 'linkedin'
 } {
   try {
     const u = new URL(url)
@@ -436,6 +458,11 @@ export function inferWorkspaceMeta(url: string): {
     if (hostMatches(u.hostname, 'calendar.google.com')) return { title: 'Calendar', source: 'calendar' }
     if (hostMatches(u.hostname, 'monday.com')) return { title: 'Monday', source: 'monday' }
     if (hostMatches(u.hostname, 'slack.com')) return { title: 'Slack', source: 'slack' }
+    if (hostMatches(u.hostname, 'youtube.com')) return { title: 'YouTube', source: 'youtube' }
+    if (hostMatches(u.hostname, 'linkedin.com')) return { title: 'LinkedIn', source: 'linkedin' }
+    if (hostMatches(u.hostname, 'cal.com')) return { title: 'Cal.com', source: 'calcom' }
+    if (hostMatches(u.hostname, 'discord.com')) return { title: 'Discord', source: 'discord' }
+    if (hostMatches(u.hostname, 'github.com')) return { title: 'GitHub', source: 'github' }
     return { title: host, source: 'meet' }
   } catch {
     return { title: 'Tab', source: 'meet' }
@@ -513,7 +540,11 @@ declare global {
       setNavAppTheme?: (theme: string) => Promise<{ ok: boolean }>
       openAuthWindow?: (args: { partition: string; url: string; title?: string }) => Promise<{ ok: boolean }>
       onAuthClosed?: (cb: (partition: string) => void) => () => void
+      onGoogleSignInNeeded?: (cb: (partition: string) => void) => () => void
+      onEmbedSignInNeeded?: (cb: (partition: string) => void) => () => void
       onNavAppRendererReady?: (cb: () => void) => () => void
+      onOpenUrl?: (cb: (url: string) => void) => () => void
+      getGuestPreloadPath?: () => Promise<string>
     }
   }
 }

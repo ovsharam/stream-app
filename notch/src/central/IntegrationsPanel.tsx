@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { GmailAccount, GoogleCalendarOption, MondayAccount } from '@shared/cluster'
-import { clusterApi, integrationApi, type IntegrationConnections } from '../lib/api'
-import { IconGmail, IconMonday, IconYoutube } from './Icons'
+import { clusterApi, contactsApi, integrationApi, type IntegrationConnections } from '../lib/api'
+import { IconGmail, IconMonday, IconYoutube, IconLinkedin } from './Icons'
 import { McpAgentsSection } from './McpAgentsSection'
 import { isNavAppDesktop, isNavAppPinned, pinnableEntryById, pinnableEntryForIntegration, type NavApp } from './navAppsStore'
+import { GOOGLE_BROWSE_PARTITION } from './embedBrowse'
 
 type IntegrationId =
   | 'youtube'
+  | 'linkedin'
   | 'gmail'
   | 'slack'
   | 'monday'
@@ -36,10 +38,18 @@ const INTEGRATIONS: IntegrationDef[] = [
   {
     id: 'youtube',
     name: 'YouTube',
-    tagline: 'Embedded player · mini player when you leave',
+    tagline: 'In-app tab · sidebar pin',
     feeds: 'Sidebar',
     brandClass: 'x-int-card-youtube',
     icon: <IconYoutube className="x-int-brand-icon" />
+  },
+  {
+    id: 'linkedin',
+    name: 'LinkedIn',
+    tagline: 'In-app tab · sidebar pin',
+    feeds: 'Sidebar',
+    brandClass: 'x-int-card-linkedin',
+    icon: <IconLinkedin className="x-int-brand-icon" />
   },
   {
     id: 'gmail',
@@ -258,6 +268,10 @@ export function IntegrationsPanel({
     groupTitle?: string
   } | null>(null)
   const [mcpAgentCount, setMcpAgentCount] = useState(0)
+  const [contactsCount, setContactsCount] = useState(0)
+  const [contactsSyncedAt, setContactsSyncedAt] = useState<number | null>(null)
+  const [contactsError, setContactsError] = useState<string | null>(null)
+  const [contactsSyncing, setContactsSyncing] = useState(false)
 
   const loadMcpAgents = useCallback(async () => {
     try {
@@ -269,8 +283,21 @@ export function IntegrationsPanel({
   }, [])
 
   const refreshConnections = useCallback(async () => {
-    const data = await integrationApi.connections()
-    setConnections(data)
+    try {
+      const data = await integrationApi.connections()
+      setConnections(data)
+      return data
+    } catch (err) {
+      setConnections((prev) =>
+        prev ?? {
+          connections: {},
+          configured: {},
+          connected: {},
+          onboardingComplete: false
+        }
+      )
+      throw err
+    }
   }, [])
 
   const loadMondayAccount = useCallback(async () => {
@@ -310,11 +337,24 @@ export function IntegrationsPanel({
     }
   }, [])
 
-  const loadCalendars = useCallback(async () => {
+  const loadContacts = useCallback(async () => {
+    try {
+      const state = await contactsApi.state()
+      setContactsCount(state.contacts.length)
+      setContactsSyncedAt(state.syncedAt)
+      setContactsError(state.error ?? connections?.syncErrors?.contacts ?? null)
+    } catch {
+      setContactsCount(0)
+      setContactsSyncedAt(null)
+      setContactsError(connections?.syncErrors?.contacts ?? null)
+    }
+  }, [connections?.syncErrors?.contacts])
+
+  const loadCalendars = useCallback(async (refresh = false) => {
     setCalendarsLoading(true)
     setCalendarsError(null)
     try {
-      const data = await clusterApi.calendars()
+      const data = await clusterApi.calendars(refresh)
       setCalendars(data.calendars ?? [])
       if (data.error) setCalendarsError(data.error)
     } catch (err) {
@@ -326,7 +366,9 @@ export function IntegrationsPanel({
   }, [])
 
   useEffect(() => {
-    void refreshConnections()
+    void refreshConnections().catch((err) => {
+      setStatus(`Could not load integrations: ${String(err)}`)
+    })
     void loadMcpAgents()
   }, [refreshConnections, loadMcpAgents])
 
@@ -348,10 +390,13 @@ export function IntegrationsPanel({
   useEffect(() => {
     if (connections?.connected.gmail) {
       void loadGmailAccounts()
-      void loadCalendars()
+      void loadContacts()
     } else {
       setGmailAccounts([])
       setCalendars([])
+      setContactsCount(0)
+      setContactsSyncedAt(null)
+      setContactsError(null)
     }
     if (connections?.connected.monday) {
       void loadMondayAccount()
@@ -363,24 +408,73 @@ export function IntegrationsPanel({
   }, [
     connections?.connected.gmail,
     connections?.connected.monday,
-    loadCalendars,
+    loadContacts,
     loadGmailAccounts,
     loadMondayAccount,
     loadMondayCreateTarget
   ])
 
-  const feedIntegrationTotal = INTEGRATIONS.filter((i) => i.id !== 'youtube').length
+  const feedIntegrationTotal = INTEGRATIONS.filter((i) => i.id !== 'youtube' && i.id !== 'linkedin').length
 
   const connectedCount = useMemo(() => {
     if (!connections) return 0
     return INTEGRATIONS.filter((i) => {
-      if (i.id === 'youtube') return false
+      if (i.id === 'youtube' || i.id === 'linkedin') return false
       if (i.id === 'agents') return mcpAgentCount > 0
       return connections.connected[i.id]
     }).length
   }, [connections, mcpAgentCount])
 
+  const gmailRateLimited =
+    connections?.syncErrors?.gmail?.toLowerCase().includes('rate limit') ?? false
+
+  const syncContacts = useCallback(async () => {
+    if (gmailRateLimited) {
+      setStatus(connections?.syncErrors?.gmail ?? 'Google API rate limit — wait before syncing contacts.')
+      return
+    }
+    setContactsSyncing(true)
+    try {
+      const state = await contactsApi.sync()
+      setContactsCount(state.contacts.length)
+      setContactsSyncedAt(state.syncedAt)
+      setContactsError(state.error ?? null)
+      setStatus(
+        state.error
+          ? `Contacts sync failed: ${state.error}`
+          : state.contacts.length === 0
+            ? state.hint ??
+              'Synced 0 contacts — disconnect Gmail, reconnect once (grants Other Contacts), then sync again.'
+            : `Synced ${state.contacts.length} contacts (${state.savedCount ?? 0} saved, ${state.otherCount ?? 0} from Gmail history) for @mention.`
+      )
+      window.dispatchEvent(new CustomEvent('notch:contacts-updated'))
+      await refreshConnections()
+    } catch (err) {
+      const msg = String(err)
+      setContactsError(msg)
+      setStatus(`Contacts sync failed: ${msg}`)
+    } finally {
+      setContactsSyncing(false)
+    }
+  }, [connections?.syncErrors?.gmail, gmailRateLimited, refreshConnections])
+
+  const disconnectGmail = async () => {
+    try {
+      await integrationApi.gmailDisconnect()
+      setGmailAccounts([])
+      setCalendars([])
+      setStatus('Gmail disconnected.')
+      await refreshConnections()
+    } catch (err) {
+      setStatus(`Gmail disconnect failed: ${String(err)}`)
+    }
+  }
+
   const connectGmail = async (addAccount: boolean) => {
+    if (gmailRateLimited) {
+      setStatus(connections?.syncErrors?.gmail ?? 'Google API rate limit — wait before reconnecting.')
+      return
+    }
     try {
       const { url, simulated } = await integrationApi.gmailAuthUrl(addAccount)
       if (simulated) {
@@ -392,12 +486,22 @@ export function IntegrationsPanel({
         setStatus('Gmail connect did not return an auth URL.')
         return
       }
-      if (window.notchDesktop?.openExternal) {
+      if (window.notchDesktop?.openAuthWindow) {
+        await window.notchDesktop.openAuthWindow({
+          partition: GOOGLE_BROWSE_PARTITION,
+          url,
+          title: addAccount ? 'Add Gmail account' : 'Connect Gmail'
+        })
+      } else if (window.notchDesktop?.openExternal) {
         window.notchDesktop.openExternal(url)
       } else {
         window.open(url, '_blank', 'noopener,noreferrer')
       }
-      setStatus(addAccount ? 'Complete sign-in in your browser, then return here.' : 'Complete Gmail OAuth in your browser.')
+      setStatus(
+        addAccount
+          ? 'Complete sign-in in the Notch window — this also signs you into YouTube and Google Docs tabs.'
+          : 'Complete Gmail sign-in in the Notch window — YouTube and Docs will use the same Google session.'
+      )
     } catch (err) {
       setStatus(`Gmail connect failed: ${String(err)}`)
     }
@@ -434,14 +538,20 @@ export function IntegrationsPanel({
   const syncAll = async () => {
     try {
       const result = await integrationApi.syncAll()
+      const googleNote =
+        result.googleBlocked && result.googleBlockedUntil
+          ? ` Google rate limit active until ${new Date(result.googleBlockedUntil).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} — sync Gmail manually after that.`
+          : ' Sync Gmail, Contacts, and Calendar separately in Apps → Gmail.'
       setStatus(
-        `Synced — Gmail ${result.gmail ?? 0}, GitHub ${result.github ?? 0}, Docs ${result.gdocs ?? 0}, Gong ${result.gong ?? 0}, X ${result.x ?? 0}, Monday ${result.monday ?? 0}`
+        `Synced — GitHub ${result.github ?? 0}, Docs ${result.gdocs ?? 0}, Gong ${result.gong ?? 0}, X ${result.x ?? 0}, Monday ${result.monday ?? 0}.${googleNote}`
       )
       await refreshConnections()
       await loadGmailAccounts()
+      await loadContacts()
       await loadMondayAccount()
       await loadMondayCreateTarget()
       await loadCalendars()
+      window.dispatchEvent(new CustomEvent('notch:contacts-updated'))
     } catch (err) {
       setStatus(`Sync failed: ${String(err)}`)
     }
@@ -473,7 +583,7 @@ export function IntegrationsPanel({
       const calCount = gmailAccounts.filter((a) => a.calendarEnabled).length
       return `${gmailAccounts.length} account${gmailAccounts.length === 1 ? '' : 's'} · ${feedCount} in feed · ${calCount} calendar`
     }
-    if (id === 'youtube') return 'Always available'
+    if (id === 'youtube' || id === 'linkedin') return 'Always available'
     if (id === 'slack' && connections.connected.slack) {
       return 'Workspace connected'
     }
@@ -502,7 +612,7 @@ export function IntegrationsPanel({
           <div className="x-int-detail-head">
             <div>
               <h3>YouTube</h3>
-              <p>Embedded in Notch with a mini player when you switch to Home or Feed.</p>
+              <p>Opens in an in-app tab with the context rail, like Monday.</p>
             </div>
             {desktop ? (
               <button
@@ -517,6 +627,34 @@ export function IntegrationsPanel({
           {desktop ? (
             <p className="x-int-muted">
               {pinned ? 'Pinned to sidebar.' : 'Use the pin icon on the card to add YouTube to the sidebar.'}
+            </p>
+          ) : null}
+        </div>
+      )
+    }
+
+    if (selected === 'linkedin') {
+      const pinned = isNavAppPinned('linkedin', navApps)
+      return (
+        <div className="x-int-detail">
+          <div className="x-int-detail-head">
+            <div>
+              <h3>LinkedIn</h3>
+              <p>Feed, messages, and notifications in an in-app tab — sign in once in Notch to stay logged in.</p>
+            </div>
+            {desktop ? (
+              <button
+                type="button"
+                className="x-int-btn"
+                onClick={() => onOpenNavApp?.('linkedin')}
+              >
+                Open
+              </button>
+            ) : null}
+          </div>
+          {desktop ? (
+            <p className="x-int-muted">
+              {pinned ? 'Pinned to sidebar.' : 'Pin LinkedIn from the card to open it beside Home and Feed.'}
             </p>
           ) : null}
         </div>
@@ -579,13 +717,28 @@ export function IntegrationsPanel({
               <p>OAuth connects inbox and Google Calendar. Add multiple accounts and choose what syncs.</p>
             </div>
             <div className="x-int-detail-actions">
-              <button type="button" className="x-int-btn" onClick={() => void connectGmail(false)}>
+              <button
+                type="button"
+                className="x-int-btn"
+                disabled={gmailRateLimited}
+                onClick={() => void connectGmail(false)}
+              >
                 {connections?.connected.gmail ? 'Reconnect' : 'Connect'}
               </button>
               {connections?.connected.gmail ? (
-                <button type="button" className="x-int-btn x-int-btn-ghost" onClick={() => void connectGmail(true)}>
-                  Add account
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="x-int-btn x-int-btn-ghost"
+                    disabled={gmailRateLimited}
+                    onClick={() => void connectGmail(true)}
+                  >
+                    Add account
+                  </button>
+                  <button type="button" className="x-int-btn x-int-btn-ghost" onClick={() => void disconnectGmail()}>
+                    Disconnect
+                  </button>
+                </>
               ) : null}
             </div>
           </div>
@@ -593,6 +746,17 @@ export function IntegrationsPanel({
           {connections?.syncErrors?.gmail ? (
             <p className="x-int-alert">
               {connections.syncErrors.gmail}
+              {connections.googleApi?.blocked && connections.googleApi.blockedUntil ? (
+                <span className="x-int-muted">
+                  {' '}
+                  (Google says wait until{' '}
+                  {new Date(connections.googleApi.blockedUntil).toLocaleTimeString(undefined, {
+                    hour: 'numeric',
+                    minute: '2-digit'
+                  })}
+                  )
+                </span>
+              ) : null}
               {connections.googleApiEnable?.gmail ? (
                 <>
                   {' '}
@@ -737,8 +901,71 @@ export function IntegrationsPanel({
 
               <div className="x-int-block">
                 <div className="x-int-block-head">
+                  <h4>Inbox feed</h4>
+                  <button
+                    type="button"
+                    className="x-int-link"
+                    disabled={gmailRateLimited}
+                    onClick={async () => {
+                      try {
+                        const res = await integrationApi.syncSource('gmail')
+                        setStatus(`Gmail inbox synced (${res.count} threads).`)
+                        await refreshConnections()
+                      } catch (err) {
+                        setStatus(`Gmail sync failed: ${String(err)}`)
+                      }
+                    }}
+                  >
+                    Sync inbox
+                  </button>
+                </div>
+                <p className="x-int-muted">
+                  Sync one service at a time while Google rate limits are active — do not use Sync all for Gmail.
+                </p>
+              </div>
+
+              <div className="x-int-block">
+                <div className="x-int-block-head">
+                  <h4>Contacts for @mention</h4>
+                  <button
+                    type="button"
+                    className="x-int-link"
+                    disabled={contactsSyncing || gmailRateLimited}
+                    onClick={() => void syncContacts()}
+                  >
+                    {contactsSyncing ? 'Syncing…' : 'Sync contacts'}
+                  </button>
+                </div>
+                <p className="x-int-muted">
+                  {contactsSyncedAt
+                    ? `${contactsCount} contact${contactsCount === 1 ? '' : 's'} for @mention — type @martin in compose, pick from the list, then @cal book @martin for July 10 2:30pm PST.`
+                    : 'Sync after connecting Gmail. Includes saved contacts + Gmail To: suggestions (reconnect once if empty).'}
+                </p>
+                {contactsError || connections?.syncErrors?.contacts ? (
+                  <p className="x-int-alert">
+                    {contactsError ?? connections?.syncErrors?.contacts}
+                    {connections?.googleApiEnable?.contacts ? (
+                      <>
+                        {' '}
+                        <button
+                          type="button"
+                          className="x-settings-link"
+                          onClick={() =>
+                            window.notchDesktop?.openExternal?.(connections.googleApiEnable!.contacts!)
+                          }
+                        >
+                          Enable People API
+                        </button>
+                      </>
+                    ) : null}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="x-int-block">
+                <div className="x-int-block-head">
                   <h4>Calendars in rail</h4>
-                  <button type="button" className="x-int-link" onClick={() => void loadCalendars()}>
+                  <button type="button" className="x-int-link" onClick={() => void loadCalendars(true)}>
                     Refresh
                   </button>
                 </div>
@@ -870,7 +1097,24 @@ export function IntegrationsPanel({
                           ? 'Monday connected (read-only) — regenerate token with write scopes to create tasks.'
                           : 'Monday connected and synced.')
                     )
-                    await refreshConnections()
+                    setConnections((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            connected: { ...prev.connected, monday: true }
+                          }
+                        : prev
+                    )
+                    try {
+                      await refreshConnections()
+                    } catch (refreshErr) {
+                      const msg = String(refreshErr).replace(/^Error:\s*/i, '')
+                      setStatus(
+                        msg.includes('invalid_grant')
+                          ? 'Monday connected — Gmail token expired; reconnect Gmail separately when ready.'
+                          : `Monday connected, but status refresh failed: ${msg}`
+                      )
+                    }
                     await loadMondayAccount()
                     await loadMondayCreateTarget()
                   } catch (err) {
@@ -1780,7 +2024,7 @@ export function IntegrationsPanel({
             <div className="x-int-grid">
           {INTEGRATIONS.map((item) => {
             const connected =
-              item.id === 'youtube'
+              item.id === 'youtube' || item.id === 'linkedin'
                 ? true
                 : item.id === 'agents'
                   ? mcpAgentCount > 0
@@ -1820,7 +2064,7 @@ export function IntegrationsPanel({
                   <div className="x-int-card-body">
                     <div className="x-int-card-top">
                       <strong>{item.name}</strong>
-                      {item.id === 'youtube' ? (
+                      {item.id === 'youtube' || item.id === 'linkedin' ? (
                         <span className={`x-int-status ${pinned ? 'x-int-status-on' : 'x-int-status-off'}`}>
                           {pinned ? 'Pinned' : 'Available'}
                         </span>

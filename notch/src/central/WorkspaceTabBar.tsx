@@ -23,6 +23,16 @@ function tabIcon(source: WorkspaceTab['source']): string {
       return '📅'
     case 'gdocs':
       return 'G'
+    case 'youtube':
+      return '▶'
+    case 'linkedin':
+      return 'in'
+    case 'calcom':
+      return 'C'
+    case 'discord':
+      return 'D'
+    case 'github':
+      return '⎇'
     default:
       return '◆'
   }

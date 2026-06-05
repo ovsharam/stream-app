@@ -1,31 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CentralStreamEvent, ClusterSearchHit } from '@shared/cluster'
 import { LiveCallView } from './LiveTranscript'
-import { PostCallTaskDeck } from './PostCallTaskDeck'
 import { HomeChatLayout } from './HomeChatLayout'
-
-const POST_CALL_STEPS = [
-  'Wrapping up transcript…',
-  'Extracting scope & next steps…',
-  'Routing tasks…'
-] as const
 
 type Props = {
   events: CentralStreamEvent[]
   live: boolean
   syncing?: boolean
-  focusMeetingItemId: string | null
   onFocusMeeting: (itemId: string | null) => void
   onRefresh?: () => void
   onOpenSearchHit?: (hit: ClusterSearchHit) => void
-}
-
-function streamItemId(event: CentralStreamEvent): string {
-  return String(event.meta?.itemId ?? event.id.replace(/^ext-/, ''))
-}
-
-function meetingEvents(events: CentralStreamEvent[]): CentralStreamEvent[] {
-  return events.filter((e) => e.source === 'meeting')
 }
 
 function isLiveCall(events: CentralStreamEvent[], streamLive: boolean): boolean {
@@ -43,38 +27,10 @@ function SyncDot({ syncing }: { syncing?: boolean }) {
   )
 }
 
-function PostCallProgress({ syncing }: { syncing?: boolean }) {
-  const [stepIndex, setStepIndex] = useState(0)
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setStepIndex((i) => (i + 1) % POST_CALL_STEPS.length)
-    }, 1800)
-    return () => window.clearInterval(interval)
-  }, [])
-
-  return (
-    <div className="x-post-call-progress">
-      <ul className="x-post-call-progress-steps">
-        {POST_CALL_STEPS.map((label, i) => (
-          <li
-            key={label}
-            className={`x-post-call-progress-step ${i === stepIndex ? 'x-post-call-progress-step-active' : i < stepIndex ? 'x-post-call-progress-step-done' : ''}`}
-          >
-            {label}
-          </li>
-        ))}
-      </ul>
-      <SyncDot syncing={syncing ?? true} />
-    </div>
-  )
-}
-
 export function WorkView({
   events,
   live: streamLive,
   syncing,
-  focusMeetingItemId,
   onFocusMeeting,
   onRefresh,
   onOpenSearchHit
@@ -85,13 +41,6 @@ export function WorkView({
     () => events.filter((e) => ['transcript_live', 'assist', 'transcript_done'].includes(e.kind)),
     [events]
   )
-
-  const meetings = useMemo(() => meetingEvents(events), [events])
-  const focusEvent = useMemo(() => {
-    if (!focusMeetingItemId) return null
-    const bare = focusMeetingItemId.replace(/^ext-/, '')
-    return meetings.find((e) => streamItemId(e) === bare) ?? null
-  }, [focusMeetingItemId, meetings])
 
   const live = isLiveCall(events, streamLive) || captureLive
 
@@ -107,14 +56,6 @@ export function WorkView({
       onEnded?.()
     }
   }, [onRefresh])
-
-  useEffect(() => {
-    if (!focusMeetingItemId || focusEvent) return
-    onRefresh?.()
-    const onPush = () => onRefresh?.()
-    window.addEventListener('notch:stream-push', onPush)
-    return () => window.removeEventListener('notch:stream-push', onPush)
-  }, [focusMeetingItemId, focusEvent, onRefresh])
 
   if (live) {
     return (
@@ -135,40 +76,12 @@ export function WorkView({
     )
   }
 
-  if (focusMeetingItemId) {
-    if (!focusEvent) {
-      return (
-        <div className="x-work">
-          <header className="x-work-header">
-            <div>
-              <p className="x-work-eyebrow">Post-call</p>
-              <h1 className="x-work-title">Processing call</h1>
-              <p className="x-work-sub">Extracting scope, next steps, and task routes</p>
-            </div>
-          </header>
-          <PostCallProgress syncing={syncing} />
-        </div>
-      )
-    }
-    return (
-      <div className="x-work x-work-post-call">
-        <PostCallTaskDeck
-          event={focusEvent}
-          onDismiss={() => onFocusMeeting(null)}
-          onRefresh={onRefresh}
-        />
-      </div>
-    )
-  }
-
-  const openMeeting = (itemId: string) => onFocusMeeting(itemId)
-
   return (
     <div className="x-work-portal-wrap x-work-home">
       <HomeChatLayout
         events={events}
         liveCapture={false}
-        onFocusMeeting={openMeeting}
+        onFocusMeeting={(itemId) => onFocusMeeting(itemId)}
         onOpenSearchHit={onOpenSearchHit}
       />
     </div>

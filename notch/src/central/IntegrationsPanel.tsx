@@ -486,21 +486,21 @@ export function IntegrationsPanel({
         setStatus('Gmail connect did not return an auth URL.')
         return
       }
-      if (window.notchDesktop?.openAuthWindow) {
+      if (window.notchDesktop?.openExternal) {
+        window.notchDesktop.openExternal(url)
+      } else if (window.notchDesktop?.openAuthWindow) {
         await window.notchDesktop.openAuthWindow({
           partition: GOOGLE_BROWSE_PARTITION,
           url,
           title: addAccount ? 'Add Gmail account' : 'Connect Gmail'
         })
-      } else if (window.notchDesktop?.openExternal) {
-        window.notchDesktop.openExternal(url)
       } else {
         window.open(url, '_blank', 'noopener,noreferrer')
       }
       setStatus(
         addAccount
-          ? 'Complete sign-in in the Notch window — this also signs you into YouTube and Google Docs tabs.'
-          : 'Complete Gmail sign-in in the Notch window — YouTube and Docs will use the same Google session.'
+          ? 'Complete sign-in in Chrome, then return to Notch. Google blocks in-app sign-in.'
+          : 'Complete Gmail sign-in in Chrome, then return to Notch. Use Open in Chrome for Docs and YouTube tabs.'
       )
     } catch (err) {
       setStatus(`Gmail connect failed: ${String(err)}`)

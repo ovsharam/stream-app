@@ -96,11 +96,7 @@ export function useEmbedBrowseSignIn(
         return
       }
       if (opts.kind === 'google' && isGoogleOAuthUrl(url)) {
-        void window.notchDesktop?.openAuthWindow?.({
-          partition,
-          url,
-          title: 'Sign in to Google'
-        })
+        onSignInNeededRef.current?.()
         return
       }
       void window.notchDesktop?.openAuthWindow?.({

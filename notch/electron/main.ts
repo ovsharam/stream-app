@@ -11,6 +11,7 @@ import { CallSessionManager } from './services/CallSessionManager'
 
 const isDev = !app.isPackaged
 const GUEST_PRELOAD = join(__dirname, 'guest-preload.js')
+const AUTH_PRELOAD = join(__dirname, 'auth-preload.js')
 
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled')
 const mobileOnly = process.argv.includes('--mobile-only')
@@ -38,6 +39,8 @@ let callSession: CallSessionManager | null = null
 /** Google blocks OAuth in Electron/webview UAs — present as current Chrome instead. */
 const CHROME_USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.204 Safari/537.36'
+
+app.userAgentFallback = CHROME_USER_AGENT
 
 let navBrowserView: BrowserView | null = null
 let navBrowserViewPartition: string | null = null
@@ -402,9 +405,11 @@ function configureEmbeddedSession(sess: Session): void {
   })
   sess.setPermissionCheckHandler(() => true)
   sess.webRequest.onBeforeSendHeaders({ urls: ['https://*/*'] }, (details, callback) => {
+    const rawUa = details.requestHeaders['User-Agent'] || CHROME_USER_AGENT
+    const ua = rawUa.replace(/\sElectron\/[^\s]+/g, '').trim()
     const headers = {
       ...details.requestHeaders,
-      'User-Agent': CHROME_USER_AGENT,
+      'User-Agent': ua,
       'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
       'sec-ch-ua-mobile': '?0',
       'sec-ch-ua-platform': '"macOS"'
@@ -554,6 +559,34 @@ function showNavBrowserView(args: {
   applyNavAppAppearance(navAppTheme)
 }
 
+const AUTH_BLOCKED_JS = `(function() {
+  const t = (document.title || '').toLowerCase();
+  const b = (document.body && document.body.innerText) || '';
+  return t.includes("couldn't sign you in") || b.includes('may not be secure');
+})();`
+
+function wireAuthWindowBlockedFallback(win: BrowserWindow, oauthUrl: string, partition: string): void {
+  const check = () => {
+    if (win.isDestroyed()) return
+    void win.webContents
+      .executeJavaScript(AUTH_BLOCKED_JS, true)
+      .then((blocked) => {
+        if (!blocked || win.isDestroyed()) return
+        console.warn('[embedded] Google blocked in-app OAuth — opening system browser')
+        void shell.openExternal(oauthUrl)
+        win.close()
+        if (centralWindow && !centralWindow.isDestroyed()) {
+          centralWindow.webContents.send('embedded:auth-external-fallback', partition)
+        }
+      })
+      .catch(() => {
+        /* ignore */
+      })
+  }
+  win.webContents.on('did-finish-load', check)
+  win.webContents.on('did-navigate-in-page', check)
+}
+
 function openAuthWindow(args: { partition: string; url: string; title?: string }): void {
   const sess = session.fromPartition(args.partition)
   configureEmbeddedSession(sess)
@@ -565,14 +598,16 @@ function openAuthWindow(args: { partition: string; url: string; title?: string }
     return
   }
 
+  const isGoogle = args.partition === 'persist:google-browse'
   const win = new BrowserWindow({
-    ...popupWindowOptions(null, sess),
+    ...popupWindowOptions(null, sess, isGoogle),
     width: 960,
     height: 780,
     title: args.title ?? 'Sign in'
   })
   win.webContents.setUserAgent(CHROME_USER_AGENT)
   configureGuestWebContents(win.webContents)
+  if (isGoogle) wireAuthWindowBlockedFallback(win, args.url, args.partition)
   void win.loadURL(args.url)
   authWindows.set(args.partition, win)
   win.on('closed', () => {
@@ -591,7 +626,11 @@ function openAuthWindow(args: { partition: string; url: string; title?: string }
   })
 }
 
-function popupWindowOptions(parent: BrowserWindow | null, sess: Session): Electron.BrowserWindowConstructorOptions {
+function popupWindowOptions(
+  parent: BrowserWindow | null,
+  sess: Session,
+  googleAuth = false
+): Electron.BrowserWindowConstructorOptions {
   return {
     width: 520,
     height: 720,
@@ -604,7 +643,7 @@ function popupWindowOptions(parent: BrowserWindow | null, sess: Session): Electr
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      preload: GUEST_PRELOAD
+      preload: googleAuth ? AUTH_PRELOAD : GUEST_PRELOAD
     }
   }
 }

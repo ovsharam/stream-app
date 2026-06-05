@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { integrationApi, openBrowserLink } from '../lib/api'
 import type { WorkspaceTab } from './workspace'
 import { EmbeddedWebview } from './EmbeddedWebview'
@@ -18,8 +18,15 @@ type Props = {
 export function WorkspaceView({ tab, active }: Props) {
   const partition = workspacePartitionForUrl(tab.url, tab.id)
   const embedBrowseKind = embedBrowseKindForUrl(tab.url)
-  const [embedAuthState, setEmbedAuthState] = useState<EmbedBrowseAuthState>('ok')
-  const needsEmbedAuth = embedBrowseKind !== null && embedAuthState !== 'ok'
+  const [embedAuthState, setEmbedAuthState] = useState<EmbedBrowseAuthState | 'checking'>(() =>
+    embedBrowseKind ? 'checking' : 'ok'
+  )
+  const autoSignInStarted = useRef(false)
+  const showSignInGate = embedBrowseKind !== null && embedAuthState !== 'ok'
+
+  const onEmbedAuthState = useCallback((state: EmbedBrowseAuthState) => {
+    setEmbedAuthState(state)
+  }, [])
 
   const signInEmbedded = useCallback(async () => {
     if (!embedBrowseKind) return
@@ -43,6 +50,18 @@ export function WorkspaceView({ tab, active }: Props) {
       openBrowserLink(tab.url, { forceExternal: true, title: tab.title, source: tab.source })
     }
   }, [embedBrowseKind, tab])
+
+  useEffect(() => {
+    autoSignInStarted.current = false
+  }, [tab.id, embedBrowseKind])
+
+  useEffect(() => {
+    if (!active || !embedBrowseKind) return
+    if (embedAuthState !== 'signin' && embedAuthState !== 'blocked') return
+    if (autoSignInStarted.current) return
+    autoSignInStarted.current = true
+    void signInEmbedded()
+  }, [active, embedBrowseKind, embedAuthState, signInEmbedded])
 
   const signInLabel =
     embedBrowseKind === 'linkedin' ? 'Sign in to LinkedIn' : 'Sign in via Gmail'
@@ -71,32 +90,38 @@ export function WorkspaceView({ tab, active }: Props) {
           ↗
         </button>
       </div>
-      {needsEmbedAuth ? (
-        <div className="x-google-browse-banner">
-          <p>{bannerCopy}</p>
-          <div className="x-google-browse-banner-actions">
-            <button type="button" className="x-post-link" onClick={() => void signInEmbedded()}>
-              {signInLabel}
-            </button>
-            <span className="x-post-links-sep" aria-hidden>
-              ·
-            </span>
-            <button
-              type="button"
-              className="x-post-link"
-              onClick={() => openBrowserLink(tab.url, { forceExternal: true, title: tab.title, source: tab.source })}
-            >
-              Open in Chrome
-            </button>
+      {showSignInGate ? (
+        <div className="x-workspace-signin-gate">
+          {embedAuthState === 'checking' ? (
+            <p className="x-workspace-signin-copy">Loading…</p>
+          ) : (
+          <div className="x-workspace-signin-card">
+            <p className="x-workspace-signin-title">
+              {embedBrowseKind === 'linkedin' ? 'Sign in to LinkedIn' : 'Connect Google in Notch'}
+            </p>
+            <p className="x-workspace-signin-copy">{bannerCopy}</p>
+            <div className="x-workspace-signin-actions">
+              <button type="button" className="x-int-btn" onClick={() => void signInEmbedded()}>
+                {signInLabel}
+              </button>
+              <button
+                type="button"
+                className="x-int-btn x-int-btn-ghost"
+                onClick={() => openBrowserLink(tab.url, { forceExternal: true, title: tab.title, source: tab.source })}
+              >
+                Open in Chrome
+              </button>
+            </div>
           </div>
+          )}
         </div>
       ) : null}
       <EmbeddedWebview
-        className="x-workspace-webview"
+        className={`x-workspace-webview${showSignInGate ? ' x-workspace-webview-gated' : ''}`}
         src={tab.url}
         partition={partition}
         embedBrowseKind={embedBrowseKind}
-        onEmbedAuthState={setEmbedAuthState}
+        onEmbedAuthState={onEmbedAuthState}
         onSignInNeeded={() => void signInEmbedded()}
       />
     </section>

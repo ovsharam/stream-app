@@ -9104,6 +9104,54 @@ button.x-home-running-row:hover {
   background: #fff;
 }
 
+.x-workspace-webview-gated {
+  visibility: hidden;
+  pointer-events: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.x-workspace-signin-gate {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  background: var(--x-bg);
+}
+
+.x-workspace-signin-card {
+  max-width: 420px;
+  width: 100%;
+  padding: 28px 24px;
+  border: 1px solid var(--x-border);
+  border-radius: 14px;
+  background: var(--x-surface);
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--x-fg) 6%, transparent);
+}
+
+.x-workspace-signin-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--x-fg);
+}
+
+.x-workspace-signin-copy {
+  margin: 0 0 20px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--x-muted);
+}
+
+.x-workspace-signin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .x-google-browse-banner {
   flex-shrink: 0;
   padding: 10px 14px;

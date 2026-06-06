@@ -35,6 +35,12 @@ import {
 import { ComposeInput } from './ComposeInput'
 import { useComposeContacts } from './useComposeContacts'
 import { parseComposeCommand } from '@shared/compose'
+import {
+  getContextSelectedAt,
+  setTaskCorrelation,
+  trackComposeStart,
+  trackOperatorEvent
+} from '../lib/operatorTelemetry'
 import { clusterApi, integrationApi, openBrowserLink, inferWorkspaceMeta } from '../lib/api'
 import { isLinkedInBrowseHost, LINKEDIN_FEED_URL, shouldPersistWorkspaceUrl } from './embedBrowse'
 import {
@@ -183,6 +189,7 @@ export function CentralApp() {
     }
   })
   const [navOpen, setNavOpen] = useState(readNavOpen)
+  const navLocationRef = useRef({ page, area })
   const [browserSidebarCollapsed, setBrowserSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem('notch.browserSidebarCollapsed') === '1'
@@ -603,11 +610,20 @@ export function CentralApp() {
 
   const selectContext = (itemId: string) => {
     setContextItemId(itemId)
+    const source = events.find((e) => streamItemId(e) === itemId)?.source
+    setTaskCorrelation(itemId)
+    trackOperatorEvent(
+      'feed_context_select',
+      { itemId, source },
+      { surface: area === 'feed' ? 'feed' : 'stream_rail', subjectType: 'stream_item', subjectId: itemId }
+    )
     void clusterApi.markSeen(itemId).catch(() => {})
   }
 
   const submitCompose = async () => {
     if (!composeAction || composeBusy) return
+    const startedAt = Date.now()
+    const timeToActionMs = getContextSelectedAt() ? startedAt - (getContextSelectedAt() ?? startedAt) : undefined
     setComposeBusy(true)
     setComposeError(null)
     setComposeToast(null)
@@ -626,6 +642,21 @@ export function CentralApp() {
         },
         { signal }
       )
+      trackOperatorEvent(
+        'compose_submit',
+        {
+          provider: composeAction.provider,
+          intent: composeAction.intent,
+          contextItemId: contextItemId ?? undefined,
+          ok: result.ok,
+          timeToActionMs
+        },
+        {
+          surface: 'home',
+          subjectType: contextItemId ? 'stream_item' : 'compose_action',
+          subjectId: contextItemId ?? compose.slice(0, 64)
+        }
+      )
       setCompose('')
       if (result.ok) {
         setComposeToast(result.message)
@@ -635,7 +666,10 @@ export function CentralApp() {
         if (composeAction.provider === 'monday') {
           void integrationApi.syncSource('monday').catch(() => undefined)
         }
-        if (composeAction.intent === 'send') setContextItemId(null)
+        if (composeAction.intent === 'send') {
+          setContextItemId(null)
+          setTaskCorrelation()
+        }
       } else {
         setComposeError(result.message)
       }

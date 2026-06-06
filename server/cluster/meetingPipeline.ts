@@ -28,6 +28,7 @@ import {
   ingestMeetingStar,
   ingestStreamItem
 } from '../kb/pipeline'
+import { emitServerEvent } from '../telemetry/service'
 
 export type MeetingChunk = { text: string; ts: number }
 export type MeetingSignal = { type: string; text: string; ts: number; chunkIndex: number }
@@ -94,6 +95,19 @@ export function startMeetingSession(input: { title?: string; dealHint?: string }
     starred: [],
     predictions: []
   }
+  emitServerEvent(
+    'meeting_start',
+    {
+      sessionId: active.id,
+      title: input.title,
+      dealHint: input.dealHint
+    },
+    {
+      subjectType: 'meeting',
+      subjectId: active.id,
+      surface: 'workspace'
+    }
+  )
   return active
 }
 
@@ -612,6 +626,23 @@ export async function endMeetingSession(
   const session = active
   active = null
 
+  const durationMs = (session.endedAt ?? Date.now()) - session.startedAt
+  emitServerEvent(
+    'meeting_end',
+    {
+      sessionId: session.id,
+      durationMs,
+      chunkCount: session.chunks.length,
+      title: session.title,
+      dealHint: session.dealHint
+    },
+    {
+      subjectType: 'meeting',
+      subjectId: session.id,
+      surface: 'workspace'
+    }
+  )
+
   if (input.persist === false) {
     archive.set(session.id, session)
     return null
@@ -686,7 +717,7 @@ export async function endMeetingSession(
 
   return {
     sessionId: session.id,
-    durationMs: (session.endedAt ?? Date.now()) - session.startedAt,
+    durationMs,
     transcript,
     extraction,
     googleDocUrl: docUrl,

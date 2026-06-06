@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import type { ActionTrace } from '../../shared/personal-kb'
 import type { EngagementOutcome } from '../../shared/operator-telemetry'
+import { emitServerEvent } from '../telemetry/service'
 import { inferIntention } from './intention'
 import { getItemSeenAt, insertTrace, listTraces } from './store'
 
@@ -63,5 +64,23 @@ export function recordComposeAction(input: {
   }
 
   insertTrace(trace)
+
+  emitServerEvent(
+    'compose_submit',
+    {
+      provider: input.provider,
+      intent: input.actionKind,
+      contextItemId: input.contextItemId,
+      ok: input.ok,
+      timeToActionMs: trace.timeToActionMs
+    },
+    {
+      correlationId: input.contextItemId,
+      subjectType: 'compose_action',
+      subjectId: input.subjectId,
+      surface: 'home'
+    }
+  )
+
   return trace
 }

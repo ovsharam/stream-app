@@ -1813,6 +1813,7 @@ export function IntegrationsPanel({
                   try {
                     const res = await integrationApi.syncSource('calcom')
                     setStatus(`Synced ${res.count} Cal.com booking${res.count === 1 ? '' : 's'}`)
+                    window.dispatchEvent(new CustomEvent('notch:calendars-updated'))
                     await refreshConnections()
                   } catch (err) {
                     setStatus(`Cal.com sync failed: ${String(err)}`)

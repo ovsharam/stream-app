@@ -5,7 +5,7 @@ import type { MobileContext, ContextChip } from '../../shared/mobile'
 import { assistCluster } from '../cluster/service'
 import { getRecentItems } from '../db'
 import { getActiveMeeting, getLatestPrediction } from '../cluster/meetingPipeline'
-import { getCachedCalendarEvents } from '../sources/calendar'
+import { getMergedCalendarRailEvents } from '../sources/calendar'
 import { retrieveAssistContext } from '../kb/pipeline'
 import { getDatapoint } from '../kb/store'
 import { getCaptureState } from '../sources/captureStore'
@@ -93,7 +93,7 @@ function buildLegacyMobileContext(objective: 'discovery' | 'v1_ship'): MobileCon
 /** Opt-in P1 path — real meeting capture + calendar when NOTCH_PROTOTYPE=1. */
 function buildRealMobileContext(objective: 'discovery' | 'v1_ship'): MobileContext {
   const session = getActiveMeeting()
-  const calendar = getCachedCalendarEvents()
+  const calendar = getMergedCalendarRailEvents()
   const liveCal = calendar.find((e) => e.live)
   const nextCal = calendar[0]
   const prediction = getLatestPrediction()
@@ -285,7 +285,7 @@ function buildChatContextBlock(
   }
 
   if (planning) {
-    const calendar = getCachedCalendarEvents()
+    const calendar = getMergedCalendarRailEvents()
     const tomorrow = calendar.filter((e) => e.dayIndex === 1)
     const today = calendar.filter((e) => e.dayIndex === 0 && !e.ended)
     parts.push(

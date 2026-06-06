@@ -43,7 +43,24 @@ export function isLinkedInNavigationNoise(url: string): boolean {
     const host = new URL(url).hostname.toLowerCase()
     if (host === 'cs.ns1p.net' || host.endsWith('.ns1p.net')) return true
     if (host.endsWith('.licdn.com')) return true
+    if (host.endsWith('.lix.com')) return true
+    if (host === 'lnkd.in') return true
     return false
+  } catch {
+    return false
+  }
+}
+
+/** Compare URLs without reload churn from query/hash/trailing-slash drift. */
+export function workspaceUrlsEquivalent(a: string, b: string): boolean {
+  if (a === b) return true
+  try {
+    const left = new URL(a)
+    const right = new URL(b)
+    if (left.origin !== right.origin) return false
+    const lp = left.pathname.replace(/\/+$/, '') || '/'
+    const rp = right.pathname.replace(/\/+$/, '') || '/'
+    return lp === rp
   } catch {
     return false
   }

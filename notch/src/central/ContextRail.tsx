@@ -168,19 +168,18 @@ function eventPalette(evt: CalendarRailEvent) {
 }
 
 function groupByDay(events: CalendarRailEvent[]): { heading: string; dayIndex: number; events: CalendarRailEvent[] }[] {
-  const order = [0, 1, 2]
   const buckets = new Map<number, CalendarRailEvent[]>()
 
   for (const evt of events) {
     const dayIndex = resolveDayIndex(evt)
-    if (dayIndex < 0 || dayIndex > 2) continue
+    if (dayIndex < 0) continue
     const list = buckets.get(dayIndex) ?? []
     list.push(evt)
     buckets.set(dayIndex, list)
   }
 
-  return order
-    .filter((idx) => (buckets.get(idx)?.length ?? 0) > 0)
+  return [...buckets.keys()]
+    .sort((a, b) => a - b)
     .map((idx) => ({
       dayIndex: idx,
       heading: buckets.get(idx)![0].dayHeading || resolveDayHeading(idx),
@@ -332,7 +331,7 @@ function useCalendarRail() {
         } else if (data.error) {
           setCalendarHint(`Calendar sync issue: ${data.error}`)
         } else if (data.connected && data.events.length === 0) {
-          setCalendarHint('Nothing scheduled in the next 3 days.')
+          setCalendarHint('Nothing scheduled.')
         } else {
           setCalendarHint(null)
         }
@@ -552,13 +551,13 @@ function CalendarPanel({
           <h2>{monthLabel}</h2>
           {calendarConnected ? <span className="x-cal-sync-badge">Synced</span> : null}
         </div>
-        <p className="x-cal-sub">Your schedule · next 3 days</p>
+        <p className="x-cal-sub">Google Calendar + Cal.com bookings</p>
       </div>
 
       {!calendarConnected ? (
-        <p className="x-cal-empty">Connect Gmail in Settings to sync Google Calendar.</p>
+        <p className="x-cal-empty">Connect Gmail or Cal.com in Apps to sync your schedule.</p>
       ) : dayGroups.length === 0 ? (
-        <p className="x-cal-empty">{calendarHint ?? 'Nothing scheduled in the next 3 days.'}</p>
+        <p className="x-cal-empty">{calendarHint ?? 'Nothing scheduled.'}</p>
       ) : (
         <>
           <CalendarDayStrip days={stripDays} selectedDay={selectedDay} onSelect={setSelectedDay} />

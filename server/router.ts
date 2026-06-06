@@ -103,6 +103,7 @@ import { loadOntology, saveOntology, ontologyPath } from './kb/ontology'
 import type { KbOntologyConfig } from '../shared/kb-ontology'
 import { recordComposeAction, markStreamItemSeen } from './kb/telemetry'
 import {
+  emitServerEvent,
   exportTrainingEvents,
   queryOperatorEvents,
   recordOperatorEvents
@@ -157,15 +158,17 @@ import { toThreadUpdate } from './cluster/threadUtils'
 import { readSessionId, getSessionId } from './session'
 import { runWithSession } from './request-context'
 import {
-  fetchCalendarEvents,
-  getCachedCalendarEvents,
+  getMergedCalendarRailEvents,
   syncCalendar,
   getLastCalendarError,
   calendarNeedsReconnect,
   listGoogleCalendars,
   setEnabledCalendarIds,
-  getCachedGoogleCalendars
+  getCachedGoogleCalendars,
+  getCalendarCacheAgeMs,
+  CALENDAR_CACHE_MS
 } from './sources/calendar'
+import { isCalcomConnected } from './sources/calcom'
 
 function serializeContext(ctx: ReturnType<typeof getActiveContext>) {
   return {
@@ -1047,20 +1050,21 @@ export function createRouter(io?: SocketServer): Router {
       updatedAt: pplxRail.updatedAt
     }
 
-    const connected = await isGmailConnected()
-    if (!connected) {
-      res.json({ events: [], connected: false, perplexity: perplexityState })
-      return
+    const gmailConnected = await isGmailConnected()
+    const calcomConnected = isCalcomConnected()
+
+    if (gmailConnected && getCalendarCacheAgeMs() > CALENDAR_CACHE_MS) {
+      await syncCalendar(true)
     }
 
     const blocked = googleApiBlockedMessage()
-    const events = getCachedCalendarEvents()
-    const error = blocked ?? getLastCalendarError()
+    const events = getMergedCalendarRailEvents()
+    const error = gmailConnected ? (blocked ?? getLastCalendarError()) : null
     res.json({
       events,
-      connected: true,
+      connected: gmailConnected || calcomConnected,
       error: error ?? undefined,
-      needsReconnect: calendarNeedsReconnect(error ?? null),
+      needsReconnect: gmailConnected ? calendarNeedsReconnect(error ?? null) : undefined,
       perplexity: perplexityState
     })
   })
@@ -1564,7 +1568,6 @@ export function createRouter(io?: SocketServer): Router {
   router.post('/kb/seen/:itemId', (req, res) => {
     const itemId = req.params.itemId.replace(/^ext-/, '')
     markStreamItemSeen(itemId)
-    const { emitServerEvent } = require('./telemetry/service') as typeof import('./telemetry/service')
     emitServerEvent(
       'feed_context_select',
       { itemId, via: 'markSeen' },
@@ -1598,6 +1601,39 @@ export function createRouter(io?: SocketServer): Router {
 
   router.get('/telemetry/export', (_req, res) => {
     res.json({ events: exportTrainingEvents() })
+  })
+
+  router.get('/training/dataset', (_req, res) => {
+    const { buildFdeTrainingDataset } = require('./training/dataset') as typeof import('./training/dataset')
+    res.json(buildFdeTrainingDataset())
+  })
+
+  router.post('/training/sync', async (_req, res) => {
+    const { buildFdeTrainingDataset } = require('./training/dataset') as typeof import('./training/dataset')
+    const { isSupabaseConfigured, syncTrainingSessionsToSupabase } =
+      require('./supabase/sync') as typeof import('./supabase/sync')
+    if (!isSupabaseConfigured()) {
+      res.status(503).json({ error: 'Supabase not configured — set SUPABASE_SECRET_KEY (sb_secret_...) in .env.local' })
+      return
+    }
+    try {
+      const dataset = buildFdeTrainingDataset()
+      const synced = await syncTrainingSessionsToSupabase(dataset.sessions, dataset.exportedAt)
+      res.json({ ok: true, synced, stats: dataset.stats })
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  router.get('/supabase/status', async (_req, res) => {
+    const { isSupabaseConfigured, pingSupabase } =
+      require('./supabase/sync') as typeof import('./supabase/sync')
+    if (!isSupabaseConfigured()) {
+      res.json({ configured: false, ok: false, error: 'missing env vars' })
+      return
+    }
+    const ping = await pingSupabase()
+    res.json({ configured: true, ...ping })
   })
 
   router.get('/fde/engagements', (_req, res) => {

@@ -7,6 +7,18 @@ import {
   listOperatorEvents
 } from './store'
 
+function queueSupabaseOperatorSync(events: OperatorEvent[]): void {
+  if (events.length === 0) return
+  void import('../supabase/sync')
+    .then(({ syncOperatorEventsToSupabase, isSupabaseConfigured }) => {
+      if (!isSupabaseConfigured()) return
+      return syncOperatorEventsToSupabase(events)
+    })
+    .catch((err) => {
+      console.warn('[supabase] operator sync failed:', err instanceof Error ? err.message : err)
+    })
+}
+
 const DEFAULT_OPERATOR_ID = process.env.STREAM_OPERATOR_ID ?? 'local'
 
 function isValidEvent(event: unknown): event is OperatorEvent {
@@ -31,6 +43,7 @@ export function recordOperatorEvents(events: unknown[]): { ok: true; inserted: n
     return { ok: false, error: 'no valid events' }
   }
   const inserted = insertOperatorEvents(valid)
+  void queueSupabaseOperatorSync(valid)
   return { ok: true, inserted }
 }
 
@@ -71,5 +84,6 @@ export function emitServerEvent(
     payload
   }
   insertOperatorEvents([event])
+  queueSupabaseOperatorSync([event])
   return event
 }

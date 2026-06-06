@@ -1,10 +1,106 @@
 import { createHash, randomBytes } from 'crypto'
 import type { Server as SocketServer } from 'socket.io'
+import type { CalendarRailEvent } from '../../shared/cluster'
 import { normalizeCalcomBooking } from '../normalizer'
-import { upsertItem, itemExists } from '../db'
+import { upsertItem, itemExists, getRecentItems } from '../db'
 import { getToken, setToken, setConnection } from '../store'
 import type { StreamItem } from '../../shared/types'
 import { expandMentionsWithContacts } from './contactsStore'
+
+const CALCOM_CALENDAR_HORIZON_DAYS = 90
+
+function startOfLocalDay(date: Date): Date {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+function dayIndexFromStart(start: Date, now: Date): number {
+  const today = startOfLocalDay(now).getTime()
+  const day = startOfLocalDay(start).getTime()
+  return Math.round((day - today) / 86_400_000)
+}
+
+function dayHeading(index: number, now: Date): string {
+  if (index === 0) return 'Today'
+  if (index === 1) return 'Tomorrow'
+  const d = new Date(now)
+  d.setDate(d.getDate() + index)
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+function formatDurationMs(ms: number): string {
+  const mins = Math.max(1, Math.round(ms / 60000))
+  if (mins < 60) return `${mins}m`
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m > 0 ? `${h}h ${m}m` : `${h}h`
+}
+
+function formatCompactTime(start: Date, end: Date): string {
+  const startTime = start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  const endTime = end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  if (startTime === endTime) return startTime
+  return `${startTime} – ${endTime}`
+}
+
+function calcomItemToRailEvent(item: StreamItem, now: Date): CalendarRailEvent | null {
+  if (item.source !== 'calcom') return null
+
+  const startRaw = item.metadata?.startTime
+  if (typeof startRaw !== 'string' || !startRaw.trim()) return null
+
+  const status = String(item.metadata?.status ?? 'scheduled').toLowerCase()
+  if (status === 'cancelled' || status === 'canceled' || status === 'rejected') return null
+
+  const start = new Date(startRaw)
+  if (Number.isNaN(start.getTime())) return null
+
+  const endRaw = item.metadata?.endTime
+  const end =
+    typeof endRaw === 'string' && endRaw.trim()
+      ? new Date(endRaw)
+      : new Date(start.getTime() + 30 * 60_000)
+  if (Number.isNaN(end.getTime())) return null
+
+  const dayIndex = dayIndexFromStart(start, now)
+  const ended = end.getTime() < now.getTime()
+  if (ended && dayIndex < 0) return null
+  if (!ended && dayIndex > CALCOM_CALENDAR_HORIZON_DAYS) return null
+
+  const bookingUid = String(item.metadata?.bookingUid ?? item.id.replace(/^calcom-/, ''))
+  const link =
+    typeof item.metadata?.url === 'string' && item.metadata.url.startsWith('http')
+      ? item.metadata.url
+      : `https://app.cal.com/bookings/${bookingUid}`
+
+  const live = start.getTime() <= now.getTime() && end.getTime() >= now.getTime()
+
+  return {
+    id: `calcom-rail-${bookingUid}`,
+    title: item.title?.trim() || 'Cal.com booking',
+    timeLabel: formatCompactTime(start, end),
+    durationLabel: formatDurationMs(end.getTime() - start.getTime()),
+    kind: 'calendar',
+    link,
+    live,
+    ended,
+    startsAt: start.getTime(),
+    endsAt: end.getTime(),
+    dayIndex,
+    dayHeading: dayHeading(dayIndex, now)
+  }
+}
+
+/** Upcoming Cal.com bookings for the calendar rail (from synced stream items). */
+export function getCalcomCalendarRailEvents(): CalendarRailEvent[] {
+  if (!isCalcomConnected()) return []
+  const now = new Date()
+  return getRecentItems(120, 'calcom')
+    .map((item) => calcomItemToRailEvent(item, now))
+    .filter((evt): evt is CalendarRailEvent => evt !== null)
+    .sort((a, b) => a.startsAt - b.startsAt)
+}
 
 const CALCOM_AUTH_URL = 'https://app.cal.com/auth/oauth2/authorize'
 const CALCOM_TOKEN_URL = 'https://api.cal.com/v2/auth/oauth2/token'

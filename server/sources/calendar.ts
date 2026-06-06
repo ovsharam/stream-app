@@ -389,6 +389,15 @@ export function getCachedCalendarEvents(): CalendarRailEvent[] {
   return cachedEvents
 }
 
+/** Google Calendar cache + Cal.com bookings from the integration stream. */
+export function getMergedCalendarRailEvents(): CalendarRailEvent[] {
+  const { getCalcomCalendarRailEvents } = require('./calcom') as typeof import('./calcom')
+  const byId = new Map<string, CalendarRailEvent>()
+  for (const evt of cachedEvents) byId.set(evt.id, evt)
+  for (const evt of getCalcomCalendarRailEvents()) byId.set(evt.id, evt)
+  return [...byId.values()].sort((a, b) => a.startsAt - b.startsAt)
+}
+
 export function getCalendarCacheAgeMs(): number {
   return cachedAt ? Date.now() - cachedAt : Number.POSITIVE_INFINITY
 }

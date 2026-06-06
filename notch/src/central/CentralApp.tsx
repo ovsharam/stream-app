@@ -105,23 +105,18 @@ function loadWorkspaceState(): {
     if (rawBrowser) {
       const browserTabs = JSON.parse(rawBrowser) as WorkspaceTab[]
       const activeBrowserTabId = localStorage.getItem('stream.central.activeBrowserTabId')
-      const homePaneRaw = localStorage.getItem('stream.central.homePane')
-      const homePane: HomePane = homePaneRaw === 'browser' ? 'browser' : 'chat'
       const pinnedRaw = localStorage.getItem('stream.central.pinnedSession')
       const pinnedSession = sanitizePinnedSession(
         pinnedRaw ? (JSON.parse(pinnedRaw) as PinnedAppSession) : null
       )
       const browserExpanded = localStorage.getItem('stream.central.browserExpanded') !== '0'
-      const viewRaw = localStorage.getItem('stream.central.workspaceView')
-      const workspaceView: WorkspaceView =
-        viewRaw === 'pinned' && pinnedSession ? 'pinned' : 'home'
       return {
         browserTabs,
         activeBrowserTabId: activeBrowserTabId ?? browserTabs.at(-1)?.id ?? null,
-        homePane,
+        homePane: 'chat',
         pinnedSession,
         browserExpanded,
-        workspaceView
+        workspaceView: 'home'
       }
     }
 
@@ -131,22 +126,17 @@ function loadWorkspaceState(): {
       const { browserTabs, pinnedSession: rawPinned } = migrateLegacyTabs(legacyTabs)
       const pinnedSession = sanitizePinnedSession(rawPinned)
       const legacyActive = localStorage.getItem('stream.central.activeWorkspaceId')
-      const activeTab = legacyTabs.find((t) => t.id === legacyActive)
-      const activeKind = activeTab?.tabKind ?? (activeTab?.id.startsWith('nav-') ? 'pinned' : 'temp')
-      let workspaceView: WorkspaceView = 'home'
       let activeBrowserTabId = browserTabs.at(-1)?.id ?? null
-      if (activeKind === 'pinned' && pinnedSession) {
-        workspaceView = 'pinned'
-      } else if (legacyActive && browserTabs.some((t) => t.id === legacyActive)) {
+      if (legacyActive && browserTabs.some((t) => t.id === legacyActive)) {
         activeBrowserTabId = legacyActive
       }
       return {
         browserTabs,
         activeBrowserTabId,
-        homePane: browserTabs.length > 0 && activeBrowserTabId ? 'browser' : 'chat',
+        homePane: 'chat',
         pinnedSession,
         browserExpanded: true,
-        workspaceView
+        workspaceView: 'home'
       }
     }
   } catch {
@@ -580,6 +570,7 @@ export function CentralApp() {
     setNavOpen((open) => {
       const next = !open
       persistNavOpen(next)
+      trackOperatorEvent('panel_toggle', { panel: 'nav', open: next }, { surface: 'home' })
       return next
     })
   }, [])
@@ -698,13 +689,35 @@ export function CentralApp() {
   }, [])
 
   useEffect(() => {
-    const onStarted = window.notch?.meeting?.onStarted?.(() => {
+    const onStarted = window.notch?.meeting?.onStarted?.((sessionId: string) => {
+      trackOperatorEvent(
+        'meeting_start',
+        { sessionId },
+        { subjectType: 'meeting', subjectId: sessionId, surface: 'workspace' }
+      )
       setPage('stream')
       setArea('work')
       setFocusMeetingItemId(null)
     })
     const onEnded = window.notch?.meeting?.onEnded?.((result: unknown) => {
-      const payload = result as { feedItemId?: string } | null
+      const payload = result as {
+        sessionId?: string
+        durationMs?: number
+        feedItemId?: string
+        chunkCount?: number
+      } | null
+      if (payload?.sessionId) {
+        trackOperatorEvent(
+          'meeting_end',
+          {
+            sessionId: payload.sessionId,
+            durationMs: payload.durationMs ?? 0,
+            chunkCount: payload.chunkCount ?? 0,
+            feedItemId: payload.feedItemId
+          },
+          { subjectType: 'meeting', subjectId: payload.sessionId, surface: 'workspace' }
+        )
+      }
       setPage('stream')
       setArea('work')
       if (payload?.feedItemId) {
@@ -718,6 +731,20 @@ export function CentralApp() {
       onEnded?.()
     }
   }, [])
+
+  useEffect(() => {
+    const prev = navLocationRef.current
+    const nextKey = `${page}:${area}`
+    const prevKey = `${prev.page}:${prev.area}`
+    if (nextKey !== prevKey) {
+      trackOperatorEvent(
+        'nav_change',
+        { from: prevKey, to: nextKey, page, area, surface: area === 'feed' ? 'feed' : 'home' },
+        { surface: page === 'stream' ? (area === 'feed' ? 'feed' : 'home') : page }
+      )
+      navLocationRef.current = { page, area }
+    }
+  }, [page, area])
 
   useEffect(() => {
     localStorage.setItem('stream.central.browserTabs', JSON.stringify(browserTabs))
@@ -854,6 +881,7 @@ export function CentralApp() {
       } catch {
         /* ignore */
       }
+      trackOperatorEvent('panel_toggle', { panel: 'feed_rail', open: !next }, { surface: 'stream_rail' })
       return next
     })
   }, [])
@@ -866,6 +894,7 @@ export function CentralApp() {
       } catch {
         /* ignore */
       }
+      trackOperatorEvent('panel_toggle', { panel: 'workspace_rail', open: !next }, { surface: 'workspace' })
       return next
     })
   }, [])
@@ -1163,6 +1192,7 @@ export function CentralApp() {
                       <ComposeInput
                         value={compose}
                         onChange={(v) => {
+                          if (!compose && v) trackComposeStart(contextItemId ?? undefined)
                           setCompose(v)
                           if (composeError) setComposeError(null)
                         }}
@@ -1201,6 +1231,7 @@ export function CentralApp() {
                     <FeedPost
                       key={e.id}
                       event={e}
+                      surface="feed"
                       isNew={live && i === 0}
                       isContext={contextItemId === streamItemId(e)}
                       activeThreadId={threadTarget?.itemId ?? null}
@@ -1291,6 +1322,7 @@ export function CentralApp() {
                 composeRail={{
                   compose,
                   onComposeChange: (v) => {
+                    if (!compose && v) trackComposeStart(contextItemId ?? undefined)
                     setCompose(v)
                     if (composeError) setComposeError(null)
                   },
@@ -1304,7 +1336,10 @@ export function CentralApp() {
                     ? contextEvent.title || contextEvent.body.slice(0, 72)
                     : null,
                   mondayContext,
-                  onClearContext: () => setContextItemId(null)
+                  onClearContext: () => {
+                    setContextItemId(null)
+                    setTaskCorrelation()
+                  }
                 }}
               />
             </aside>

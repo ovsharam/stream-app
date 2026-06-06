@@ -32,7 +32,7 @@ const AUTH_DETECT_JS = `(function() {
   if (document.querySelector('input[type="email"], input[name="identifier"], input[name="session_key"]')) return 'signin';
   if (url.includes('linkedin.com') && (url.includes('/feed') || /linkedin\\.com\\/?$/.test(url.replace(/\\/$/, '')))) {
     const hasNav = document.querySelector('header#global-nav, nav[aria-label="Primary"], [data-global-nav]');
-    if (!hasNav && b.trim().length < 160) return 'signin';
+    if (!hasNav && document.readyState !== 'complete' && b.trim().length < 80) return 'signin';
   }
   return 'ok';
 })();`
@@ -82,8 +82,13 @@ export function useEmbedBrowseSignIn(
     const webview = el as WebviewEl | null
     if (!opts.enabled || !opts.kind || !partition || !webview?.addEventListener) return
 
+    let checkTimer: ReturnType<typeof setTimeout> | null = null
     const check = () => {
-      void detectEmbedAuthState(webview).then((state) => onAuthStateRef.current?.(state))
+      if (checkTimer) window.clearTimeout(checkTimer)
+      checkTimer = window.setTimeout(() => {
+        checkTimer = null
+        void detectEmbedAuthState(webview).then((state) => onAuthStateRef.current?.(state))
+      }, opts.kind === 'linkedin' ? 800 : 200)
     }
 
     const interceptAuthNavigation = (event?: WebviewNavigateEvent) => {
@@ -112,14 +117,21 @@ export function useEmbedBrowseSignIn(
     }
 
     webview.addEventListener('did-finish-load', check)
-    webview.addEventListener('did-navigate-in-page', check)
+    if (opts.kind !== 'linkedin') {
+      webview.addEventListener('did-navigate-in-page', check)
+    }
     webview.addEventListener('did-fail-load', onFailLoad)
     webview.addEventListener('will-navigate', interceptAuthNavigation)
     webview.addEventListener('will-redirect', interceptAuthNavigation)
+    let authReloadPending = false
     const offAuth = window.notchDesktop?.onAuthClosed?.((closedPartition) => {
-      if (closedPartition !== partition) return
+      if (closedPartition !== partition || authReloadPending) return
+      authReloadPending = true
       onAuthStateRef.current?.('ok')
-      webview.reload?.()
+      window.setTimeout(() => {
+        authReloadPending = false
+        webview.reload?.()
+      }, 400)
     })
     const offGoogleSignIn = window.notchDesktop?.onGoogleSignInNeeded?.((closedPartition) => {
       if (closedPartition !== partition) return
@@ -131,8 +143,11 @@ export function useEmbedBrowseSignIn(
     })
 
     return () => {
+      if (checkTimer) window.clearTimeout(checkTimer)
       webview.removeEventListener('did-finish-load', check)
-      webview.removeEventListener('did-navigate-in-page', check)
+      if (opts.kind !== 'linkedin') {
+        webview.removeEventListener('did-navigate-in-page', check)
+      }
       webview.removeEventListener('did-fail-load', onFailLoad)
       webview.removeEventListener('will-navigate', interceptAuthNavigation)
       webview.removeEventListener('will-redirect', interceptAuthNavigation)

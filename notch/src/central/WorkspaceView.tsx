@@ -80,8 +80,9 @@ export function WorkspaceView({ tab, active, reloadNonce = 0, onUrlChange }: Pro
     [onUrlChange, tab]
   )
 
+  const linkedInTab = tab.source === 'linkedin' || tab.pinId === 'linkedin'
   const webviewSrc =
-    tab.source === 'linkedin' && isLinkedInNavigationNoise(tab.url) ? LINKEDIN_FEED_URL : tab.url
+    linkedInTab && isLinkedInNavigationNoise(tab.url) ? LINKEDIN_FEED_URL : tab.url
 
   return (
     <section className={`x-workspace${active ? ' x-workspace-active' : ''}`} aria-hidden={!active}>

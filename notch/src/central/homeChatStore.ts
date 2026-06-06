@@ -49,14 +49,6 @@ function saveSessions(sessions: HomeChatSession[]) {
   localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions))
 }
 
-function loadActiveId(): string | null {
-  try {
-    return localStorage.getItem(ACTIVE_KEY)
-  } catch {
-    return null
-  }
-}
-
 function saveActiveId(id: string | null) {
   if (id) localStorage.setItem(ACTIVE_KEY, id)
   else localStorage.removeItem(ACTIVE_KEY)
@@ -75,16 +67,16 @@ function newSessionId(): string {
 
 export function useHomeChatSessions(onRailChange?: (open: boolean) => void) {
   const [sessions, setSessions] = useState<HomeChatSession[]>(() => loadSessions())
-  const [activeId, setActiveId] = useState<string | null>(() => {
-    const id = loadActiveId()
-    if (id && loadSessions().some((s) => s.id === id)) return id
-    return null
-  })
+  const [activeId, setActiveId] = useState<string | null>(null)
   const [draftMessages, setDraftMessages] = useState<HomeChatMessage[]>([])
   const activeIdRef = useRef(activeId)
   const draftRef = useRef(draftMessages)
   activeIdRef.current = activeId
   draftRef.current = draftMessages
+
+  useEffect(() => {
+    saveActiveId(null)
+  }, [])
 
   const listedSessions = useMemo(
     () => sessions.filter((s) => s.messages.length > 0),

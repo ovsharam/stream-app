@@ -4,7 +4,7 @@ import { buildAttentionDigest } from '../../shared/attentionDigest'
 import { sanitizeDisplayText } from '../../shared/displayText'
 import { getGraphSignals, getSimSignals, isSimCallActive } from '../sim/engine'
 import { getConnections } from '../store'
-import { getCachedCalendarEvents } from '../sources/calendar'
+import { getMergedCalendarRailEvents } from '../sources/calendar'
 import { getRecentItems } from '../db'
 
 const SAY_PATTERNS = /wtf|what do i say|how do i respond|help me answer|what should i say/i
@@ -22,7 +22,7 @@ export function buildClusterContext(): ClusterContext {
   const graphSignals = getGraphSignals('acme-corp')
   const liveSignals = getSimSignals()
   const connections = getConnections()
-  const calendarEvents = getCachedCalendarEvents()
+  const calendarEvents = getMergedCalendarRailEvents()
   const nextMeeting = calendarEvents[0]
   const liveMeeting = calendarEvents.find((e) => e.live)
   const recentSignals = [...liveSignals, ...graphSignals].slice(0, 8).map((s) => ({

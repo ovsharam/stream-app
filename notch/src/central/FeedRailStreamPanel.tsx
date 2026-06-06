@@ -156,6 +156,7 @@ export function FeedRailStreamPanel({
               <FeedPost
                 key={event.id}
                 variant="rail"
+                surface="stream_rail"
                 event={event}
                 isNew={live && i === 0}
                 isContext={contextItemId === itemId}

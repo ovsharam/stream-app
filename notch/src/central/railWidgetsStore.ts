@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-export type RailWidgetId = 'feed' | 'context' | 'calendar' | 'chat' | 'news'
+export type RailWidgetId = 'feed' | 'context' | 'calendar' | 'chat' | 'news' | 'agent'
 
 export type RailWidgetConfig = {
   id: RailWidgetId
@@ -28,7 +28,8 @@ export const RAIL_WIDGET_DEFS: {
   { id: 'context', label: 'Context', autoHideOnFeed: true },
   { id: 'calendar', label: 'Calendar' },
   { id: 'chat', label: 'Chat' },
-  { id: 'news', label: 'News' }
+  { id: 'news', label: 'News' },
+  { id: 'agent', label: 'Agent' }
 ]
 
 const STORAGE_KEY = 'stream.central.railWidgets'

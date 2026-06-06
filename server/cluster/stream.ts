@@ -3,6 +3,7 @@ import { getRecentItems } from '../db'
 import { getActiveMeeting } from './meetingPipeline'
 import { prototypeRealEnabled } from '../prototype'
 import { getSimIntel, getSimSignals, getSimTranscript, isSimCallActive } from '../sim/engine'
+import { agentProposalStreamEvents } from '../agent/feedEvents'
 
 type UserRole = 'ae' | 'am' | 'csm' | 'fde'
 type ExternalSource =
@@ -402,17 +403,18 @@ function simLiveEvents(role: UserRole, now: number): CentralStreamEvent[] {
 export function getCentralStream(role: UserRole = 'ae'): CentralStreamEvent[] {
   const now = Date.now()
   const external = externalEvents(now)
+  const agentEvents = agentProposalStreamEvents()
 
   if (prototypeRealEnabled() && !isDemoStreamMode()) {
     const realSession = getActiveMeeting()
     if (realSession) {
-      return dedupeSort([...realMeetingEvents(now), ...external])
+      return dedupeSort([...realMeetingEvents(now), ...agentEvents, ...external])
     }
   }
 
   if (isSimCallActive()) {
-    return dedupeSort([...simLiveEvents(role, now), ...external])
+    return dedupeSort([...simLiveEvents(role, now), ...agentEvents, ...external])
   }
 
-  return external.sort((a, b) => b.ts - a.ts)
+  return dedupeSort([...agentEvents, ...external])
 }

@@ -1,9 +1,12 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import ws from 'ws'
+import type { AgentProposal } from '../../shared/agent-proposal'
 import type { OperatorEvent } from '../../shared/operator-events'
 import type { FdeTaskSession } from '../../shared/fde-training'
 
 let client: SupabaseClient | null | undefined
+
+const DEFAULT_OPERATOR_ID = process.env.STREAM_OPERATOR_ID ?? 'local'
 
 export function isSupabaseConfigured(): boolean {
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -94,6 +97,66 @@ export async function syncTrainingSessionsToSupabase(
   }))
 
   const { error } = await sb.from('fde_training_sessions').upsert(rows, { onConflict: 'id' })
+  if (error) throw error
+  return rows.length
+}
+
+export type AgentInteractionLogRow = {
+  id: string
+  proposalId: string
+  stage: string
+  payload: Record<string, unknown>
+  ts: number
+}
+
+function rowFromAgentProposal(proposal: AgentProposal) {
+  return {
+    id: proposal.id,
+    operator_id: DEFAULT_OPERATOR_ID,
+    source: proposal.source,
+    thread_id: proposal.threadId,
+    sender_name: proposal.senderName,
+    raw_message: proposal.rawMessage,
+    intent: proposal.intent,
+    confidence: proposal.confidence,
+    linkedin_reply_draft: proposal.linkedinReplyDraft,
+    booking_task: proposal.bookingTask ?? null,
+    invitee_resolution: proposal.inviteeResolution,
+    status: proposal.status,
+    created_at: new Date(proposal.createdAt).toISOString(),
+    updated_at: new Date(proposal.updatedAt).toISOString(),
+    approved_at: proposal.approvedAt != null ? new Date(proposal.approvedAt).toISOString() : null,
+    execution_result: proposal.executionLog ?? null
+  }
+}
+
+function rowFromAgentInteractionLog(entry: AgentInteractionLogRow) {
+  return {
+    id: entry.id,
+    proposal_id: entry.proposalId,
+    operator_id: DEFAULT_OPERATOR_ID,
+    stage: entry.stage,
+    payload: entry.payload ?? {},
+    created_at: new Date(entry.ts).toISOString()
+  }
+}
+
+export async function syncAgentProposalsToSupabase(proposals: AgentProposal[]): Promise<number> {
+  const sb = getSupabaseAdmin()
+  if (!sb || proposals.length === 0) return 0
+
+  const rows = proposals.map(rowFromAgentProposal)
+  const { error } = await sb.from('agent_proposals').upsert(rows, { onConflict: 'id' })
+  if (error) throw error
+  return rows.length
+}
+
+export async function syncAgentInteractionLogToSupabase(entries: AgentInteractionLogRow[]): Promise<number> {
+  const sb = getSupabaseAdmin()
+  if (!sb || entries.length === 0) return 0
+
+  const rows = entries.map(rowFromAgentInteractionLog)
+  const { error } = await sb.from('agent_interaction_log').upsert(rows, { onConflict: 'id' })
   if (error) throw error
   return rows.length
 }

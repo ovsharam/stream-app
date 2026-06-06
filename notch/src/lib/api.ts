@@ -420,6 +420,33 @@ export const telemetryApi = {
     })
 }
 
+export const agentApi = {
+  ingestLinkedIn: (input: import('@shared/agent-proposal').LinkedInIngestInput) =>
+    json<{ proposal: import('@shared/agent-proposal').AgentProposal; duplicate?: boolean }>(
+      '/agent/linkedin/ingest',
+      { method: 'POST', body: JSON.stringify(input) }
+    ),
+  listProposals: (status?: import('@shared/agent-proposal').AgentProposalStatus) =>
+    json<{ proposals: import('@shared/agent-proposal').AgentProposal[] }>(
+      `/agent/proposals${status ? `?status=${encodeURIComponent(status)}` : ''}`
+    ),
+  approveProposal: (id: string, body: import('@shared/agent-proposal').ApproveAgentProposalInput = {}) =>
+    json<{ proposal: import('@shared/agent-proposal').AgentProposal }>(
+      `/agent/proposals/${encodeURIComponent(id)}/approve`,
+      { method: 'POST', body: JSON.stringify(body) }
+    ),
+  rejectProposal: (id: string, reason?: string) =>
+    json<{ proposal: import('@shared/agent-proposal').AgentProposal }>(
+      `/agent/proposals/${encodeURIComponent(id)}/reject`,
+      { method: 'POST', body: JSON.stringify({ reason }) }
+    ),
+  refreshProposal: (id: string) =>
+    json<{ proposal: import('@shared/agent-proposal').AgentProposal }>(
+      `/agent/proposals/${encodeURIComponent(id)}/refresh`,
+      { method: 'POST', body: '{}' }
+    )
+}
+
 export function canUseInAppWorkspace(): boolean {
   return (
     typeof window !== 'undefined' &&

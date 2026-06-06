@@ -3,6 +3,8 @@ import type { CalendarRailEvent, CentralStreamEvent, PerplexityNewsItem } from '
 import { cleanKbExcerpt } from '@shared/assistText'
 import { clusterApi, openExternal, openMeeting } from '../lib/api'
 import { FeedRailChatPanel } from './FeedRailChatPanel'
+import { AgentInboxPanel } from './AgentInboxPanel'
+import { useAgentPendingCount } from './useAgentPendingCount'
 import { FeedRailStreamPanel } from './FeedRailStreamPanel'
 import type { ComposeMentionTarget } from '@shared/compose'
 import { IconGmail, IconMonday, IconSettings, IconVideoCall } from './Icons'
@@ -759,6 +761,7 @@ type FeedRailHandlers = {
   onOpenInWork?: (itemId: string) => void
   onOpenWorkspace?: (event: CentralStreamEvent) => void
   onSelectContext?: (itemId: string) => void
+  onRefresh?: () => void
 }
 
 type ComposeRailProps = {
@@ -801,6 +804,7 @@ export function ContextRail({
   const [activeTab, setActiveTab] = useState<RailTab>(defaultTab)
   const [configOpen, setConfigOpen] = useState(false)
   const calendar = useCalendarRail()
+  const agentPendingCount = useAgentPendingCount()
 
   useEffect(() => {
     if (visibleWidgets.length === 0) return
@@ -846,6 +850,11 @@ export function ContextRail({
                   onClick={() => setActiveTab(widget.id)}
                 >
                   {widgetLabel(widget.id)}
+                  {widget.id === 'agent' && agentPendingCount > 0 ? (
+                    <span className="x-rail-tab-badge" aria-label={`${agentPendingCount} pending`}>
+                      {agentPendingCount}
+                    </span>
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -873,6 +882,7 @@ export function ContextRail({
                 onOpenInWork={feedRail?.onOpenInWork}
                 onOpenWorkspace={feedRail?.onOpenWorkspace}
                 onSelectContext={feedRail?.onSelectContext}
+                onRefresh={feedRail?.onRefresh}
                 {...composeRail}
               />
             ) : null}
@@ -893,6 +903,7 @@ export function ContextRail({
                 pplxHint={calendar.pplxHint}
               />
             )}
+            {activeTab === 'agent' ? <AgentInboxPanel /> : null}
           </div>
         </>
       )}

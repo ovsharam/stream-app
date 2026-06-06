@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useWebviewPopups } from './useWebviewPopups'
 import { useEmbedBrowseSignIn, type EmbedBrowseAuthState } from './useEmbedBrowseSignIn'
-import { workspaceUrlsEquivalent, type EmbedBrowseKind } from './embedBrowse'
+import {
+  ingestFromHits,
+  LINKEDIN_OBSERVER_INSTALL_JS,
+  type LinkedInScanHit,
+  useLinkedInAgentPoll
+} from './useLinkedInAgentPoll'
+import { workspaceUrlsEquivalent, LINKEDIN_MESSAGING_URL, type EmbedBrowseKind } from './embedBrowse'
+import { useLinkedInPerceptionBackground } from './LinkedInPerceptionContext'
 
 type Props = {
   className?: string
@@ -12,12 +19,17 @@ type Props = {
   onEmbedAuthState?: (state: EmbedBrowseAuthState) => void
   onSignInNeeded?: () => void
   onLocationChange?: (url: string) => void
+  /** background = hidden messaging watcher; off = skip (background handles it) */
+  agentPerceptionMode?: 'background' | 'off'
 }
 
 type WebviewEl = HTMLElement & {
   reload?: () => void
   getURL?: () => string
   loadURL?: (url: string) => void
+  executeJavaScript?: (code: string, userGesture?: boolean) => Promise<unknown>
+  addEventListener?: (type: string, listener: (event: Event) => void) => void
+  removeEventListener?: (type: string, listener: (event: Event) => void) => void
 }
 
 export function EmbeddedWebview({
@@ -28,8 +40,14 @@ export function EmbeddedWebview({
   reloadNonce = 0,
   onEmbedAuthState,
   onSignInNeeded,
-  onLocationChange
+  onLocationChange,
+  agentPerceptionMode
 }: Props) {
+  const linkedInPerceptionBackground = useLinkedInPerceptionBackground()
+  const perceptionBackground = agentPerceptionMode === 'background'
+  const perceptionEnabled =
+    embedBrowseKind === 'linkedin' &&
+    (perceptionBackground || (agentPerceptionMode !== 'off' && !linkedInPerceptionBackground))
   const [webviewEl, setWebviewEl] = useState<HTMLElement | null>(null)
   const [domReady, setDomReady] = useState(false)
   const [guestPreload, setGuestPreload] = useState('')
@@ -41,6 +59,7 @@ export function EmbeddedWebview({
   const onWebviewRef = useCallback((node: HTMLElement | null) => {
     setWebviewEl(node)
   }, [])
+  const linkedInSeenRef = useRef<Set<string>>(new Set())
 
   useWebviewPopups(webviewEl)
   useEmbedBrowseSignIn(webviewEl, {
@@ -49,6 +68,35 @@ export function EmbeddedWebview({
     onAuthState: onEmbedAuthState,
     onSignInNeeded
   })
+
+  useLinkedInAgentPoll(webviewEl, {
+    enabled: Boolean(webviewEl && domReady && perceptionEnabled),
+    backgroundMode: perceptionBackground
+  })
+
+  useEffect(() => {
+    const webview = webviewEl as WebviewEl | null
+    if (!webview || !domReady || !perceptionEnabled) return
+
+    const onIpcMessage = (event: Event) => {
+      const detail = event as Event & { channel?: string; args?: unknown[] }
+      if (detail.channel !== 'linkedin:hits' || !Array.isArray(detail.args?.[0])) return
+      void ingestFromHits(webview, detail.args[0] as LinkedInScanHit[], linkedInSeenRef.current)
+    }
+
+    webview.addEventListener?.('ipc-message', onIpcMessage)
+    return () => webview.removeEventListener?.('ipc-message', onIpcMessage)
+  }, [webviewEl, domReady, embedBrowseKind])
+
+  useEffect(() => {
+    const webview = webviewEl as WebviewEl | null
+    if (!webview?.executeJavaScript || !domReady || !perceptionEnabled) return
+    const url = safeGetUrl(webview)
+    if (!url.includes('linkedin.com')) return
+    void webview.executeJavaScript(LINKEDIN_OBSERVER_INSTALL_JS, true).catch(() => {
+      /* preload may have installed observer already */
+    })
+  }, [webviewEl, domReady, embedBrowseKind, src])
 
   useEffect(() => {
     if (!webviewEl) {

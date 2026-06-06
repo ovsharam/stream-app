@@ -87,6 +87,7 @@ export const SOURCE_COLORS: Record<StreamSource, string> = {
   gemini: '#4285F4',
   gdocs: '#4285F4',
   gong: '#7c3aed',
+  calcom: '#292929',
   meeting: '#FF9500',
   note: '#F5A623'
 }

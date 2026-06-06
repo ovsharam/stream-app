@@ -413,6 +413,7 @@ export function normalizeCalcomBooking(booking: Record<string, unknown>): Stream
       startTime: start.toISOString(),
       endTime: end?.toISOString(),
       attendeeEmail: guest?.email,
+      attendeeName: guest?.name,
       eventTypeSlug: eventType?.slug
     }
   }

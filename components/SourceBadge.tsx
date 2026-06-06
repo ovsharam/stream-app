@@ -14,6 +14,7 @@ const LABELS: Record<StreamSource, string> = {
   gemini: 'Gemini',
   gdocs: 'Docs',
   gong: 'Gong',
+  calcom: 'Cal.com',
   meeting: 'Meeting',
   note: 'Note'
 }

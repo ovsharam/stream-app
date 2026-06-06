@@ -106,6 +106,8 @@ const CALCOM_AUTH_URL = 'https://app.cal.com/auth/oauth2/authorize'
 const CALCOM_TOKEN_URL = 'https://api.cal.com/v2/auth/oauth2/token'
 const CALCOM_API = 'https://api.cal.com/v2'
 const CALCOM_API_VERSION = '2024-08-13'
+/** Slots availability lives under /v2/slots starting with this version (2024-08-13 returns 404). */
+const CALCOM_SLOTS_API_VERSION = '2024-09-04'
 
 const oauthStateStore = new Map<string, { createdAt: number; pkceVerifier?: string }>()
 
@@ -706,46 +708,158 @@ async function resolveEventType(slug?: string): Promise<CalEventType> {
 }
 
 function parseIsoStart(value?: string): string | null {
-  if (!value || value === 'auto') return null
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return null
-  return d.toISOString()
+  return resolveBookingStart(value)
 }
 
-async function pickNextSlot(eventTypeId: number, timeZone: string): Promise<string> {
+/** Parse ISO or natural-language start times — slash-format compose often passes "June 10 2026 2pm". */
+function resolveBookingStart(value?: string): string | null {
+  if (!value || value === 'auto') return null
+
+  const trimmed = value.trim()
+  if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
+    const d = new Date(trimmed)
+    if (!Number.isNaN(d.getTime())) return d.toISOString()
+  }
+
+  const natural = parseNaturalDateTime(trimmed)
+  if (natural) return natural.toISOString()
+
+  const d = new Date(trimmed)
+  if (!Number.isNaN(d.getTime()) && d.getFullYear() >= 2020) return d.toISOString()
+
+  return null
+}
+
+function parseSlotsByDay(payload: unknown): Record<string, string[]> {
+  const data = unwrapData<unknown>(payload) ?? payload
+  if (!data || typeof data !== 'object') return {}
+
+  const root = data as { slots?: unknown }
+  const slotsNode = root.slots ?? data
+  if (!slotsNode || typeof slotsNode !== 'object') return {}
+
+  const out: Record<string, string[]> = {}
+  for (const [day, value] of Object.entries(slotsNode as Record<string, unknown>)) {
+    if (Array.isArray(value)) {
+      out[day] = value.map(String)
+      continue
+    }
+    if (value && typeof value === 'object') {
+      out[day] = Object.keys(value as Record<string, unknown>).sort()
+    }
+  }
+  return out
+}
+
+function firstSlotIso(slotsRoot: Record<string, string[]>): string | null {
+  const times: Array<{ day: string; time: string }> = []
+  for (const [day, value] of Object.entries(slotsRoot)) {
+    for (const t of value) times.push({ day, time: t })
+  }
+  if (times.length === 0) return null
+
+  times.sort((a, b) => {
+    const aIso = a.time.includes('T') ? a.time : `${a.day}T${a.time}`
+    const bIso = b.time.includes('T') ? b.time : `${b.day}T${b.time}`
+    return aIso.localeCompare(bIso)
+  })
+
+  const first = times[0]
+  if (first.time.includes('T')) return new Date(first.time).toISOString()
+
+  const padded = first.time.length <= 5 ? `${first.time}:00` : first.time
+  const local = new Date(`${first.day}T${padded}`)
+  if (!Number.isNaN(local.getTime())) return local.toISOString()
+
+  return new Date(`${first.day}T${first.time}Z`).toISOString()
+}
+
+async function fetchCalcomAvailableSlots(opts: {
+  eventTypeId: number
+  timeZone: string
+  start: Date
+  end: Date
+  eventTypeSlug?: string
+  username?: string
+}): Promise<Record<string, string[]>> {
+  const startDate = opts.start.toISOString().slice(0, 10)
+  const endDate = opts.end.toISOString().slice(0, 10)
+
+  const attempts: Array<{ path: string; query: Record<string, string>; version: string }> = [
+    {
+      path: '/slots',
+      query: {
+        eventTypeId: String(opts.eventTypeId),
+        start: startDate,
+        end: endDate,
+        timeZone: opts.timeZone
+      },
+      version: CALCOM_SLOTS_API_VERSION
+    },
+    {
+      path: '/slots/available',
+      query: {
+        eventTypeId: String(opts.eventTypeId),
+        startTime: opts.start.toISOString(),
+        endTime: opts.end.toISOString(),
+        timeZone: opts.timeZone
+      },
+      version: CALCOM_API_VERSION
+    }
+  ]
+
+  if (opts.eventTypeSlug && opts.username) {
+    attempts.unshift({
+      path: '/slots',
+      query: {
+        eventTypeSlug: opts.eventTypeSlug,
+        username: opts.username,
+        start: startDate,
+        end: endDate,
+        timeZone: opts.timeZone
+      },
+      version: CALCOM_SLOTS_API_VERSION
+    })
+  }
+
+  let lastErr: Error | null = null
+  for (const attempt of attempts) {
+    try {
+      const payload = await calcomApiGet<unknown>(attempt.path, attempt.query, attempt.version)
+      const parsed = parseSlotsByDay(payload)
+      if (Object.keys(parsed).length > 0) return parsed
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err))
+    }
+  }
+
+  throw lastErr ?? new Error('Cal.com returned no open slots — pick a time manually')
+}
+
+async function pickNextSlot(
+  eventType: { id: number; slug?: string },
+  timeZone: string
+): Promise<string> {
   const start = new Date()
   start.setHours(start.getHours() + 2)
   const end = new Date(start)
   end.setDate(end.getDate() + 14)
 
-  const payload = await calcomApi<unknown>('/slots', {
-    eventTypeId: String(eventTypeId),
-    start: start.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10),
-    timeZone
+  const username = calcomUsername()
+  const slotsRoot = await fetchCalcomAvailableSlots({
+    eventTypeId: eventType.id,
+    timeZone,
+    start,
+    end,
+    eventTypeSlug: eventType.slug,
+    username: username || undefined
   })
 
-  const data = unwrapData<Record<string, string[] | string>>(payload) ?? {}
-  const slotsRoot =
-    (data as { slots?: Record<string, string[]> }).slots ??
-    (typeof data === 'object' ? (data as Record<string, string[]>) : {})
-
-  const times: string[] = []
-  for (const value of Object.values(slotsRoot)) {
-    if (Array.isArray(value)) {
-      for (const t of value) times.push(String(t))
-    }
-  }
-
-  if (times.length === 0) {
+  const iso = firstSlotIso(slotsRoot)
+  if (!iso) {
     throw new Error('No open Cal.com slots in the next two weeks — pick a time manually')
   }
-
-  times.sort()
-  const first = times[0]
-  if (first.includes('T')) return new Date(first).toISOString()
-  const day = Object.keys(slotsRoot).sort()[0]
-  return new Date(`${day}T${first}Z`).toISOString()
+  return iso
 }
 
 const MONTH_INDEX: Record<string, number> = {
@@ -825,6 +939,12 @@ function parseCalendarDate(text: string, hour: number, minute: number): Date | n
   const lower = text.toLowerCase()
   const now = new Date()
 
+  function startOfLocalDay(date: Date): Date {
+    const d = new Date(date)
+    d.setHours(0, 0, 0, 0)
+    return d
+  }
+
   const iso = lower.match(/\b(\d{4})-(\d{2})-(\d{2})\b/)
   if (iso) {
     return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]), hour, minute, 0, 0)
@@ -846,8 +966,12 @@ function parseCalendarDate(text: string, hour: number, minute: number): Date | n
     const month = MONTH_INDEX[monthFirst[1]]
     if (month == null) return null
     const day = Number(monthFirst[2])
-    const year = monthFirst[3] ? Number(monthFirst[3]) : now.getFullYear()
-    return new Date(year, month, day, hour, minute, 0, 0)
+    let year = monthFirst[3] ? Number(monthFirst[3]) : now.getFullYear()
+    let date = new Date(year, month, day, hour, minute, 0, 0)
+    if (!monthFirst[3] && date.getTime() < startOfLocalDay(now).getTime()) {
+      date = new Date(year + 1, month, day, hour, minute, 0, 0)
+    }
+    return date
   }
 
   const dayFirst = lower.match(
@@ -857,8 +981,12 @@ function parseCalendarDate(text: string, hour: number, minute: number): Date | n
     const month = MONTH_INDEX[dayFirst[2]]
     if (month == null) return null
     const day = Number(dayFirst[1])
-    const year = dayFirst[3] ? Number(dayFirst[3]) : now.getFullYear()
-    return new Date(year, month, day, hour, minute, 0, 0)
+    let year = dayFirst[3] ? Number(dayFirst[3]) : now.getFullYear()
+    let date = new Date(year, month, day, hour, minute, 0, 0)
+    if (!dayFirst[3] && date.getTime() < startOfLocalDay(now).getTime()) {
+      date = new Date(year + 1, month, day, hour, minute, 0, 0)
+    }
+    return date
   }
 
   const weekday = lower.match(
@@ -937,7 +1065,7 @@ export function parseCalcomBookBody(body: string): CalcomBookInput {
         eventTypeSlug,
         attendeeEmail,
         attendeeName,
-        start: startRaw && startRaw !== 'auto' ? startRaw : undefined,
+        start: startRaw && startRaw !== 'auto' ? resolveBookingStart(startRaw) ?? undefined : undefined,
         notes: noteParts.join(' / ') || undefined,
         timeZone: defaultTimeZone()
       }
@@ -971,6 +1099,103 @@ export function parseCalcomBookBody(body: string): CalcomBookInput {
   }
 }
 
+export function parseSchedulingTimeFromText(text: string): string | null {
+  const when = parseNaturalDateTime(text)
+  return when ? when.toISOString() : null
+}
+
+export async function findCalcomBookingUidByEmail(email: string): Promise<string | undefined> {
+  const lower = email.toLowerCase()
+  for (const item of getRecentItems(80, 'calcom')) {
+    const attendee = String(item.metadata?.attendeeEmail ?? '').toLowerCase()
+    if (attendee !== lower) continue
+    const uid = String(item.metadata?.bookingUid ?? item.id.replace(/^calcom-/, '')).trim()
+    if (uid) return uid
+  }
+
+  try {
+    for (const item of await fetchCalcomBookings(40)) {
+      const attendee = String(item.metadata?.attendeeEmail ?? '').toLowerCase()
+      if (attendee !== lower) continue
+      const uid = String(item.metadata?.bookingUid ?? item.id.replace(/^calcom-/, '')).trim()
+      if (uid) return uid
+    }
+  } catch {
+    /* optional API lookup */
+  }
+
+  return undefined
+}
+
+export type CalcomRescheduleInput = {
+  bookingUid: string
+  start: string
+  reschedulingReason?: string
+}
+
+export type CalcomCancelInput = {
+  bookingUid: string
+  cancellationReason?: string
+}
+
+export async function rescheduleCalcomBooking(input: CalcomRescheduleInput): Promise<CalcomBookResult> {
+  if (!isCalcomConnected()) {
+    return {
+      ok: false,
+      message: 'Cal.com not connected — add API key in Apps → Cal.com or set CALCOM_API_KEY'
+    }
+  }
+
+  const start = parseIsoStart(input.start)
+  if (!start) {
+    return { ok: false, message: 'New start time required for reschedule — add proposed time' }
+  }
+
+  try {
+    const body: Record<string, unknown> = { start }
+    if (input.reschedulingReason) body.reschedulingReason = input.reschedulingReason
+
+    const created = await calcomApiPost<unknown>(`/bookings/${input.bookingUid}/reschedule`, body)
+    const booking = unwrapData<Record<string, unknown>>(created) ?? {}
+    const uid = String(booking.uid ?? input.bookingUid)
+    const bookingUrl = uid ? `https://cal.com/booking/${uid}` : undefined
+
+    return {
+      ok: true,
+      message: bookingUrl
+        ? `Rescheduled to ${new Date(start).toLocaleString()} · ${bookingUrl}`
+        : `Rescheduled to ${new Date(start).toLocaleString()}`,
+      bookingUid: uid || undefined,
+      bookingUrl
+    }
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+export async function cancelCalcomBooking(input: CalcomCancelInput): Promise<CalcomBookResult> {
+  if (!isCalcomConnected()) {
+    return {
+      ok: false,
+      message: 'Cal.com not connected — add API key in Apps → Cal.com or set CALCOM_API_KEY'
+    }
+  }
+
+  try {
+    const body: Record<string, unknown> = {}
+    if (input.cancellationReason) body.cancellationReason = input.cancellationReason
+
+    await calcomApiPost<unknown>(`/bookings/${input.bookingUid}/cancel`, body)
+    return {
+      ok: true,
+      message: `Cancelled booking ${input.bookingUid}`,
+      bookingUid: input.bookingUid
+    }
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) }
+  }
+}
+
 export async function createCalcomBooking(input: CalcomBookInput): Promise<CalcomBookResult> {
   if (!isCalcomConnected()) {
     return {
@@ -984,7 +1209,7 @@ export async function createCalcomBooking(input: CalcomBookInput): Promise<Calco
     : await resolveEventType(input.eventTypeSlug)
   const timeZone = input.timeZone ?? defaultTimeZone()
   const start =
-    parseIsoStart(input.start) ?? (await pickNextSlot(eventType.id, timeZone))
+    resolveBookingStart(input.start) ?? (await pickNextSlot(eventType, timeZone))
 
   const username = calcomUsername()
   const payload: Record<string, unknown> = {

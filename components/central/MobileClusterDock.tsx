@@ -28,7 +28,7 @@ export function MobileClusterDock() {
   }, [query, open])
 
   const openDroplet = useCallback(() => {
-    if (window.notch) {
+    if (window.notch?.expand) {
       window.notch.expand()
       return
     }
@@ -37,7 +37,7 @@ export function MobileClusterDock() {
   }, [])
 
   const closeDroplet = useCallback(() => {
-    if (window.notch) {
+    if (window.notch?.collapse) {
       window.notch.collapse()
       return
     }

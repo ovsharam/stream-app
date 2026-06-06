@@ -21,7 +21,7 @@ type Props = {
 }
 
 function isBuildEvent(event: CentralStreamEvent): boolean {
-  return event.source === 'cursor' || event.kind === 'build_prompt'
+  return event.source === 'build' || event.kind === 'build_prompt'
 }
 
 function eventStatus(event: CentralStreamEvent): string {

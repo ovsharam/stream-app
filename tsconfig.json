@@ -20,5 +20,5 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "electron", "out", "release", "ambient/electron"]
+  "exclude": ["node_modules", "electron", "notch/electron", "out", "release", "ambient/electron"]
 }

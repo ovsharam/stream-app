@@ -14,7 +14,8 @@ const SOURCE: Record<StreamSource, { label: string; color: string; dot: string }
   meeting: { label: 'Meeting', color: 'text-orange-500', dot: 'bg-orange-500' },
   salesforce: { label: 'Salesforce', color: 'text-sky-600', dot: 'bg-sky-500' },
   build: { label: 'Build', color: 'text-amber-600', dot: 'bg-amber-500' },
-  insight: { label: 'Insight', color: 'text-neutral-600', dot: 'bg-neutral-400' }
+  insight: { label: 'Insight', color: 'text-neutral-600', dot: 'bg-neutral-400' },
+  calcom: { label: 'Cal.com', color: 'text-sky-600', dot: 'bg-sky-500' }
 }
 
 function timeAgo(ts: number): string {

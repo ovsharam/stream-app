@@ -61,6 +61,21 @@ export function connectStreamSocket(): () => void {
     socket.on('cluster:refresh', (payload?: { reason?: string }) => {
       onClusterRefresh(payload)
     })
+
+    socket.on('agent:proposal', () => {
+      window.dispatchEvent(new Event('notch:agent-proposal'))
+      dispatchStreamPush()
+    })
+
+    socket.on('agent:proposal-updated', () => {
+      window.dispatchEvent(new Event('notch:agent-proposal'))
+      dispatchStreamPush()
+    })
+
+    socket.on('agent:brief', () => {
+      window.dispatchEvent(new Event('notch:agent-proposal'))
+      dispatchStreamPush()
+    })
   } catch {
     connected = false
   }

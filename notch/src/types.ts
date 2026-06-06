@@ -26,6 +26,8 @@ declare global {
       startCall: () => void
       endCall: () => void
       loadPreCall: () => void
+      expand?: () => void
+      collapse?: () => void
     }
   }
 }

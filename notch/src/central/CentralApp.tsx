@@ -12,7 +12,7 @@ import { NotesView } from './NotesView'
 import { NavBladeToggle, persistNavOpen, readNavOpen } from './NavBladeToggle'
 import { SideNav, type NavTarget, type Page } from './SideNav'
 import { NavAppPlayer } from './NavAppPlayer'
-import { getNavApp, useNavApps } from './navAppsStore'
+import { getNavApp, isNavAppPinned, useNavApps } from './navAppsStore'
 import { SettingsPanel } from './SettingsPanel'
 import { ThemeMenu } from './ThemeMenu'
 import { useTheme } from './useTheme'
@@ -21,6 +21,8 @@ import { BrowserChrome } from './BrowserChrome'
 import { WorkspaceBrowser } from './WorkspaceBrowser'
 import { HomeWorkspaceRail } from './HomeWorkspaceRail'
 import { PinnedAppShell } from './PinnedAppShell'
+import { LinkedInBackgroundPerception } from './LinkedInBackgroundPerception'
+import { LinkedInPerceptionProvider } from './LinkedInPerceptionContext'
 import { normalizeBrowserUrl, workspaceTabFromInput } from './browserUrl'
 import { FeedSearchBar, filterFeedEvents } from './FeedSearchBar'
 import { FeedStreamBar, useFeedStreamId } from './FeedStreamBar'
@@ -205,6 +207,8 @@ export function CentralApp() {
   const autoShadedRef = useRef(new Set<string>())
 
   const activeNavApp = activeNavAppId ? getNavApp(activeNavAppId, navApps) : null
+  const linkedInPinned =
+    isNavAppPinned('linkedin', navApps) || pinnedSession?.pinId === 'linkedin'
 
   const closeNavApp = useCallback(() => {
     setActiveNavAppId(null)
@@ -933,9 +937,11 @@ export function CentralApp() {
     !activeNavApp ? 'off' : page === 'navapp' && !navAppMini ? 'full' : navAppMini ? 'mini' : 'off'
 
   return (
+    <LinkedInPerceptionProvider backgroundActive={linkedInPinned}>
     <div
       className={`x-app ${navOpen ? 'x-app-nav-open' : 'x-app-nav-closed'} ${showThreadRail ? 'x-app-thread-open' : ''} ${showPostCallRail ? 'x-app-post-call-open' : ''} ${browserMode ? 'x-app-browser-mode' : ''} ${showWorkspaceRail ? 'x-app-workspace-open' : ''} ${page === 'navapp' ? 'x-app-nav-app' : page !== 'stream' ? 'x-app-utility' : 'x-app-stream'} ${!hasRightRail ? 'x-app-no-rail' : ''}${slideBladeLayout ? ' x-app-home-chat' : ''}${navAppMini ? ' x-app-nav-app-mini' : ''}${pinnedActive ? ' x-app-pinned-app' : ''}`}
     >
+      {linkedInPinned ? <LinkedInBackgroundPerception /> : null}
       {typeof window !== 'undefined' &&
       (window.notchDesktop != null || /Electron/i.test(navigator.userAgent)) ? (
         <div className="x-macos-titlebar" aria-hidden="true" />
@@ -1242,6 +1248,7 @@ export function CentralApp() {
                         setThreadTarget({ itemId, day })
                       }}
                       onSelectContext={selectContext}
+                      onRefresh={refreshStream}
                     />
                   ))}
               </>
@@ -1317,7 +1324,8 @@ export function CentralApp() {
                   },
                   onOpenInWork: openMeetingInWork,
                   onOpenWorkspace: openWorkspace,
-                  onSelectContext: selectContext
+                  onSelectContext: selectContext,
+                  onRefresh: refreshStream
                 }}
                 composeRail={{
                   compose,
@@ -1376,5 +1384,6 @@ export function CentralApp() {
         />
       ) : null}
     </div>
+    </LinkedInPerceptionProvider>
   )
 }

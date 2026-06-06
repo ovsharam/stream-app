@@ -168,7 +168,6 @@ import {
   getCalendarCacheAgeMs,
   CALENDAR_CACHE_MS
 } from './sources/calendar'
-import { isCalcomConnected } from './sources/calcom'
 
 function serializeContext(ctx: ReturnType<typeof getActiveContext>) {
   return {
@@ -1634,6 +1633,71 @@ export function createRouter(io?: SocketServer): Router {
     }
     const ping = await pingSupabase()
     res.json({ configured: true, ...ping })
+  })
+
+  router.post('/agent/linkedin/ingest', async (req, res) => {
+    const {
+      ingestLinkedInMessage
+    } = require('./agent/service') as typeof import('./agent/service')
+    try {
+      const result = await ingestLinkedInMessage(req.body ?? {}, io)
+      res.json(result)
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  router.get('/agent/proposals', (req, res) => {
+    const { listAgentProposals } = require('./agent/service') as typeof import('./agent/service')
+    const status = req.query.status ? String(req.query.status) : undefined
+    res.json({ proposals: listAgentProposals(status as import('../shared/agent-proposal').AgentProposalStatus | undefined) })
+  })
+
+  router.get('/agent/proposals/:id', (req, res) => {
+    const { getAgentProposal, getAgentProposalLog } =
+      require('./agent/service') as typeof import('./agent/service')
+    const proposal = getAgentProposal(req.params.id)
+    if (!proposal) {
+      res.status(404).json({ error: 'not found' })
+      return
+    }
+    res.json({ proposal, log: getAgentProposalLog(req.params.id) })
+  })
+
+  router.post('/agent/proposals/:id/approve', async (req, res) => {
+    const { approveAgentProposal } = require('./agent/service') as typeof import('./agent/service')
+    try {
+      const proposal = await approveAgentProposal(req.params.id, req.body ?? {}, io)
+      res.json({ proposal })
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  router.post('/agent/proposals/:id/reject', (req, res) => {
+    const { rejectAgentProposal } = require('./agent/service') as typeof import('./agent/service')
+    try {
+      const proposal = rejectAgentProposal(req.params.id, req.body?.reason, io)
+      res.json({ proposal })
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  router.post('/agent/proposals/:id/refresh', async (req, res) => {
+    const { refreshAgentProposal } = require('./agent/service') as typeof import('./agent/service')
+    try {
+      const proposal = await refreshAgentProposal(req.params.id, io)
+      res.json({ proposal })
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  router.get('/agent/training/export', (req, res) => {
+    const { exportAgentTrainingRecords } = require('./agent/store') as typeof import('./agent/store')
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 200))
+    res.json({ records: exportAgentTrainingRecords(limit) })
   })
 
   router.get('/fde/engagements', (_req, res) => {

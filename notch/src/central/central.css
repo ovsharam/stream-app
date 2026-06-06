@@ -4416,6 +4416,20 @@ html.x-electron .x-nav-blade-toggle {
   border-bottom-color: var(--x-accent);
 }
 
+.x-rail-tab-badge {
+  margin-left: 4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 9999px;
+  background: var(--x-accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  vertical-align: middle;
+}
+
 .x-rail-panel {
   flex: 1;
   min-height: 0;
@@ -6146,6 +6160,293 @@ html.x-electron .x-nav-blade-toggle {
   font-size: 12px;
   color: var(--x-muted);
   line-height: 1.35;
+}
+
+/* Agent inbox (LinkedIn proposals) */
+.x-agent-inbox .x-cal-head {
+  padding: 16px 16px 8px;
+}
+
+.x-agent-inbox-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.x-agent-card {
+  padding: 14px 16px;
+  border-top: 1px solid var(--x-border);
+}
+
+.x-agent-card:first-child {
+  border-top: none;
+}
+
+.x-agent-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.x-agent-intent {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: capitalize;
+  color: var(--x-muted);
+  white-space: nowrap;
+}
+
+.x-agent-snippet {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--x-muted);
+}
+
+.x-agent-draft {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--x-surface-2, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--x-border);
+}
+
+.x-agent-draft h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--x-muted);
+}
+
+.x-agent-draft p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.x-agent-compose {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px !important;
+  word-break: break-word;
+}
+
+.x-agent-draft-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.x-agent-draft-head h4 {
+  margin: 0;
+}
+
+.x-agent-booking-action {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--x-accent, #1d9bf0);
+}
+
+.x-agent-booking-meta {
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.x-agent-booking-row {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 8px;
+  padding: 4px 0;
+  border-top: 1px solid var(--x-border);
+}
+
+.x-agent-booking-row:first-child {
+  border-top: none;
+}
+
+.x-agent-booking-row dt {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--x-muted);
+}
+
+.x-agent-booking-row dd {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.x-agent-copy-task {
+  margin-top: 8px;
+}
+
+.x-agent-warn {
+  margin: 8px 0 0 !important;
+  font-size: 12px !important;
+  color: #f59e0b;
+}
+
+.x-agent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.x-agent-notice {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.x-agent-notice-ok {
+  border-color: rgba(52, 168, 83, 0.35);
+}
+
+.x-agent-notice-warn {
+  border-color: rgba(234, 179, 8, 0.45);
+}
+
+.x-agent-notice-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.x-agent-notice-detail {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--x-muted);
+  word-break: break-word;
+}
+
+.x-agent-notice-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.x-agent-feed-card {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--x-border);
+  border-radius: 12px;
+  background: var(--x-surface, rgba(255, 255, 255, 0.02));
+}
+
+.x-agent-feed-summary {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.x-agent-feed-calendar {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--x-muted);
+}
+
+.x-agent-feed-calendar-free {
+  color: #2e7d32;
+}
+
+.x-agent-feed-action-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--x-muted);
+}
+
+.x-agent-feed-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.x-linkedin-perception-host {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  left: -9999px;
+  top: 0;
+  z-index: -1;
+}
+
+.x-linkedin-perception-webview {
+  width: 800px;
+  height: 600px;
+}
+
+.x-agent-brief {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--x-muted);
+}
+
+.x-agent-action-proposals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.x-agent-action-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: start;
+  padding: 8px 0;
+  border-top: 1px solid var(--x-border);
+}
+
+.x-agent-action-provider {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--x-surface);
+  color: var(--x-muted);
+}
+
+.x-agent-action-body p {
+  margin: 2px 0 4px;
+  font-size: 12px;
+  color: var(--x-muted);
+}
+
+.x-agent-action-body code {
+  display: block;
+  font-size: 11px;
+  word-break: break-word;
+}
+
+.x-agent-feed-status {
+  margin: 0;
+  font-size: 12px;
+  color: var(--x-muted);
+}
+
+.x-agent-feed-error {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #c62828;
 }
 
 /* Compact nav — X desktop icon rail */

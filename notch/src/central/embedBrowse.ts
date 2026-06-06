@@ -78,6 +78,7 @@ export function shouldPersistWorkspaceUrl(
 }
 
 export const LINKEDIN_FEED_URL = 'https://www.linkedin.com/feed/'
+export const LINKEDIN_MESSAGING_URL = 'https://www.linkedin.com/messaging/'
 
 export function embedBrowseKindForUrl(url: string): EmbedBrowseKind | null {
   if (isGoogleBrowseHost(url)) return 'google'

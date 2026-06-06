@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { CentralStreamEvent } from '@shared/cluster'
 import type { ComposeMentionTarget } from '@shared/compose'
 import { parseMeetingActionsMeta } from '@shared/meeting-actions'
+import { parseAgentBriefMeta } from '@shared/agent-proposal'
 import { ComposeInput } from './ComposeInput'
 import { FeedPost } from './FeedPost'
 
@@ -16,6 +17,7 @@ type Props = {
   onOpenInWork?: (itemId: string) => void
   onOpenWorkspace?: (event: CentralStreamEvent) => void
   onSelectContext?: (itemId: string) => void
+  onRefresh?: () => void
   compose: string
   onComposeChange: (value: string) => void
   onSubmitCompose: () => void
@@ -37,6 +39,7 @@ function needsAction(event: CentralStreamEvent): boolean {
   if (event.joinable || event.promptPreview || event.kind === 'build_prompt' || event.kind === 'action') {
     return true
   }
+  if (parseAgentBriefMeta(event.meta)) return true
   if (event.source === 'meeting' && parseMeetingActionsMeta(event.meta)?.proposedActions.length) {
     return true
   }
@@ -52,6 +55,7 @@ export function FeedRailStreamPanel({
   onOpenInWork,
   onOpenWorkspace,
   onSelectContext,
+  onRefresh,
   compose,
   onComposeChange,
   onSubmitCompose,
@@ -165,6 +169,7 @@ export function FeedRailStreamPanel({
                 onOpenInWork={onOpenInWork}
                 onOpenThread={onOpenThread}
                 onSelectContext={onSelectContext}
+                onRefresh={onRefresh}
               />
             )
           })

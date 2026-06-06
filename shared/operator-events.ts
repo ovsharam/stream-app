@@ -17,6 +17,10 @@ export type OperatorEventType =
   | 'meeting_end'
   | 'task_session_start'
   | 'task_session_end'
+  | 'agent_proposal_created'
+  | 'agent_proposal_approved'
+  | 'agent_proposal_rejected'
+  | 'agent_brief_ready'
 
 export type OperatorSurface =
   | 'feed'
@@ -133,7 +137,11 @@ export const OPERATOR_EVENT_TYPES: OperatorEventType[] = [
   'meeting_start',
   'meeting_end',
   'task_session_start',
-  'task_session_end'
+  'task_session_end',
+  'agent_proposal_created',
+  'agent_proposal_approved',
+  'agent_proposal_rejected',
+  'agent_brief_ready'
 ]
 
 export function isOperatorEventType(value: string): value is OperatorEventType {

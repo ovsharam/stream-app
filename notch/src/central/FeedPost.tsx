@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect, type MouseEvent } from 'react'
 import type { CentralStreamEvent } from '@shared/cluster'
 import { parseMeetingActionsMeta } from '@shared/meeting-actions'
+import { parseAgentBriefMeta } from '@shared/agent-proposal'
 import { openBrowserLink, openMeeting } from '../lib/api'
 import { trackOperatorEvent } from '../lib/operatorTelemetry'
 import { feedEventBrowseUrl } from './workspace'
 import { getFeedVote, setFeedVote } from './feedFeedbackStore'
+import { AgentProposalFeedCard } from './AgentProposalFeedCard'
 import { IconGmail, IconMonday, IconReply, IconRepost, IconShare, IconViews } from './Icons'
 
 const AVATAR: Record<string, { bg: string; color: string; label: string }> = {
@@ -338,6 +340,7 @@ type Props = {
   onOpenInWork?: (itemId: string) => void
   onOpenThread?: (itemId: string, day?: string) => void
   onSelectContext?: (itemId: string) => void
+  onRefresh?: () => void
 }
 
 function streamItemId(event: CentralStreamEvent): string {
@@ -350,6 +353,7 @@ function isActionable(event: CentralStreamEvent): boolean {
       event.promptPreview ||
       event.kind === 'build_prompt' ||
       event.kind === 'action' ||
+      parseAgentBriefMeta(event.meta) ||
       event.highlight
   )
 }
@@ -467,7 +471,8 @@ export function FeedPost({
   onOpenWorkspace,
   onOpenInWork,
   onOpenThread,
-  onSelectContext
+  onSelectContext,
+  onRefresh
 }: Props) {
   const surface = surfaceProp ?? (variant === 'rail' ? 'stream_rail' : 'feed')
   const postRef = useRef<HTMLElement>(null)
@@ -704,6 +709,10 @@ export function FeedPost({
             <code>{event.promptPreview}</code>
           </div>
         )}
+
+        {parseAgentBriefMeta(event.meta) ? (
+          <AgentProposalFeedCard event={event} onRefresh={onRefresh} />
+        ) : null}
 
         <PostActions
           event={event}

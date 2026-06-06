@@ -21,6 +21,7 @@ import { bootstrapSimGraph } from './sim/engine'
 import { getCorsOrigins } from './corsOrigins'
 import { ingestRecentStream } from './kb/pipeline'
 import { initOperatorTelemetryStore } from './telemetry/store'
+import { initAgentStore } from './agent/store'
 
 config({ path: join(process.cwd(), '.env.local') })
 config()
@@ -33,6 +34,7 @@ async function main(): Promise<void> {
   initStore(dataDir)
   await initDb(dataDir)
   initOperatorTelemetryStore()
+  initAgentStore()
 
   if (process.env.GEMINI_API_KEY?.trim()) {
     console.log('[server] GEMINI_API_KEY loaded — auto-connects per session')

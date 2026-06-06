@@ -103,6 +103,11 @@ import { loadOntology, saveOntology, ontologyPath } from './kb/ontology'
 import type { KbOntologyConfig } from '../shared/kb-ontology'
 import { recordComposeAction, markStreamItemSeen } from './kb/telemetry'
 import {
+  exportTrainingEvents,
+  queryOperatorEvents,
+  recordOperatorEvents
+} from './telemetry/service'
+import {
   startMeetingSession,
   endMeetingSession,
   getActiveMeeting,
@@ -1559,7 +1564,40 @@ export function createRouter(io?: SocketServer): Router {
   router.post('/kb/seen/:itemId', (req, res) => {
     const itemId = req.params.itemId.replace(/^ext-/, '')
     markStreamItemSeen(itemId)
+    const { emitServerEvent } = require('./telemetry/service') as typeof import('./telemetry/service')
+    emitServerEvent(
+      'feed_context_select',
+      { itemId, via: 'markSeen' },
+      { subjectType: 'stream_item', subjectId: itemId, surface: 'feed' }
+    )
     res.json({ ok: true })
+  })
+
+  router.post('/telemetry/events', (req, res) => {
+    const events = Array.isArray(req.body?.events) ? req.body.events : []
+    const result = recordOperatorEvents(events)
+    if (!result.ok) {
+      res.status(400).json({ error: result.error })
+      return
+    }
+    res.json({ ok: true, inserted: result.inserted })
+  })
+
+  router.get('/telemetry/events', (req, res) => {
+    const since = req.query.since ? Number(req.query.since) : undefined
+    const type = req.query.type ? String(req.query.type) : undefined
+    const limit = req.query.limit ? Number(req.query.limit) : 100
+    res.json({
+      events: queryOperatorEvents({
+        since: Number.isFinite(since) ? since : undefined,
+        type,
+        limit: Number.isFinite(limit) ? limit : 100
+      })
+    })
+  })
+
+  router.get('/telemetry/export', (_req, res) => {
+    res.json({ events: exportTrainingEvents() })
   })
 
   router.get('/fde/engagements', (_req, res) => {

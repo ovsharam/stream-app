@@ -412,6 +412,14 @@ export const mobileApi = {
   endCall: () => json<{ ok: boolean }>('/sim/end-call', { method: 'POST', body: '{}' })
 }
 
+export const telemetryApi = {
+  ingestEvents: (events: import('@shared/operator-events').OperatorEvent[]) =>
+    json<{ ok: boolean; inserted: number }>('/telemetry/events', {
+      method: 'POST',
+      body: JSON.stringify({ events })
+    })
+}
+
 export function canUseInAppWorkspace(): boolean {
   return (
     typeof window !== 'undefined' &&

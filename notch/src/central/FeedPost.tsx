@@ -330,6 +330,7 @@ function SourceCardBody({ event }: { event: CentralStreamEvent }) {
 type Props = {
   event: CentralStreamEvent
   variant?: 'default' | 'rail'
+  surface?: 'feed' | 'stream_rail'
   isNew?: boolean
   isContext?: boolean
   activeThreadId?: string | null
@@ -355,6 +356,8 @@ function isActionable(event: CentralStreamEvent): boolean {
 
 function PostActions({
   event,
+  itemId,
+  surface,
   isMondayThread,
   isThreadable,
   threadItemId,
@@ -363,6 +366,8 @@ function PostActions({
   onOpenWorkspace
 }: {
   event: CentralStreamEvent
+  itemId: string
+  surface: string
   isMondayThread: boolean
   isThreadable: boolean
   threadItemId: string
@@ -374,7 +379,20 @@ function PostActions({
 
   const toggleVote = (e: MouseEvent, next: 'up' | 'down') => {
     e.stopPropagation()
-    setVote(setFeedVote(event.id, next))
+    const prev = vote
+    const result = setFeedVote(event.id, next)
+    setVote(result)
+    trackOperatorEvent(
+      'feed_vote',
+      {
+        eventId: event.id,
+        source: event.source,
+        itemId,
+        vote: result ?? 'clear',
+        previousVote: prev
+      },
+      { surface, subjectType: 'stream_item', subjectId: itemId }
+    )
   }
 
   return (
@@ -442,6 +460,7 @@ function PostActions({
 export function FeedPost({
   event,
   variant = 'default',
+  surface: surfaceProp,
   isNew,
   isContext,
   activeThreadId,
@@ -450,6 +469,61 @@ export function FeedPost({
   onOpenThread,
   onSelectContext
 }: Props) {
+  const surface = surfaceProp ?? (variant === 'rail' ? 'stream_rail' : 'feed')
+  const postRef = useRef<HTMLElement>(null)
+  const impressedRef = useRef(false)
+  const visibleSinceRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    const el = postRef.current
+    if (!el) return
+
+    const itemId = streamItemId(event)
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            if (!impressedRef.current) {
+              impressedRef.current = true
+              trackOperatorEvent(
+                'feed_impression',
+                { eventId: event.id, source: event.source, itemId },
+                { surface, subjectType: 'stream_item', subjectId: itemId }
+              )
+            }
+            if (visibleSinceRef.current == null) visibleSinceRef.current = Date.now()
+          } else if (visibleSinceRef.current != null) {
+            const durationMs = Date.now() - visibleSinceRef.current
+            visibleSinceRef.current = null
+            if (durationMs >= 250) {
+              trackOperatorEvent(
+                'feed_dwell',
+                { eventId: event.id, source: event.source, itemId, durationMs },
+                { surface, subjectType: 'stream_item', subjectId: itemId }
+              )
+            }
+          }
+        }
+      },
+      { threshold: 0.35 }
+    )
+
+    observer.observe(el)
+    return () => {
+      if (visibleSinceRef.current != null) {
+        const durationMs = Date.now() - visibleSinceRef.current
+        if (durationMs >= 250) {
+          trackOperatorEvent(
+            'feed_dwell',
+            { eventId: event.id, source: event.source, itemId, durationMs },
+            { surface, subjectType: 'stream_item', subjectId: itemId }
+          )
+        }
+      }
+      observer.disconnect()
+    }
+  }, [event.id, event.source, surface])
+
   const isMondayThread = event.source === 'monday' && event.meta?.grouped === 'true'
   const isGmailThread = event.source === 'gmail'
   const isThreadable = isMondayThread || isGmailThread

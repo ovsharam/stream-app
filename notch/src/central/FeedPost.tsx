@@ -560,7 +560,14 @@ export function FeedPost({
 
   const openThread = (e?: MouseEvent) => {
     e?.stopPropagation()
-    if (threadItemId) onOpenThread?.(threadItemId, threadDay)
+    if (threadItemId) {
+      trackOperatorEvent(
+        'feed_thread_open',
+        { itemId: threadItemId, source: event.source, day: threadDay },
+        { surface, subjectType: 'stream_item', subjectId: threadItemId }
+      )
+      onOpenThread?.(threadItemId, threadDay)
+    }
   }
 
   const selectContext = () => {
@@ -615,6 +622,7 @@ export function FeedPost({
 
   return (
     <article
+      ref={postRef}
       className={`x-post x-post-${event.source}${variant === 'rail' ? ' x-post-rail' : ''} ${isNew ? 'x-post-new' : ''} ${isContext ? 'x-post-context' : ''} ${isActionable(event) ? 'x-post-actionable' : ''} ${threadActive ? 'x-post-thread-active' : ''} ${isThreadable ? 'x-post-threadable' : ''}${hasBrowseTarget ? ' x-post-browseable' : ''}`}
       onClick={handlePostClick}
     >
@@ -699,6 +707,8 @@ export function FeedPost({
 
         <PostActions
           event={event}
+          itemId={threadItemId}
+          surface={surface}
           isMondayThread={isMondayThread}
           isThreadable={isThreadable}
           threadItemId={threadItemId}

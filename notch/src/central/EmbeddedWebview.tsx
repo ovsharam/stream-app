@@ -11,9 +11,10 @@ type Props = {
   reloadNonce?: number
   onEmbedAuthState?: (state: EmbedBrowseAuthState) => void
   onSignInNeeded?: () => void
+  onLocationChange?: (url: string) => void
 }
 
-type WebviewEl = HTMLElement & { reload?: () => void }
+type WebviewEl = HTMLElement & { reload?: () => void; getURL?: () => string }
 
 export function EmbeddedWebview({
   className,
@@ -22,7 +23,8 @@ export function EmbeddedWebview({
   embedBrowseKind,
   reloadNonce = 0,
   onEmbedAuthState,
-  onSignInNeeded
+  onSignInNeeded,
+  onLocationChange
 }: Props) {
   const [webviewEl, setWebviewEl] = useState<HTMLElement | null>(null)
   const [guestPreload, setGuestPreload] = useState('')
@@ -57,6 +59,25 @@ export function EmbeddedWebview({
     const el = webviewEl as WebviewEl | null
     el?.reload?.()
   }, [reloadNonce, webviewEl])
+
+  useEffect(() => {
+    if (!webviewEl || !onLocationChange) return
+    const webview = webviewEl as WebviewEl
+
+    const sync = (event?: Event) => {
+      const fromEvent = (event as Event & { url?: string } | undefined)?.url
+      const next = fromEvent ?? webview.getURL?.()
+      if (!next?.startsWith('http')) return
+      onLocationChange(next)
+    }
+
+    webview.addEventListener('did-navigate', sync)
+    webview.addEventListener('did-navigate-in-page', sync)
+    return () => {
+      webview.removeEventListener('did-navigate', sync)
+      webview.removeEventListener('did-navigate-in-page', sync)
+    }
+  }, [webviewEl, onLocationChange])
 
   return (
     <webview

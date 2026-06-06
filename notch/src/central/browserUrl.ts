@@ -9,13 +9,16 @@ export function normalizeBrowserUrl(input: string): string {
   return `https://www.google.com/search?q=${encodeURIComponent(raw)}`
 }
 
-export function workspaceTabFromInput(input: string, id?: string): WorkspaceTab {
+export function workspaceTabFromInput(input: string, opts?: { id?: string; unique?: boolean }): WorkspaceTab {
   const url = normalizeBrowserUrl(input)
   const meta = inferWorkspaceMeta(url)
+  const baseId = workspaceTabId(url)
+  const id = opts?.id ?? (opts?.unique ? `${baseId}-${Date.now()}` : baseId)
   return tabFromUrl(url, {
-    id: id ?? workspaceTabId(url),
+    id,
     title: meta.title,
-    source: meta.source
+    source: meta.source,
+    tabKind: 'temp'
   })
 }
 

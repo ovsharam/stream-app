@@ -7,6 +7,7 @@ import { getSessionId, readSessionId } from './session'
 import { runWithSession } from './request-context'
 import { getCorsOrigins } from './corsOrigins'
 import { ensureGeminiFromEnv } from './sources/gemini'
+import { ensureClaudeFromEnv } from './sources/claude'
 
 export function createApp(getIo?: () => SocketServer | undefined): express.Application {
   const app = express()
@@ -24,6 +25,7 @@ export function createApp(getIo?: () => SocketServer | undefined): express.Appli
     const sid = readSessionId(req) ?? getSessionId(req, res)
     runWithSession(sid, () => {
       ensureGeminiFromEnv(sid)
+      ensureClaudeFromEnv(sid)
       next()
     })
   })

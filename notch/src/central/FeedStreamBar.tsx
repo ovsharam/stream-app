@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import type { StreamSource } from '@shared/types'
 import {
   BUILTIN_STREAMS,
-  FEED_SOURCE_OPTIONS,
+  FEED_SOURCE_GROUPS,
   loadActiveStreamId,
   loadCustomStreams,
   newStreamId,
   saveActiveStreamId,
   saveCustomStreams,
+  sourceLabel,
   type FeedStream
 } from './feedStreamsStore'
 
@@ -15,6 +16,8 @@ type Props = {
   activeStreamId: string
   onStreamChange: (id: string) => void
 }
+
+const PRESET_STREAMS = BUILTIN_STREAMS.filter((s) => s.id !== 'all')
 
 export function FeedStreamBar({ activeStreamId, onStreamChange }: Props) {
   const [customStreams, setCustomStreams] = useState<FeedStream[]>(() => loadCustomStreams())
@@ -39,6 +42,12 @@ export function FeedStreamBar({ activeStreamId, onStreamChange }: Props) {
     return [...BUILTIN_STREAMS.filter((s) => s.id !== 'all'), ...customs]
   }, [customStreams])
 
+  const closeCreator = () => {
+    setCreating(false)
+    setDraftLabel('')
+    setDraftSources(new Set(['gmail', 'slack']))
+  }
+
   const toggleDraftSource = (source: StreamSource) => {
     setDraftSources((prev) => {
       const next = new Set(prev)
@@ -46,6 +55,10 @@ export function FeedStreamBar({ activeStreamId, onStreamChange }: Props) {
       else next.add(source)
       return next
     })
+  }
+
+  const applyPreset = (sources: StreamSource[]) => {
+    setDraftSources(new Set(sources))
   }
 
   const saveCustomStream = () => {
@@ -60,9 +73,7 @@ export function FeedStreamBar({ activeStreamId, onStreamChange }: Props) {
     setCustomStreams(next)
     saveCustomStreams(next)
     onStreamChange(stream.id)
-    setCreating(false)
-    setDraftLabel('')
-    setDraftSources(new Set(['gmail', 'slack']))
+    closeCreator()
   }
 
   const deleteStream = (id: string) => {
@@ -73,6 +84,7 @@ export function FeedStreamBar({ activeStreamId, onStreamChange }: Props) {
   }
 
   const isCustom = (id: string) => customStreams.some((s) => s.id === id)
+  const canSave = draftLabel.trim().length > 0 && draftSources.size > 0
 
   return (
     <div className="x-feed-streams">
@@ -130,46 +142,79 @@ export function FeedStreamBar({ activeStreamId, onStreamChange }: Props) {
         })}
         <button
           type="button"
-          className="x-feed-stream-chip x-feed-stream-add"
+          className={`x-feed-stream-chip x-feed-stream-add${creating ? ' active' : ''}`}
           aria-expanded={creating}
-          onClick={() => setCreating((v) => !v)}
+          onClick={() => (creating ? closeCreator() : setCreating(true))}
         >
-          + Stream
+          {creating ? 'Cancel' : '+ Stream'}
         </button>
       </div>
 
       {creating ? (
         <div className="x-feed-stream-create">
-          <input
-            className="x-feed-stream-input"
-            value={draftLabel}
-            onChange={(e) => setDraftLabel(e.target.value)}
-            placeholder="Stream name — e.g. Comms only"
-          />
-          <div className="x-feed-stream-sources">
-            {FEED_SOURCE_OPTIONS.map((opt) => (
-              <label key={opt.id} className="x-feed-stream-source">
-                <input
-                  type="checkbox"
-                  checked={draftSources.has(opt.id)}
-                  onChange={() => toggleDraftSource(opt.id)}
-                />
-                {opt.label}
-              </label>
-            ))}
-          </div>
-          <div className="x-feed-stream-create-actions">
+          <div className="x-feed-stream-create-head">
+            <input
+              className="x-feed-stream-input"
+              value={draftLabel}
+              onChange={(e) => setDraftLabel(e.target.value)}
+              placeholder="Name your stream"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && canSave) saveCustomStream()
+                if (e.key === 'Escape') closeCreator()
+              }}
+            />
             <button
               type="button"
               className="x-feed-stream-save"
-              disabled={!draftLabel.trim() || draftSources.size === 0}
+              disabled={!canSave}
               onClick={saveCustomStream}
             >
-              Save stream
+              Save
             </button>
-            <button type="button" className="x-feed-stream-cancel" onClick={() => setCreating(false)}>
-              Cancel
-            </button>
+          </div>
+
+          <div className="x-feed-stream-presets">
+            <span className="x-feed-stream-presets-label">Start from</span>
+            {PRESET_STREAMS.map((preset, i) => (
+              <span key={preset.id} className="x-feed-stream-preset-wrap">
+                {i > 0 ? <span className="x-feed-stream-preset-sep" aria-hidden>·</span> : null}
+                <button
+                  type="button"
+                  className="x-feed-stream-preset"
+                  onClick={() => applyPreset(preset.sources)}
+                >
+                  {preset.label}
+                </button>
+              </span>
+            ))}
+            <span className="x-feed-stream-source-count">
+              {draftSources.size} selected
+            </span>
+          </div>
+
+          <div className="x-feed-stream-groups">
+            {FEED_SOURCE_GROUPS.map((group) => (
+              <div key={group.id} className="x-feed-stream-group">
+                <span className="x-feed-stream-group-label">{group.label}</span>
+                <div className="x-feed-stream-group-toggles">
+                  {group.sources.map((source) => {
+                    const on = draftSources.has(source)
+                    return (
+                      <button
+                        key={source}
+                        type="button"
+                        className={`x-feed-stream-toggle${on ? ' active' : ''}`}
+                        aria-pressed={on}
+                        onClick={() => toggleDraftSource(source)}
+                      >
+                        {sourceLabel(source)}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       ) : null}

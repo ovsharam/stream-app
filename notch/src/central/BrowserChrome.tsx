@@ -8,6 +8,8 @@ type Props = {
   onExternal: () => void
   railCollapsed?: boolean
   onToggleRail?: () => void
+  /** Pinned app or home browser — label rail toggle as Stream panel. */
+  workspaceMode?: boolean
 }
 
 export function BrowserChrome({
@@ -16,7 +18,8 @@ export function BrowserChrome({
   onReload,
   onExternal,
   railCollapsed,
-  onToggleRail
+  onToggleRail,
+  workspaceMode = false
 }: Props) {
   const [draft, setDraft] = useState(tab.url)
 
@@ -57,12 +60,12 @@ export function BrowserChrome({
         {onToggleRail ? (
           <button
             type="button"
-            className={`x-browser-chrome-btn${railCollapsed ? ' active' : ''}`}
-            title={railCollapsed ? 'Show panel' : 'Hide panel'}
-            aria-label={railCollapsed ? 'Show panel' : 'Hide panel'}
+            className={`x-browser-chrome-btn x-browser-chrome-rail${workspaceMode ? ' x-browser-chrome-rail-labeled' : ''}${railCollapsed ? ' active' : ''}`}
+            title={railCollapsed ? 'Show Stream panel' : 'Hide Stream panel'}
+            aria-label={railCollapsed ? 'Show Stream panel' : 'Hide Stream panel'}
             onClick={onToggleRail}
           >
-            {railCollapsed ? '◧' : '◨'}
+            {workspaceMode ? (railCollapsed ? '◧ Stream' : '◨ Stream') : railCollapsed ? '◧' : '◨'}
           </button>
         ) : null}
       </div>

@@ -328,6 +328,7 @@ function SourceCardBody({ event }: { event: CentralStreamEvent }) {
 
 type Props = {
   event: CentralStreamEvent
+  variant?: 'default' | 'rail'
   isNew?: boolean
   isContext?: boolean
   activeThreadId?: string | null
@@ -439,6 +440,7 @@ function PostActions({
 
 export function FeedPost({
   event,
+  variant = 'default',
   isNew,
   isContext,
   activeThreadId,
@@ -538,7 +540,7 @@ export function FeedPost({
 
   return (
     <article
-      className={`x-post x-post-${event.source} ${isNew ? 'x-post-new' : ''} ${isContext ? 'x-post-context' : ''} ${isActionable(event) ? 'x-post-actionable' : ''} ${threadActive ? 'x-post-thread-active' : ''} ${isThreadable ? 'x-post-threadable' : ''}${hasBrowseTarget ? ' x-post-browseable' : ''}`}
+      className={`x-post x-post-${event.source}${variant === 'rail' ? ' x-post-rail' : ''} ${isNew ? 'x-post-new' : ''} ${isContext ? 'x-post-context' : ''} ${isActionable(event) ? 'x-post-actionable' : ''} ${threadActive ? 'x-post-thread-active' : ''} ${isThreadable ? 'x-post-threadable' : ''}${hasBrowseTarget ? ' x-post-browseable' : ''}`}
       onClick={handlePostClick}
     >
       <FeedAvatar source={event.source} />

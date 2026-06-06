@@ -27,6 +27,23 @@ export const FEED_SOURCE_OPTIONS: { id: StreamSource; label: string }[] = [
   { id: 'perplexity', label: 'Perplexity' }
 ]
 
+export const FEED_SOURCE_GROUPS: { id: string; label: string; sources: StreamSource[] }[] = [
+  { id: 'comms', label: 'Comms', sources: ['gmail', 'slack', 'discord'] },
+  { id: 'work', label: 'Work', sources: ['monday', 'meeting', 'gdocs', 'gong', 'calcom'] },
+  { id: 'notes', label: 'Notes', sources: ['note'] },
+  {
+    id: 'build',
+    label: 'Build',
+    sources: ['cursor', 'github', 'claude', 'gemini', 'perplexity', 'x']
+  }
+]
+
+const SOURCE_LABEL = new Map(FEED_SOURCE_OPTIONS.map((o) => [o.id, o.label]))
+
+export function sourceLabel(id: StreamSource): string {
+  return SOURCE_LABEL.get(id) ?? id
+}
+
 export const BUILTIN_STREAMS: FeedStream[] = [
   { id: 'all', label: 'All sources', sources: [] },
   { id: 'comms', label: 'Comms', sources: ['gmail', 'slack', 'discord'] },

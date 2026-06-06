@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-export type RailWidgetId = 'context' | 'calendar' | 'chat' | 'news'
+export type RailWidgetId = 'feed' | 'context' | 'calendar' | 'chat' | 'news'
 
 export type RailWidgetConfig = {
   id: RailWidgetId
@@ -14,13 +14,17 @@ export type RailContext = {
   page?: string
   area?: 'work' | 'feed'
   tab?: string
+  /** Pinned app or home browser — show workspace stream panel. */
+  workspaceMode?: boolean
 }
 
 export const RAIL_WIDGET_DEFS: {
   id: RailWidgetId
   label: string
   autoHideOnFeed?: boolean
+  workspaceOnly?: boolean
 }[] = [
+  { id: 'feed', label: 'Stream', workspaceOnly: true },
   { id: 'context', label: 'Context', autoHideOnFeed: true },
   { id: 'calendar', label: 'Calendar' },
   { id: 'chat', label: 'Chat' },
@@ -97,6 +101,11 @@ export function getVisibleWidgets(
   const onFeed = context.area === 'feed'
   return widgets
     .filter((w) => w.enabled)
+    .filter((w) => {
+      const def = RAIL_WIDGET_DEFS.find((d) => d.id === w.id)
+      if (def?.workspaceOnly && !context.workspaceMode) return false
+      return true
+    })
     .filter((w) => !onFeed || !isAutoHiddenOnFeed(w))
     .sort((a, b) => a.order - b.order)
 }

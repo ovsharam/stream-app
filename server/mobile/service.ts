@@ -10,7 +10,7 @@ import { retrieveAssistContext } from '../kb/pipeline'
 import { getDatapoint } from '../kb/store'
 import { getCaptureState } from '../sources/captureStore'
 import { getSessionIdFromContext } from '../request-context'
-import { queryClaude, isClaudeConnected } from '../sources/claude'
+import { queryClaude, isClaudeConnected, ensureClaudeFromEnv } from '../sources/claude'
 import { queryGemini, isGeminiConnected, ensureGeminiFromEnv } from '../sources/gemini'
 import type { StreamItem } from '../../shared/types'
 import { getGraphSignals, getSimIntel, getSimSignals, getSimTranscript, isSimCallActive } from '../sim/engine'
@@ -224,7 +224,12 @@ function parseAssistFromLlm(
 export type ChatTurn = { role: 'user' | 'assistant'; content: string }
 
 function llmAvailable(): boolean {
-  return isGeminiConnected() || ensureGeminiFromEnv('default') || isClaudeConnected()
+  return (
+    isGeminiConnected() ||
+    ensureGeminiFromEnv('default') ||
+    isClaudeConnected() ||
+    ensureClaudeFromEnv('default')
+  )
 }
 
 function chatFallbackResponse(q: string): AssistResult {
@@ -493,7 +498,7 @@ Objective: ${objective === 'v1_ship' ? 'fastest shippable win' : 'discovery'}.`
         latentContext: chat ? undefined : latent
       }
     }
-    if (isClaudeConnected()) {
+    if (isClaudeConnected() || ensureClaudeFromEnv('default')) {
       const item = await queryClaude(userPrompt, systemPrompt)
       const parsed = parse(llmRawAnswer(item), q)
       return {

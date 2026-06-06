@@ -37,10 +37,49 @@ export function isLinkedInBrowseHost(url: string): boolean {
   return hostMatches(url, LINKEDIN_HOSTS)
 }
 
+/** LinkedIn tracking / auth probe hosts — don't persist as tab URL (breaks webview reload). */
+export function isLinkedInNavigationNoise(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase()
+    if (host === 'cs.ns1p.net' || host.endsWith('.ns1p.net')) return true
+    if (host.endsWith('.licdn.com')) return true
+    return false
+  } catch {
+    return false
+  }
+}
+
+export function shouldPersistWorkspaceUrl(
+  url: string,
+  tab: { source?: string; pinId?: string }
+): boolean {
+  const linkedInTab = tab.pinId === 'linkedin' || tab.source === 'linkedin'
+  if (!linkedInTab) return true
+  if (isLinkedInNavigationNoise(url)) return false
+  if (isLinkedInBrowseHost(url) || url.includes('linkedin.com')) return true
+  return false
+}
+
+export const LINKEDIN_FEED_URL = 'https://www.linkedin.com/feed/'
+
 export function embedBrowseKindForUrl(url: string): EmbedBrowseKind | null {
   if (isGoogleBrowseHost(url)) return 'google'
   if (isLinkedInBrowseHost(url)) return 'linkedin'
   return null
+}
+
+/** Pinned tabs keep OAuth session even when the URL redirects off-domain (e.g. LinkedIn → cs.ns1p.net). */
+export function embedBrowseKindForTab(tab: {
+  url: string
+  source?: string
+  pinId?: string
+  tabKind?: string
+}): EmbedBrowseKind | null {
+  if (tab.pinId === 'linkedin' || tab.source === 'linkedin') return 'linkedin'
+  if (tab.source === 'gdocs' || tab.source === 'youtube' || tab.source === 'gmail' || tab.source === 'calendar') {
+    return 'google'
+  }
+  return embedBrowseKindForUrl(tab.url)
 }
 
 export function workspacePartitionForUrl(url: string, tabId: string): string {
@@ -48,6 +87,18 @@ export function workspacePartitionForUrl(url: string, tabId: string): string {
   if (kind) return EMBED_BROWSE_PARTITIONS[kind]
   const slug = tabId.replace(/[^a-zA-Z0-9-_]/g, '-').slice(0, 48)
   return `persist:ws-${slug}`
+}
+
+export function workspacePartitionForTab(tab: {
+  url: string
+  id: string
+  source?: string
+  pinId?: string
+  tabKind?: string
+}): string {
+  const kind = embedBrowseKindForTab(tab)
+  if (kind) return EMBED_BROWSE_PARTITIONS[kind]
+  return workspacePartitionForUrl(tab.url, tab.id)
 }
 
 export function embedBrowseSignInUrl(kind: EmbedBrowseKind, continueUrl: string): string {

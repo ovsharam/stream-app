@@ -9,6 +9,7 @@ import { ContextRail } from './ContextRail'
 import { IntegrationsPanel } from './IntegrationsPanel'
 import { BuildAgentsView } from './BuildAgentsView'
 import { NotesView } from './NotesView'
+import { NavBladeToggle, persistNavOpen, readNavOpen } from './NavBladeToggle'
 import { SideNav, type NavTarget, type Page } from './SideNav'
 import { NavAppPlayer } from './NavAppPlayer'
 import { getNavApp, useNavApps } from './navAppsStore'
@@ -18,7 +19,8 @@ import { useTheme } from './useTheme'
 import { ThreadBlade } from './ThreadBlade'
 import { BrowserChrome } from './BrowserChrome'
 import { WorkspaceBrowser } from './WorkspaceBrowser'
-import { WorkspaceSidebar } from './WorkspaceSidebar'
+import { HomeWorkspaceRail } from './HomeWorkspaceRail'
+import { PinnedAppShell } from './PinnedAppShell'
 import { normalizeBrowserUrl, workspaceTabFromInput } from './browserUrl'
 import { FeedSearchBar, filterFeedEvents } from './FeedSearchBar'
 import { FeedStreamBar, useFeedStreamId } from './FeedStreamBar'
@@ -34,9 +36,18 @@ import { ComposeInput } from './ComposeInput'
 import { useComposeContacts } from './useComposeContacts'
 import { parseComposeCommand } from '@shared/compose'
 import { clusterApi, integrationApi, openBrowserLink, inferWorkspaceMeta } from '../lib/api'
-import { tabFromCalendarEvent, tabFromUrl, toWorkspaceTab, type WorkspaceTab } from './workspace'
+import { isLinkedInBrowseHost, LINKEDIN_FEED_URL, shouldPersistWorkspaceUrl } from './embedBrowse'
+import {
+  migrateLegacyTabs,
+  tabFromCalendarEvent,
+  tabFromUrl,
+  toWorkspaceTab,
+  type HomePane,
+  type PinnedAppSession,
+  type WorkspaceTab
+} from './workspace'
 
-type NotchNavMode = 'expanded' | 'compact' | 'hidden'
+type WorkspaceView = 'home' | 'pinned'
 import {
   IconEmoji,
   IconGif,
@@ -50,22 +61,96 @@ function streamItemId(event: { id: string; meta?: Record<string, unknown> }): st
   return String(event.meta?.itemId ?? event.id.replace(/^ext-/, ''))
 }
 
+function sanitizePinnedSession(session: PinnedAppSession | null): PinnedAppSession | null {
+  if (!session) return null
+  const linkedIn = session.pinId === 'linkedin' || session.tab.source === 'linkedin'
+  if (!linkedIn) return session
+  if (shouldPersistWorkspaceUrl(session.tab.url, session.tab)) return session
+  return {
+    pinId: session.pinId,
+    tab: tabFromUrl(LINKEDIN_FEED_URL, {
+      title: 'LinkedIn',
+      source: 'linkedin',
+      id: `nav-${session.pinId}`,
+      tabKind: 'pinned',
+      pinId: session.pinId
+    })
+  }
+}
+
+function loadWorkspaceState(): {
+  browserTabs: WorkspaceTab[]
+  activeBrowserTabId: string | null
+  homePane: HomePane
+  pinnedSession: PinnedAppSession | null
+  browserExpanded: boolean
+  workspaceView: WorkspaceView
+} {
+  const defaults = {
+    browserTabs: [] as WorkspaceTab[],
+    activeBrowserTabId: null as string | null,
+    homePane: 'chat' as HomePane,
+    pinnedSession: null as PinnedAppSession | null,
+    browserExpanded: true,
+    workspaceView: 'home' as WorkspaceView
+  }
+  try {
+    const rawBrowser = localStorage.getItem('stream.central.browserTabs')
+    if (rawBrowser) {
+      const browserTabs = JSON.parse(rawBrowser) as WorkspaceTab[]
+      const activeBrowserTabId = localStorage.getItem('stream.central.activeBrowserTabId')
+      const homePaneRaw = localStorage.getItem('stream.central.homePane')
+      const homePane: HomePane = homePaneRaw === 'browser' ? 'browser' : 'chat'
+      const pinnedRaw = localStorage.getItem('stream.central.pinnedSession')
+      const pinnedSession = sanitizePinnedSession(
+        pinnedRaw ? (JSON.parse(pinnedRaw) as PinnedAppSession) : null
+      )
+      const browserExpanded = localStorage.getItem('stream.central.browserExpanded') !== '0'
+      const viewRaw = localStorage.getItem('stream.central.workspaceView')
+      const workspaceView: WorkspaceView =
+        viewRaw === 'pinned' && pinnedSession ? 'pinned' : 'home'
+      return {
+        browserTabs,
+        activeBrowserTabId: activeBrowserTabId ?? browserTabs.at(-1)?.id ?? null,
+        homePane,
+        pinnedSession,
+        browserExpanded,
+        workspaceView
+      }
+    }
+
+    const legacyRaw = localStorage.getItem('stream.central.workspaceTabs')
+    if (legacyRaw) {
+      const legacyTabs = JSON.parse(legacyRaw) as WorkspaceTab[]
+      const { browserTabs, pinnedSession: rawPinned } = migrateLegacyTabs(legacyTabs)
+      const pinnedSession = sanitizePinnedSession(rawPinned)
+      const legacyActive = localStorage.getItem('stream.central.activeWorkspaceId')
+      const activeTab = legacyTabs.find((t) => t.id === legacyActive)
+      const activeKind = activeTab?.tabKind ?? (activeTab?.id.startsWith('nav-') ? 'pinned' : 'temp')
+      let workspaceView: WorkspaceView = 'home'
+      let activeBrowserTabId = browserTabs.at(-1)?.id ?? null
+      if (activeKind === 'pinned' && pinnedSession) {
+        workspaceView = 'pinned'
+      } else if (legacyActive && browserTabs.some((t) => t.id === legacyActive)) {
+        activeBrowserTabId = legacyActive
+      }
+      return {
+        browserTabs,
+        activeBrowserTabId,
+        homePane: browserTabs.length > 0 && activeBrowserTabId ? 'browser' : 'chat',
+        pinnedSession,
+        browserExpanded: true,
+        workspaceView
+      }
+    }
+  } catch {
+    /* ignore corrupt storage */
+  }
+  return defaults
+}
+
 export function CentralApp() {
-  const persistedTabs = (() => {
-    try {
-      const raw = localStorage.getItem('stream.central.workspaceTabs')
-      return raw ? (JSON.parse(raw) as WorkspaceTab[]) : []
-    } catch {
-      return []
-    }
-  })()
-  const persistedActive = (() => {
-    try {
-      return localStorage.getItem('stream.central.activeWorkspaceId')
-    } catch {
-      return null
-    }
-  })()
+  const persistedWorkspace = loadWorkspaceState()
 
   const { events, live, syncing } = useCentralStream()
   const [area, setArea] = useState<Area>('work')
@@ -97,15 +182,7 @@ export function CentralApp() {
       return false
     }
   })
-  const [notchNavMode, setNotchNavMode] = useState<NotchNavMode>(() => {
-    try {
-      const v = localStorage.getItem('notch.navMode')
-      if (v === 'compact' || v === 'hidden' || v === 'expanded') return v
-    } catch {
-      /* ignore */
-    }
-    return 'expanded'
-  })
+  const [navOpen, setNavOpen] = useState(readNavOpen)
   const [browserSidebarCollapsed, setBrowserSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem('notch.browserSidebarCollapsed') === '1'
@@ -114,11 +191,16 @@ export function CentralApp() {
     }
   })
   const [tabReloadKeys, setTabReloadKeys] = useState<Record<string, number>>({})
-  const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>(persistedTabs)
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
-    persistedActive ?? persistedTabs.at(-1)?.id ?? null
+  const [browserTabs, setBrowserTabs] = useState<WorkspaceTab[]>(persistedWorkspace.browserTabs)
+  const [activeBrowserTabId, setActiveBrowserTabId] = useState<string | null>(
+    persistedWorkspace.activeBrowserTabId
   )
-  const [homeChatRail, setHomeChatRail] = useState(false)
+  const [homePane, setHomePane] = useState<HomePane>(persistedWorkspace.homePane)
+  const [pinnedSession, setPinnedSession] = useState<PinnedAppSession | null>(
+    persistedWorkspace.pinnedSession
+  )
+  const [browserExpanded, setBrowserExpanded] = useState(persistedWorkspace.browserExpanded)
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(persistedWorkspace.workspaceView)
   const { theme, setTheme } = useTheme()
   const { apps: navApps, remove: removeNavApp, pinCatalog: pinNavApp } = useNavApps()
   const [activeNavAppId, setActiveNavAppId] = useState<string | null>(null)
@@ -193,14 +275,48 @@ export function CentralApp() {
     const app = getNavApp(appId, navApps)
     if (!app) return
     if (app.surface === 'workspace') {
+      setPage('stream')
+      setArea('work')
+      setActiveNavAppId(null)
+      setNavAppMini(false)
+      void window.notchDesktop?.destroyNavApp?.()
+      setFocusMeetingItemId(null)
+      if (pinnedSession?.pinId === app.id) {
+        setWorkspaceView('pinned')
+        if (
+          app.id === 'linkedin' &&
+          !isLinkedInBrowseHost(pinnedSession.tab.url) &&
+          !pinnedSession.tab.url.includes('linkedin.com')
+        ) {
+          const meta = inferWorkspaceMeta(app.url)
+          setPinnedSession({
+            pinId: app.id,
+            tab: tabFromUrl(app.url, {
+              title: app.label,
+              source: meta.source,
+              id: `nav-${app.id}`,
+              tabKind: 'pinned',
+              pinId: app.id
+            })
+          })
+        }
+        return
+      }
       const meta = inferWorkspaceMeta(app.url)
-      openBrowserLink(app.url, { title: app.label, source: meta.source, id: `nav-${app.id}` })
+      const tab = tabFromUrl(app.url, {
+        title: app.label,
+        source: meta.source,
+        id: `nav-${app.id}`,
+        tabKind: 'pinned',
+        pinId: app.id
+      })
+      setPinnedSession({ pinId: app.id, tab })
+      setWorkspaceView('pinned')
       return
     }
     setPage('navapp')
     setActiveNavAppId(appId)
     setNavAppMini(false)
-    setActiveWorkspaceId(null)
     setFocusMeetingItemId(null)
   }
 
@@ -210,7 +326,8 @@ export function CentralApp() {
     setFeedQuery('')
     setContextItemId(null)
     setFocusMeetingItemId(null)
-    setActiveWorkspaceId(null)
+    setWorkspaceView('home')
+    setHomePane('chat')
     setPage('stream')
     setArea('work')
     setTab('foryou')
@@ -300,14 +417,14 @@ export function CentralApp() {
       setPage('stream')
       if (item.area) setArea(item.area)
       if (item.tab) setTab(item.tab)
-      setActiveWorkspaceId(null)
+      setWorkspaceView('home')
     })
   }
 
   const openAgentsFeed = () => {
     withNavAppLeave(() => {
       setPage('build')
-      setActiveWorkspaceId(null)
+      setWorkspaceView('home')
       setFocusMeetingItemId(null)
     })
   }
@@ -321,69 +438,141 @@ export function CentralApp() {
       setFeedQuery('')
       setContextItemId(null)
       setFocusMeetingItemId(null)
-      setActiveWorkspaceId(null)
+      setWorkspaceView('home')
+      setHomePane('chat')
     })
   }
 
-  const openWorkspaceTab = (tab: WorkspaceTab, opts?: { activate?: boolean }) => {
-    setWorkspaceTabs((prev) => {
-      const existing = prev.find((t) => t.id === tab.id)
+  const openBrowserTab = useCallback((tab: WorkspaceTab, opts?: { activate?: boolean }) => {
+    const tempTab = { ...tab, tabKind: 'temp' as const }
+    setWorkspaceView('home')
+    setPage('stream')
+    setArea('work')
+    setActiveNavAppId(null)
+    setNavAppMini(false)
+    void window.notchDesktop?.destroyNavApp?.()
+    setBrowserTabs((prev) => {
+      const existing = prev.find((t) => t.id === tempTab.id)
       if (existing) {
-        if (opts?.activate !== false) setActiveWorkspaceId(existing.id)
+        if (opts?.activate !== false) {
+          setActiveBrowserTabId(existing.id)
+          setHomePane('browser')
+        }
         return prev
       }
-      if (opts?.activate !== false) setActiveWorkspaceId(tab.id)
-      return [...prev, tab]
+      if (opts?.activate !== false) {
+        setActiveBrowserTabId(tempTab.id)
+        setHomePane('browser')
+      }
+      return [...prev, tempTab]
     })
-  }
+  }, [])
 
   const openWorkspace = (event: (typeof events)[number]) => {
     const tab = toWorkspaceTab(event)
     if (!tab) return
-    openWorkspaceTab(tab)
+    openBrowserTab(tab)
   }
 
-  const closeWorkspace = (id: string) => {
-    setWorkspaceTabs((prev) => {
+  const closeBrowserTab = (id: string) => {
+    setBrowserTabs((prev) => {
       const next = prev.filter((t) => t.id !== id)
-      if (activeWorkspaceId === id) setActiveWorkspaceId(next.at(-1)?.id ?? null)
+      if (activeBrowserTabId === id) {
+        const fallback = next.at(-1)?.id ?? null
+        setActiveBrowserTabId(fallback)
+        if (!fallback) setHomePane('chat')
+      }
       return next
     })
   }
 
-  const navigateWorkspaceTab = useCallback((id: string, input: string) => {
+  const navigateBrowserTab = useCallback((id: string, input: string) => {
     const url = normalizeBrowserUrl(input)
     const meta = inferWorkspaceMeta(url)
-    setWorkspaceTabs((prev) =>
+    setBrowserTabs((prev) =>
       prev.map((t) => (t.id === id ? { ...t, url, title: meta.title, source: meta.source } : t))
     )
   }, [])
 
-  const newWorkspaceTab = useCallback((input: string) => {
-    const tab = workspaceTabFromInput(input)
-    setWorkspaceTabs((prev) => {
-      const existing = prev.find((t) => t.id === tab.id)
-      if (existing) {
-        setActiveWorkspaceId(existing.id)
-        return prev
-      }
-      setActiveWorkspaceId(tab.id)
-      return [...prev, tab]
+  const syncBrowserTabUrl = useCallback((id: string, url: string) => {
+    setBrowserTabs((prev) => {
+      const tab = prev.find((t) => t.id === id)
+      if (tab && !shouldPersistWorkspaceUrl(url, tab)) return prev
+      const meta = inferWorkspaceMeta(url)
+      return prev.map((t) => (t.id === id ? { ...t, url, title: meta.title, source: meta.source } : t))
     })
   }, [])
 
-  const reloadWorkspaceTab = useCallback((id: string) => {
+  const syncPinnedTabUrl = useCallback((url: string) => {
+    setPinnedSession((prev) => {
+      if (!prev || !shouldPersistWorkspaceUrl(url, prev.tab)) return prev
+      const meta = inferWorkspaceMeta(url)
+      const pinnedLinkedIn = prev.pinId === 'linkedin' || prev.tab.source === 'linkedin'
+      return {
+        ...prev,
+        tab: {
+          ...prev.tab,
+          url,
+          title: pinnedLinkedIn ? 'LinkedIn' : meta.title,
+          source: pinnedLinkedIn ? 'linkedin' : meta.source
+        }
+      }
+    })
+  }, [])
+
+  const navigatePinnedTab = useCallback((input: string) => {
+    const url = normalizeBrowserUrl(input)
+    const meta = inferWorkspaceMeta(url)
+    setPinnedSession((prev) => {
+      if (!prev) return null
+      const pinnedLinkedIn = prev.pinId === 'linkedin' || prev.tab.source === 'linkedin'
+      return {
+        ...prev,
+        tab: {
+          ...prev.tab,
+          url,
+          title: pinnedLinkedIn && isLinkedInBrowseHost(url) ? 'LinkedIn' : meta.title,
+          source: pinnedLinkedIn ? 'linkedin' : meta.source
+        }
+      }
+    })
+  }, [])
+
+  const newBrowserTab = useCallback((input: string) => {
+    const tab = workspaceTabFromInput(input, { unique: true })
+    setWorkspaceView('home')
+    setPage('stream')
+    setArea('work')
+    setHomePane('browser')
+    setActiveBrowserTabId(tab.id)
+    setBrowserTabs((prev) => [...prev, tab])
+  }, [])
+
+  const reloadBrowserTab = useCallback((id: string) => {
     setTabReloadKeys((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }))
   }, [])
 
-  const cycleNotchNav = useCallback(() => {
-    setNotchNavMode((mode) => {
-      const next: NotchNavMode = mode === 'expanded' ? 'compact' : mode === 'compact' ? 'hidden' : 'expanded'
-      try {
-        localStorage.setItem('notch.navMode', next)
-      } catch {
-        /* ignore */
-      }
+  const selectHomeChat = useCallback(() => {
+    setWorkspaceView('home')
+    setHomePane('chat')
+  }, [])
+
+  const selectHomeBrowser = useCallback(() => {
+    setWorkspaceView('home')
+    setHomePane('browser')
+    setActiveBrowserTabId((current) => current ?? browserTabs.at(-1)?.id ?? null)
+  }, [browserTabs])
+
+  const selectBrowserTab = useCallback((id: string) => {
+    setWorkspaceView('home')
+    setHomePane('browser')
+    setActiveBrowserTabId(id)
+  }, [])
+
+  const toggleNavOpen = useCallback(() => {
+    setNavOpen((open) => {
+      const next = !open
+      persistNavOpen(next)
       return next
     })
   }, [])
@@ -400,8 +589,12 @@ export function CentralApp() {
     })
   }, [])
 
-  const activeWorkspace = workspaceTabs.find((t) => t.id === activeWorkspaceId) ?? null
-  const browserMode = workspaceTabs.length > 0
+  const activeBrowserTab = browserTabs.find((t) => t.id === activeBrowserTabId) ?? null
+  const pinnedActive = workspaceView === 'pinned' && pinnedSession != null
+  const showWorkspaceRail = page === 'stream' && area === 'work' && workspaceView === 'home'
+  const homeBrowserActive =
+    workspaceView === 'home' && homePane === 'browser' && browserTabs.length > 0
+  const browserMode = pinnedActive || homeBrowserActive
   const composeAction = parseComposeCommand(compose)
   const contextEvent = contextItemId
     ? events.find((e) => streamItemId(e) === contextItemId)
@@ -493,13 +686,30 @@ export function CentralApp() {
   }, [])
 
   useEffect(() => {
-    localStorage.setItem('stream.central.workspaceTabs', JSON.stringify(workspaceTabs))
-  }, [workspaceTabs])
+    localStorage.setItem('stream.central.browserTabs', JSON.stringify(browserTabs))
+  }, [browserTabs])
 
   useEffect(() => {
-    if (activeWorkspaceId) localStorage.setItem('stream.central.activeWorkspaceId', activeWorkspaceId)
-    else localStorage.removeItem('stream.central.activeWorkspaceId')
-  }, [activeWorkspaceId])
+    if (activeBrowserTabId) localStorage.setItem('stream.central.activeBrowserTabId', activeBrowserTabId)
+    else localStorage.removeItem('stream.central.activeBrowserTabId')
+  }, [activeBrowserTabId])
+
+  useEffect(() => {
+    localStorage.setItem('stream.central.homePane', homePane)
+  }, [homePane])
+
+  useEffect(() => {
+    if (pinnedSession) localStorage.setItem('stream.central.pinnedSession', JSON.stringify(pinnedSession))
+    else localStorage.removeItem('stream.central.pinnedSession')
+  }, [pinnedSession])
+
+  useEffect(() => {
+    localStorage.setItem('stream.central.browserExpanded', browserExpanded ? '1' : '0')
+  }, [browserExpanded])
+
+  useEffect(() => {
+    localStorage.setItem('stream.central.workspaceView', workspaceView)
+  }, [workspaceView])
 
   useEffect(() => {
     const onOpen = (e: Event) => {
@@ -510,32 +720,40 @@ export function CentralApp() {
         summary?: string
         id?: string
         activate?: boolean
+        tabKind?: 'pinned' | 'temp'
+        pinId?: string
       }>).detail
       if (!detail?.url) return
+      if (detail.tabKind === 'pinned' && detail.pinId) {
+        const tab = tabFromUrl(detail.url, {
+          title: detail.title ?? 'Tab',
+          source: detail.source,
+          summary: detail.summary,
+          id: detail.id,
+          tabKind: 'pinned',
+          pinId: detail.pinId
+        })
+        setPage('stream')
+        setArea('work')
+        setActiveNavAppId(null)
+        setNavAppMini(false)
+        void window.notchDesktop?.destroyNavApp?.()
+        setPinnedSession({ pinId: detail.pinId, tab })
+        setWorkspaceView('pinned')
+        return
+      }
       const tab = tabFromUrl(detail.url, {
         title: detail.title ?? 'Tab',
         source: detail.source,
         summary: detail.summary,
-        id: detail.id
+        id: detail.id,
+        tabKind: 'temp'
       })
-      setPage('stream')
-      setArea('work')
-      setActiveNavAppId(null)
-      setNavAppMini(false)
-      void window.notchDesktop?.destroyNavApp?.()
-      setWorkspaceTabs((prev) => {
-        const existing = prev.find((t) => t.id === tab.id)
-        if (existing) {
-          if (detail.activate !== false) setActiveWorkspaceId(existing.id)
-          return prev
-        }
-        if (detail.activate !== false) setActiveWorkspaceId(tab.id)
-        return [...prev, tab]
-      })
+      openBrowserTab(tab, { activate: detail.activate !== false })
     }
     window.addEventListener('notch:open-workspace', onOpen)
     return () => window.removeEventListener('notch:open-workspace', onOpen)
-  }, [])
+  }, [openBrowserTab])
 
   useEffect(() => {
     return window.notchDesktop?.onOpenUrl?.((url) => {
@@ -570,12 +788,14 @@ export function CentralApp() {
           }
 
           autoShadedRef.current.add(tab.id)
-          openWorkspaceTab({ ...tab, autoOpened: true }, { activate: false })
+          openBrowserTab({ ...tab, autoOpened: true }, { activate: false })
           if (isLive || startsSoon) focusTab = tab
         }
 
         if (focusTab) {
-          setActiveWorkspaceId(focusTab.id)
+          setActiveBrowserTabId(focusTab.id)
+          setHomePane('browser')
+          setWorkspaceView('home')
         }
       } catch {
         /* calendar optional */
@@ -590,7 +810,7 @@ export function CentralApp() {
       window.clearInterval(interval)
       window.removeEventListener('notch:calendars-updated', onCalendarsUpdated)
     }
-  }, [page])
+  }, [page, openBrowserTab])
 
   const toggleFeedRail = useCallback(() => {
     setFeedRailCollapsed((v) => {
@@ -629,7 +849,7 @@ export function CentralApp() {
   }, [focusMeetingItemId, focusMeetingEvent])
 
   const showPostCallRail = Boolean(focusMeetingItemId) && page === 'stream'
-  const contextRailCollapsed = activeWorkspace
+  const contextRailCollapsed = pinnedActive || homeBrowserActive
     ? workspaceRailCollapsed
     : area === 'feed'
       ? feedRailCollapsed
@@ -638,53 +858,49 @@ export function CentralApp() {
     !threadTarget &&
     !showPostCallRail &&
     page !== 'navapp' &&
-    !(
-      page === 'stream' &&
-      area === 'work' &&
-      !activeWorkspace &&
-      workspaceTabs.length === 0
-    ) &&
     !contextRailCollapsed
 
-  const showThreadRail = Boolean(threadTarget) && page === 'stream' && area === 'feed'
+  const showThreadRail =
+    Boolean(threadTarget) && page === 'stream' && (area === 'feed' || browserMode)
   const hasRightRail = showThreadRail || showPostCallRail || showContextRail
 
-  const homeChatCompactNav =
-    page === 'stream' && area === 'work' && !activeWorkspace && homeChatRail && !browserMode
+  const slideBladeLayout = showWorkspaceRail && !pinnedActive
 
   const navAppPlayerMode =
     !activeNavApp ? 'off' : page === 'navapp' && !navAppMini ? 'full' : navAppMini ? 'mini' : 'off'
 
   return (
     <div
-      className={`x-app ${showThreadRail ? 'x-app-thread-open' : ''} ${showPostCallRail ? 'x-app-post-call-open' : ''} ${browserMode ? 'x-app-browser-mode' : ''} ${activeWorkspace ? 'x-app-workspace-open' : ''} ${notchNavMode === 'compact' ? 'x-app-notch-nav-compact' : ''} ${notchNavMode === 'hidden' ? 'x-app-notch-nav-hidden' : ''} ${page === 'navapp' ? 'x-app-nav-app' : page !== 'stream' ? 'x-app-utility' : 'x-app-stream'} ${!hasRightRail ? 'x-app-no-rail' : ''}${homeChatCompactNav ? ' x-app-home-chat' : ''}${navAppMini ? ' x-app-nav-app-mini' : ''}`}
+      className={`x-app ${navOpen ? 'x-app-nav-open' : 'x-app-nav-closed'} ${showThreadRail ? 'x-app-thread-open' : ''} ${showPostCallRail ? 'x-app-post-call-open' : ''} ${browserMode ? 'x-app-browser-mode' : ''} ${showWorkspaceRail ? 'x-app-workspace-open' : ''} ${page === 'navapp' ? 'x-app-nav-app' : page !== 'stream' ? 'x-app-utility' : 'x-app-stream'} ${!hasRightRail ? 'x-app-no-rail' : ''}${slideBladeLayout ? ' x-app-home-chat' : ''}${navAppMini ? ' x-app-nav-app-mini' : ''}${pinnedActive ? ' x-app-pinned-app' : ''}`}
     >
       {typeof window !== 'undefined' &&
       (window.notchDesktop != null || /Electron/i.test(navigator.userAgent)) ? (
         <div className="x-macos-titlebar" aria-hidden="true" />
       ) : null}
       <div className="x-shell">
-        <SideNav
-          page={page}
-          area={area}
-          tab={tab}
-          live={live}
-          compact={notchNavMode === 'compact'}
-          navApps={navApps}
-          activeNavAppId={activeNavAppId}
-          onNavigate={onNav}
-          onOpenNavApp={openNavApp}
-          onPinApp={(id) => pinNavApp(id)}
-          onRemoveNavApp={(id) => {
-            if (activeNavAppId === id) closeNavApp()
-            removeNavApp(id)
-          }}
-          onBrowseApps={() => setPage('integrations')}
-          onGoHome={goHome}
-          themeOpen={themeOpen}
-          onThemeToggle={() => setThemeOpen((v) => !v)}
-          themeBtnRef={themeBtnRef}
-        />
+        <NavBladeToggle open={navOpen} onToggle={toggleNavOpen} />
+        {navOpen ? (
+          <SideNav
+            page={page}
+            area={area}
+            tab={tab}
+            live={live}
+            navApps={navApps}
+            activeNavAppId={activeNavAppId}
+            onNavigate={onNav}
+            onOpenNavApp={openNavApp}
+            onPinApp={(id) => pinNavApp(id)}
+            onRemoveNavApp={(id) => {
+              if (activeNavAppId === id) closeNavApp()
+              removeNavApp(id)
+            }}
+            onBrowseApps={() => setPage('integrations')}
+            onGoHome={goHome}
+            themeOpen={themeOpen}
+            onThemeToggle={() => setThemeOpen((v) => !v)}
+            themeBtnRef={themeBtnRef}
+          />
+        ) : null}
 
         <ThemeMenu
           open={themeOpen}
@@ -725,157 +941,115 @@ export function CentralApp() {
       ) : page === 'navapp' ? (
         <main className="x-main x-main-nav-app" aria-hidden="true" />
       ) : (
-        <HomeChatProvider onRailChange={setHomeChatRail}>
+        <HomeChatProvider>
           <>
           <div className={`x-channel ${showThreadRail || showPostCallRail ? 'x-channel-has-thread' : ''}`}>
           <div className="x-channel-main">
-          {browserMode ? (
-            <div className="x-browser-shell">
-              <WorkspaceSidebar
-                homeLabel={area === 'work' ? 'Home' : 'Feed'}
-                tabs={workspaceTabs}
-                activeTabId={activeWorkspaceId}
-                collapsed={browserSidebarCollapsed}
-                notchNavMode={notchNavMode}
-                onSelectHome={() => setActiveWorkspaceId(null)}
-                onSelectTab={setActiveWorkspaceId}
-                onCloseTab={closeWorkspace}
-                onNewTab={newWorkspaceTab}
-                onToggleCollapsed={toggleBrowserSidebar}
-                onCycleNotchNav={cycleNotchNav}
+          {pinnedSession && !pinnedActive ? (
+            <div className="x-pinned-app-container x-workspace-browser-parked" aria-hidden="true">
+              <WorkspaceBrowser
+                tabs={[pinnedSession.tab]}
+                activeId=""
+                reloadKeys={tabReloadKeys}
+                onTabUrlChange={(_, url) => syncPinnedTabUrl(url)}
               />
+            </div>
+          ) : null}
+          {showWorkspaceRail ? (
+            <div className="x-browser-shell">
+              <HomeWorkspaceRail
+                homePane={homePane}
+                browserTabs={browserTabs}
+                activeBrowserTabId={activeBrowserTabId}
+                browserExpanded={browserExpanded}
+                collapsed={browserSidebarCollapsed}
+                onSelectChat={selectHomeChat}
+                onSelectBrowser={selectHomeBrowser}
+                onToggleBrowserExpanded={() => setBrowserExpanded((v) => !v)}
+                onSelectBrowserTab={selectBrowserTab}
+                onCloseBrowserTab={closeBrowserTab}
+                onNewBrowserTab={newBrowserTab}
+                onToggleCollapsed={toggleBrowserSidebar}
+              />
+              {browserSidebarCollapsed ? (
+                <button
+                  type="button"
+                  className="x-workspace-rail-tab"
+                  aria-label="Show Home panel"
+                  title="Show Home panel"
+                  onClick={toggleBrowserSidebar}
+                >
+                  ›
+                </button>
+              ) : null}
               <div className="x-browser-main">
-                {activeWorkspace ? (
+                {homeBrowserActive && activeBrowserTab ? (
                   <BrowserChrome
-                    tab={activeWorkspace}
-                    onNavigate={(url) => navigateWorkspaceTab(activeWorkspace.id, url)}
-                    onReload={() => reloadWorkspaceTab(activeWorkspace.id)}
+                    tab={activeBrowserTab}
+                    onNavigate={(url) => navigateBrowserTab(activeBrowserTab.id, url)}
+                    onReload={() => reloadBrowserTab(activeBrowserTab.id)}
                     onExternal={() =>
-                      openBrowserLink(activeWorkspace.url, {
+                      openBrowserLink(activeBrowserTab.url, {
                         forceExternal: true,
-                        title: activeWorkspace.title,
-                        source: activeWorkspace.source
+                        title: activeBrowserTab.title,
+                        source: activeBrowserTab.source
                       })
                     }
                     railCollapsed={workspaceRailCollapsed}
                     onToggleRail={toggleWorkspaceRail}
+                    workspaceMode
                   />
                 ) : null}
                 <main
-                  className={`x-main x-col-feed x-browser-content ${threadTarget ? 'x-col-feed-in-thread' : ''} ${area === 'work' ? 'x-main-work x-main-home' : ''} ${activeWorkspace ? 'x-main-workspace' : ''}`}
+                  className={`x-main x-browser-content ${threadTarget ? 'x-col-feed-in-thread' : ''} x-main-work x-main-home ${homeBrowserActive ? 'x-main-workspace' : 'x-col-feed'}`}
                 >
-                  <WorkspaceBrowser
-                    tabs={workspaceTabs}
-                    activeId={activeWorkspaceId ?? ''}
-                    reloadKeys={tabReloadKeys}
-                  />
-                  {!activeWorkspace ? (
-                    area === 'work' ? (
-                      <WorkView
-                        events={events}
-                        live={live}
-                        syncing={syncing}
-                        onFocusMeeting={setFocusMeetingItemId}
-                        onRefresh={refreshStream}
-                        onOpenSearchHit={openSearchHit}
-                      />
-                    ) : (
-                      <>
-                        <header className="x-topbar">
-                          <div className="x-topbar-tabs" role="tablist" aria-label="Feed filters">
-                            {feedTabs.map((t) => (
-                              <button
-                                key={t.id}
-                                type="button"
-                                role="tab"
-                                aria-selected={tab === t.id}
-                                className={`x-tab ${tab === t.id ? 'active' : ''}`}
-                                onClick={() => setTab(t.id)}
-                              >
-                                {t.label}
-                              </button>
-                            ))}
-                          </div>
-                          <FeedSearchBar
-                            query={feedQuery}
-                            onQueryChange={setFeedQuery}
-                            matchCount={feedFiltered.length}
-                            totalCount={streamFiltered.length}
-                            onSelectHit={openThreadFromSearch}
-                          />
-                          <button
-                            type="button"
-                            className={`x-topbar-rail-toggle x-topbar-rail-toggle-icon${feedRailCollapsed ? ' x-topbar-rail-toggle-collapsed' : ''}`}
-                            aria-label={feedRailCollapsed ? 'Show panel' : 'Hide panel'}
-                            title={feedRailCollapsed ? 'Show panel' : 'Hide panel'}
-                            onClick={toggleFeedRail}
-                          >
-                            {feedRailCollapsed ? '◧' : '◨'}
-                          </button>
-                        </header>
-                        <FeedStreamBar activeStreamId={feedStreamId} onStreamChange={setFeedStreamId} />
-                        <div className="x-compose">
-                          <div className="x-avatar x-avatar-user">A</div>
-                          <div className="x-compose-body">
-                            {contextEvent && (
-                              <div className="x-compose-context">
-                                <span>
-                                  {mondayContext ? 'Updating Monday item:' : 'Replying to:'}{' '}
-                                  {contextEvent.title || contextEvent.body.slice(0, 72)}
-                                </span>
-                                <button
-                                  type="button"
-                                  className="x-compose-context-clear"
-                                  onClick={() => setContextItemId(null)}
-                                  aria-label="Clear reply context"
-                                >
-                                  ×
-                                </button>
-                              </div>
-                            )}
-                            {composeToast && <p className="x-compose-toast">{composeToast}</p>}
-                            {composeError && (
-                              <p className="x-compose-note x-compose-note-error">{composeError}</p>
-                            )}
-                            <ComposeInput
-                              value={compose}
-                              onChange={(v) => {
-                                setCompose(v)
-                                setComposeError(null)
-                              }}
-                              onSubmit={() => void submitCompose()}
-                              mentionTargets={contactMentions}
-                              placeholder={
-                                mondayContext
-                                  ? '@monday: comment or move to Done · @monday create: new ticket'
-                                  : '@mind · @claude · @gemini · @cursor · @github · @gdocs · @gong · @perplexity · @gmail · @monday · @slack · @discord · @x'
-                              }
-                              rows={3}
-                            />
-                          </div>
-                        </div>
-                        {feedFiltered.length === 0 && feedQuery.trim() ? (
-                          <p className="x-feed-search-no-results">No posts match “{feedQuery.trim()}”</p>
-                        ) : null}
-                        {feedFiltered.map((e, i) => (
-                          <FeedPost
-                            key={e.id}
-                            event={e}
-                            isNew={live && i === 0}
-                            isContext={contextItemId === streamItemId(e)}
-                            activeThreadId={threadTarget?.itemId ?? null}
-                            onOpenWorkspace={openWorkspace}
-                            onOpenInWork={openMeetingInWork}
-                            onOpenThread={(itemId, day) => {
-                              selectContext(itemId)
-                              setThreadTarget({ itemId, day })
-                            }}
-                            onSelectContext={selectContext}
-                          />
-                        ))}
-                      </>
-                    )
+                  {browserTabs.length > 0 ? (
+                    <WorkspaceBrowser
+                      tabs={browserTabs}
+                      activeId={homeBrowserActive ? (activeBrowserTabId ?? '') : ''}
+                      reloadKeys={tabReloadKeys}
+                      onTabUrlChange={syncBrowserTabUrl}
+                    />
                   ) : null}
+                  {homePane === 'chat' ? (
+                    <WorkView
+                      events={events}
+                      live={live}
+                      syncing={syncing}
+                      onFocusMeeting={setFocusMeetingItemId}
+                      onRefresh={refreshStream}
+                      onOpenSearchHit={openSearchHit}
+                    />
+                  ) : null}
+                </main>
+              </div>
+            </div>
+          ) : pinnedActive && pinnedSession ? (
+            <div className="x-browser-shell x-pinned-app-container">
+              <div className="x-browser-main">
+                <PinnedAppShell
+                  session={pinnedSession}
+                  onBackHome={goHome}
+                  onNavigate={navigatePinnedTab}
+                  onReload={() => reloadBrowserTab(pinnedSession.tab.id)}
+                  onExternal={() =>
+                    openBrowserLink(pinnedSession.tab.url, {
+                      forceExternal: true,
+                      title: pinnedSession.tab.title,
+                      source: pinnedSession.tab.source
+                    })
+                  }
+                  onNewTab={() => newBrowserTab('https://www.google.com')}
+                  railCollapsed={workspaceRailCollapsed}
+                  onToggleRail={toggleWorkspaceRail}
+                />
+                <main className="x-main x-main-work x-main-home x-main-workspace x-browser-content">
+                  <WorkspaceBrowser
+                    tabs={[pinnedSession.tab]}
+                    activeId={pinnedSession.tab.id}
+                    reloadKeys={tabReloadKeys}
+                    onTabUrlChange={(_, url) => syncPinnedTabUrl(url)}
+                  />
                 </main>
               </div>
             </div>
@@ -1065,9 +1239,39 @@ export function CentralApp() {
           ) : showContextRail ? (
             <aside className="x-rail x-col-rail">
               <ContextRail
-                events={events}
+                events={streamFiltered}
                 onOpenHome={goHome}
-                railContext={{ page, area, tab }}
+                railContext={{ page, area, tab, workspaceMode: browserMode }}
+                feedRail={{
+                  live,
+                  activeThreadId: threadTarget?.itemId ?? null,
+                  contextItemId,
+                  onOpenThread: (itemId, day) => {
+                    selectContext(itemId)
+                    setThreadTarget({ itemId, day })
+                  },
+                  onOpenInWork: openMeetingInWork,
+                  onOpenWorkspace: openWorkspace,
+                  onSelectContext: selectContext
+                }}
+                composeRail={{
+                  compose,
+                  onComposeChange: (v) => {
+                    setCompose(v)
+                    if (composeError) setComposeError(null)
+                  },
+                  onSubmitCompose: () => void submitCompose(),
+                  composeBusy,
+                  composeAction,
+                  composeToast,
+                  composeError,
+                  mentionTargets: contactMentions,
+                  contextLabel: contextEvent
+                    ? contextEvent.title || contextEvent.body.slice(0, 72)
+                    : null,
+                  mondayContext,
+                  onClearContext: () => setContextItemId(null)
+                }}
               />
             </aside>
           ) : null}

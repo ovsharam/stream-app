@@ -10,6 +10,8 @@ type Props = {
   onFocusMeeting: (itemId: string | null) => void
   onRefresh?: () => void
   onOpenSearchHit?: (hit: ClusterSearchHit) => void
+  /** When set, skip live UI even during a call (browser shell handles live separately). */
+  mode?: 'default' | 'chat-only'
 }
 
 function isLiveCall(events: CentralStreamEvent[], streamLive: boolean): boolean {
@@ -33,7 +35,8 @@ export function WorkView({
   syncing,
   onFocusMeeting,
   onRefresh,
-  onOpenSearchHit
+  onOpenSearchHit,
+  mode = 'default'
 }: Props) {
   const [captureLive, setCaptureLive] = useState(false)
 
@@ -42,7 +45,7 @@ export function WorkView({
     [events]
   )
 
-  const live = isLiveCall(events, streamLive) || captureLive
+  const live = mode === 'chat-only' ? false : isLiveCall(events, streamLive) || captureLive
 
   useEffect(() => {
     const onStarted = window.notch?.meeting?.onStarted?.(() => setCaptureLive(true))

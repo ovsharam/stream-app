@@ -3,6 +3,8 @@ import type { CalendarRailEvent, CentralStreamEvent, PerplexityNewsItem } from '
 import { cleanKbExcerpt } from '@shared/assistText'
 import { clusterApi, openExternal, openMeeting } from '../lib/api'
 import { FeedRailChatPanel } from './FeedRailChatPanel'
+import { FeedRailStreamPanel } from './FeedRailStreamPanel'
+import type { ComposeMentionTarget } from '@shared/compose'
 import { IconGmail, IconMonday, IconSettings, IconVideoCall } from './Icons'
 import { RailWidgetsConfigSheet } from './RailWidgetsConfig'
 import {
@@ -750,31 +752,63 @@ function ContextPanel() {
   )
 }
 
+type FeedRailHandlers = {
+  live?: boolean
+  activeThreadId?: string | null
+  contextItemId?: string | null
+  onOpenThread?: (itemId: string, day?: string) => void
+  onOpenInWork?: (itemId: string) => void
+  onOpenWorkspace?: (event: CentralStreamEvent) => void
+  onSelectContext?: (itemId: string) => void
+}
+
+type ComposeRailProps = {
+  compose: string
+  onComposeChange: (value: string) => void
+  onSubmitCompose: () => void
+  composeBusy?: boolean
+  composeAction?: { provider: string; intent?: string } | null
+  composeToast?: string | null
+  composeError?: string | null
+  mentionTargets?: ComposeMentionTarget[]
+  contextLabel?: string | null
+  mondayContext?: boolean
+  onClearContext?: () => void
+}
+
 export function ContextRail({
   events = [],
   onOpenHome,
-  railContext = {}
+  railContext = {},
+  feedRail,
+  composeRail
 }: {
   events?: CentralStreamEvent[]
   onOpenHome?: () => void
   railContext?: RailContext
+  feedRail?: FeedRailHandlers
+  composeRail?: ComposeRailProps
 }) {
-  const [activeTab, setActiveTab] = useState<RailTab>('context')
-  const [configOpen, setConfigOpen] = useState(false)
   const widgets = useRailWidgets()
   const visibleWidgets = useMemo(
     () => getVisibleWidgets(widgets, railContext),
     [widgets, railContext]
   )
   const visibleIds = useMemo(() => new Set(visibleWidgets.map((w) => w.id)), [visibleWidgets])
+  const defaultTab = useMemo((): RailTab => {
+    if (railContext.workspaceMode && visibleIds.has('feed')) return 'feed'
+    return visibleWidgets[0]?.id ?? 'context'
+  }, [railContext.workspaceMode, visibleIds, visibleWidgets])
+  const [activeTab, setActiveTab] = useState<RailTab>(defaultTab)
+  const [configOpen, setConfigOpen] = useState(false)
   const calendar = useCalendarRail()
 
   useEffect(() => {
     if (visibleWidgets.length === 0) return
     if (!visibleIds.has(activeTab)) {
-      setActiveTab(visibleWidgets[0].id)
+      setActiveTab(defaultTab)
     }
-  }, [activeTab, visibleIds, visibleWidgets])
+  }, [activeTab, defaultTab, visibleIds, visibleWidgets])
 
   return (
     <>
@@ -827,9 +861,22 @@ export function ContextRail({
             </button>
           </div>
           <div
-            className={`x-rail-panel${activeTab === 'chat' ? ' x-rail-panel-chat' : ''}`}
+            className={`x-rail-panel${activeTab === 'chat' ? ' x-rail-panel-chat' : ''}${activeTab === 'feed' ? ' x-rail-panel-feed' : ''}`}
             role="tabpanel"
           >
+            {activeTab === 'feed' && composeRail ? (
+              <FeedRailStreamPanel
+                events={events}
+                live={feedRail?.live}
+                activeThreadId={feedRail?.activeThreadId}
+                contextItemId={feedRail?.contextItemId}
+                onOpenThread={feedRail?.onOpenThread}
+                onOpenInWork={feedRail?.onOpenInWork}
+                onOpenWorkspace={feedRail?.onOpenWorkspace}
+                onSelectContext={feedRail?.onSelectContext}
+                {...composeRail}
+              />
+            ) : null}
             {activeTab === 'context' && <ContextPanel />}
             {activeTab === 'calendar' && (
               <CalendarPanel

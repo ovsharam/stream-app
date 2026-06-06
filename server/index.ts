@@ -35,6 +35,9 @@ async function main(): Promise<void> {
   if (process.env.GEMINI_API_KEY?.trim()) {
     console.log('[server] GEMINI_API_KEY loaded — auto-connects per session')
   }
+  if (process.env.ANTHROPIC_API_KEY?.trim()) {
+    console.log('[server] ANTHROPIC_API_KEY loaded — auto-connects per session')
+  }
 
   if (process.env.DEMO_MODE !== '1') {
     const removed = deleteDemoSeedItems()

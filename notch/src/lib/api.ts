@@ -463,6 +463,7 @@ export function inferWorkspaceMeta(url: string): {
     if (hostMatches(u.hostname, 'cal.com')) return { title: 'Cal.com', source: 'calcom' }
     if (hostMatches(u.hostname, 'discord.com')) return { title: 'Discord', source: 'discord' }
     if (hostMatches(u.hostname, 'github.com')) return { title: 'GitHub', source: 'github' }
+    if (host === 'google.com') return { title: 'Google', source: 'meet' }
     return { title: host, source: 'meet' }
   } catch {
     return { title: 'Tab', source: 'meet' }
@@ -477,6 +478,8 @@ export function openInWorkspace(
     summary?: string
     id?: string
     activate?: boolean
+    tabKind?: 'pinned' | 'temp'
+    pinId?: string
   }
 ): boolean {
   if (!canUseInAppWorkspace()) return false
@@ -489,7 +492,9 @@ export function openInWorkspace(
         title: opts?.title ?? inferred.title,
         source: opts?.source ?? inferred.source,
         summary: opts?.summary,
-        id: opts?.id
+        id: opts?.id,
+        tabKind: opts?.tabKind,
+        pinId: opts?.pinId
       }
     })
   )
@@ -506,6 +511,8 @@ export function openBrowserLink(
     id?: string
     activate?: boolean
     forceExternal?: boolean
+    tabKind?: 'pinned' | 'temp'
+    pinId?: string
   }
 ): void {
   if (!url?.startsWith('http')) return

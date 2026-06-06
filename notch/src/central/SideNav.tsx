@@ -82,7 +82,6 @@ type Props = {
   area: Area
   tab: Tab
   live: boolean
-  compact?: boolean
   navApps: NavApp[]
   activeNavAppId: string | null
   onNavigate: (target: NavTarget) => void
@@ -145,14 +144,12 @@ function NavButton({
   target,
   active,
   live,
-  compact,
   onClick,
   onRemove
 }: {
   target: NavTarget
   active: boolean
   live: boolean
-  compact?: boolean
   onClick: () => void
   onRemove?: () => void
 }) {
@@ -160,23 +157,20 @@ function NavButton({
     <div className={`x-side-nav-item-wrap${active ? ' active' : ''}`}>
       <button
         type="button"
-        className={`x-side-nav-item ${active ? 'active' : ''}${compact ? ' x-side-nav-item-compact' : ''}`}
+        className={`x-side-nav-item ${active ? 'active' : ''}`}
         onClick={onClick}
         aria-current={active ? 'page' : undefined}
-        title={compact ? `${target.label} — ${target.hint}` : undefined}
       >
         <span className="x-side-nav-icon-wrap">
           <NavIcon id={target.id} />
           {target.showLiveBadge && live ? <span className="x-side-nav-live" aria-label="Live call" /> : null}
         </span>
-        {compact ? null : (
-          <span className="x-side-nav-text">
-            <span className="x-side-nav-label">{target.label}</span>
-            <span className="x-side-nav-hint">{target.hint}</span>
-          </span>
-        )}
+        <span className="x-side-nav-text">
+          <span className="x-side-nav-label">{target.label}</span>
+          <span className="x-side-nav-hint">{target.hint}</span>
+        </span>
       </button>
-      {onRemove && !compact ? (
+      {onRemove ? (
         <button type="button" className="x-side-nav-item-remove" onClick={onRemove} title={`Remove ${target.label}`}>
           ×
         </button>
@@ -192,13 +186,11 @@ function pinHint(app: NavApp): string {
 }
 
 function PinAppPicker({
-  compact,
   navApps,
   onPin,
   onCancel,
   onBrowseApps
 }: {
-  compact?: boolean
   navApps: NavApp[]
   onPin: (id: string) => void
   onCancel: () => void
@@ -224,8 +216,6 @@ function PinAppPicker({
       cancelled = true
     }
   }, [])
-
-  if (compact) return null
 
   const unpinned = listUnpinnedApps(connected, navApps)
 
@@ -271,7 +261,6 @@ export function SideNav({
   area,
   tab,
   live,
-  compact = false,
   navApps,
   activeNavAppId,
   onNavigate,
@@ -294,53 +283,50 @@ export function SideNav({
   }))
 
   return (
-    <aside className={`x-side-nav${compact ? ' x-side-nav-compact' : ''}`}>
-      <button
-        type="button"
-        className="x-side-nav-brand"
-        onClick={onGoHome}
-        title="Notch home"
-      >
-        <IconNotch className="x-side-nav-brand-icon" />
-        {compact ? null : (
+    <aside className="x-side-nav">
+      <div className="x-side-nav-head">
+        <button
+          type="button"
+          className="x-side-nav-brand"
+          onClick={onGoHome}
+          title="Notch home"
+        >
+          <IconNotch className="x-side-nav-brand-icon" />
           <span className="x-side-nav-brand-text">
             <strong>Notch</strong>
             <span>Work OS</span>
           </span>
-        )}
-      </button>
+        </button>
+      </div>
 
       <nav className="x-side-nav-groups" aria-label="Main">
         <div className="x-side-nav-group">
-          {compact ? null : <p className="x-side-nav-group-label">Navigate</p>}
+          <p className="x-side-nav-group-label">Navigate</p>
           {PRIMARY_NAV.map((target) => (
             <NavButton
               key={target.id}
               target={target}
               active={isActive(target, page, area, tab, activeNavAppId)}
               live={live}
-              compact={compact}
               onClick={() => onNavigate(target)}
             />
           ))}
         </div>
 
         <div className="x-side-nav-group">
-          {compact ? null : <p className="x-side-nav-group-label">Pinned</p>}
+          <p className="x-side-nav-group-label">Pinned</p>
           {appTargets.map((target) => (
             <NavButton
               key={target.id}
               target={target}
               active={isActive(target, page, area, tab, activeNavAppId)}
               live={false}
-              compact={compact}
               onClick={() => onOpenNavApp(target.navAppId!)}
               onRemove={() => onRemoveNavApp(target.navAppId!)}
             />
           ))}
           {addingApp ? (
             <PinAppPicker
-              compact={compact}
               navApps={navApps}
               onPin={(id) => {
                 onPinApp(id)
@@ -352,25 +338,24 @@ export function SideNav({
           ) : (
             <button
               type="button"
-              className={`x-side-nav-pin-app${compact ? ' x-side-nav-pin-app-compact' : ''}`}
+              className="x-side-nav-pin-app"
               onClick={() => setAddingApp(true)}
               title="Pin a connected app"
             >
               <IconPlus className="x-side-nav-icon" />
-              {compact ? null : <span>Pin app</span>}
+              <span>Pin app</span>
             </button>
           )}
         </div>
 
         <div className="x-side-nav-group">
-          {compact ? null : <p className="x-side-nav-group-label">System</p>}
+          <p className="x-side-nav-group-label">System</p>
           {SYSTEM_NAV.map((target) => (
             <NavButton
               key={target.id}
               target={target}
               active={isActive(target, page, area, tab, activeNavAppId)}
               live={live}
-              compact={compact}
               onClick={() => onNavigate(target)}
             />
           ))}
@@ -381,26 +366,21 @@ export function SideNav({
         <button
           ref={themeBtnRef}
           type="button"
-          className={`x-side-nav-footer-btn${compact ? ' x-side-nav-footer-btn-compact' : ''}`}
+          className="x-side-nav-footer-btn"
           onClick={onThemeToggle}
           title="Theme"
           aria-expanded={themeOpen}
           aria-haspopup="dialog"
         >
           <span className="x-nav-theme-dot" aria-hidden />
-          {compact ? null : <span>Theme</span>}
+          <span>Theme</span>
         </button>
-        <div
-          className={`x-side-nav-profile${compact ? ' x-side-nav-profile-compact' : ''}`}
-          title="Apoorva @ae"
-        >
+        <div className="x-side-nav-profile" title="Apoorva @ae">
           <div className="x-avatar x-avatar-user">A</div>
-          {compact ? null : (
-            <span className="x-side-nav-profile-text">
-              <strong>Apoorva</strong>
-              <span>@ae</span>
-            </span>
-          )}
+          <span className="x-side-nav-profile-text">
+            <strong>Apoorva</strong>
+            <span>@ae</span>
+          </span>
         </div>
       </div>
     </aside>

@@ -1,5 +1,4 @@
 import { HomeChat } from './HomeChat'
-import { HomeChatSidebar } from './HomeChatSidebar'
 import { useHomeChat } from './homeChatContext'
 import type { CentralStreamEvent, ClusterSearchHit } from '@shared/cluster'
 
@@ -19,16 +18,7 @@ export function HomeChatLayout({
   const chat = useHomeChat()
 
   return (
-    <div className={`x-home-shell${chat.showRail ? ' x-home-shell-rail' : ''}`}>
-      {chat.showRail ? (
-        <HomeChatSidebar
-          sessions={chat.sessions}
-          activeId={chat.activeId}
-          onNewChat={chat.newChat}
-          onSelect={chat.selectSession}
-          onDelete={chat.deleteSession}
-        />
-      ) : null}
+    <div className="x-home-shell">
       <HomeChat
         events={events}
         liveCapture={liveCapture}

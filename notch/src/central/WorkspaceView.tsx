@@ -1,12 +1,15 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { integrationApi, openBrowserLink } from '../lib/api'
 import type { WorkspaceTab } from './workspace'
 import { EmbeddedWebview } from './EmbeddedWebview'
 import {
   EMBED_BROWSE_PARTITIONS,
-  embedBrowseKindForUrl,
+  embedBrowseKindForTab,
   embedBrowseSignInUrl,
-  workspacePartitionForUrl
+  isLinkedInNavigationNoise,
+  shouldPersistWorkspaceUrl,
+  workspacePartitionForTab,
+  LINKEDIN_FEED_URL
 } from './embedBrowse'
 import type { EmbedBrowseAuthState } from './useEmbedBrowseSignIn'
 
@@ -14,14 +17,23 @@ type Props = {
   tab: WorkspaceTab
   active: boolean
   reloadNonce?: number
+  onUrlChange?: (url: string) => void
 }
 
-export function WorkspaceView({ tab, active, reloadNonce = 0 }: Props) {
-  const partition = workspacePartitionForUrl(tab.url, tab.id)
-  const embedBrowseKind = embedBrowseKindForUrl(tab.url)
+export function WorkspaceView({ tab, active, reloadNonce = 0, onUrlChange }: Props) {
+  const partition = workspacePartitionForTab(tab)
+  const embedBrowseKind = embedBrowseKindForTab(tab)
   const [embedAuthState, setEmbedAuthState] = useState<EmbedBrowseAuthState | 'checking'>(() =>
     embedBrowseKind ? 'checking' : 'ok'
   )
+
+  useEffect(() => {
+    if (embedAuthState !== 'checking') return
+    const t = window.setTimeout(() => {
+      setEmbedAuthState((s) => (s === 'checking' ? 'signin' : s))
+    }, 4500)
+    return () => window.clearTimeout(t)
+  }, [embedAuthState, tab.id])
   const showSignInGate = embedBrowseKind !== null && embedAuthState !== 'ok'
 
   const onEmbedAuthState = useCallback((state: EmbedBrowseAuthState) => {
@@ -59,6 +71,18 @@ export function WorkspaceView({ tab, active, reloadNonce = 0 }: Props) {
         ? 'Google blocks sign-in inside Notch. Connect in Chrome for Gmail sync — use Open in Chrome for Docs and YouTube.'
         : 'Google blocks in-app sign-in. Connect in Chrome to link Gmail, then use Open in Chrome for Docs and YouTube tabs.'
 
+  const onLocationChange = useCallback(
+    (url: string) => {
+      if (url === tab.url) return
+      if (!shouldPersistWorkspaceUrl(url, tab)) return
+      onUrlChange?.(url)
+    },
+    [onUrlChange, tab]
+  )
+
+  const webviewSrc =
+    tab.source === 'linkedin' && isLinkedInNavigationNoise(tab.url) ? LINKEDIN_FEED_URL : tab.url
+
   return (
     <section className={`x-workspace${active ? ' x-workspace-active' : ''}`} aria-hidden={!active}>
       {showSignInGate ? (
@@ -89,12 +113,13 @@ export function WorkspaceView({ tab, active, reloadNonce = 0 }: Props) {
       ) : null}
       <EmbeddedWebview
         className={`x-workspace-webview${showSignInGate ? ' x-workspace-webview-gated' : ''}`}
-        src={tab.url}
+        src={webviewSrc}
         partition={partition}
         embedBrowseKind={embedBrowseKind}
         reloadNonce={reloadNonce}
         onEmbedAuthState={onEmbedAuthState}
         onSignInNeeded={() => void signInEmbedded()}
+        onLocationChange={onUrlChange ? onLocationChange : undefined}
       />
     </section>
   )

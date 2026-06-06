@@ -3,6 +3,7 @@ import { normalizeAiAssist } from '../normalizer'
 import { upsertItem } from '../db'
 import type { StreamItem } from '../../shared/types'
 import { apiKey, connectWithToken, getIntegrationToken, isTokenConnected } from './integrationTokens'
+import * as session from '../session'
 import {
   getValidClaudeOAuth,
   connectClaudeOAuthWithKey,
@@ -22,6 +23,17 @@ const API_URL = 'https://api.anthropic.com/v1/messages'
 
 export function connectClaude(apiKeyValue: string): void {
   connectWithToken('claude', { authType: 'api_key', apiKey: apiKeyValue })
+}
+
+/** Seed ANTHROPIC_API_KEY into a session when env is set (local dev). */
+export function ensureClaudeFromEnv(sessionId: string): boolean {
+  const key = process.env.ANTHROPIC_API_KEY?.trim()
+  if (!key) return false
+  const existing = session.getToken(sessionId, 'claude')
+  if (existing?.apiKey || existing?.accessToken) return true
+  session.setToken(sessionId, 'claude', { authType: 'api_key', apiKey: key })
+  session.setConnection(sessionId, 'claude', true)
+  return true
 }
 
 export function connectClaudeOAuth(creds: ClaudeOAuthCreds): void {

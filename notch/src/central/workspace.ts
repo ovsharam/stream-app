@@ -1,12 +1,25 @@
 import type { CalendarRailEvent, CentralStreamEvent } from '@shared/cluster'
 
+export type WorkspaceTabKind = 'pinned' | 'temp'
+
+export type HomePane = 'chat' | 'browser'
+
 export type WorkspaceTab = {
   id: string
   title: string
-  source: CentralStreamEvent['source'] | 'calendar' | 'meet' | 'gdocs' | 'youtube' | 'calcom' | 'linkedin'
+  source: CentralStreamEvent['source'] | 'calendar' | 'meet' | 'gdocs' | 'youtube' | 'calcom' | 'linkedin' | 'github'
   url: string
   summary: string
   autoOpened?: boolean
+  /** pinned = opened from sidebar app; temp = ad-hoc browsing under Home */
+  tabKind?: WorkspaceTabKind
+  /** nav app id when tabKind is pinned */
+  pinId?: string
+}
+
+export type PinnedAppSession = {
+  pinId: string
+  tab: WorkspaceTab
 }
 
 export function workspaceTabId(url: string): string {
@@ -19,17 +32,52 @@ export function workspaceTabId(url: string): string {
   }
 }
 
+export function resolveTabKind(tab: WorkspaceTab): WorkspaceTabKind {
+  return tab.tabKind ?? (tab.id.startsWith('nav-') || tab.pinId ? 'pinned' : 'temp')
+}
+
 export function tabFromUrl(
   url: string,
-  opts: { title: string; source?: WorkspaceTab['source']; summary?: string; id?: string }
+  opts: {
+    title: string
+    source?: WorkspaceTab['source']
+    summary?: string
+    id?: string
+    tabKind?: WorkspaceTabKind
+    pinId?: string
+  }
 ): WorkspaceTab {
   return {
     id: opts.id ?? workspaceTabId(url),
     title: opts.title,
     source: opts.source ?? 'meet',
     url,
-    summary: opts.summary ?? url
+    summary: opts.summary ?? url,
+    tabKind: opts.tabKind,
+    pinId: opts.pinId
   }
+}
+
+export function migrateLegacyTabs(tabs: WorkspaceTab[]): {
+  browserTabs: WorkspaceTab[]
+  pinnedSession: PinnedAppSession | null
+} {
+  const browserTabs: WorkspaceTab[] = []
+  let pinnedSession: PinnedAppSession | null = null
+
+  for (const tab of tabs) {
+    const kind = resolveTabKind(tab)
+    if (kind === 'pinned') {
+      const pinId = tab.pinId ?? tab.id.replace(/^nav-/, '')
+      if (!pinnedSession) {
+        pinnedSession = { pinId, tab: { ...tab, tabKind: 'pinned', pinId } }
+      }
+    } else {
+      browserTabs.push({ ...tab, tabKind: 'temp' })
+    }
+  }
+
+  return { browserTabs, pinnedSession }
 }
 
 export function tabFromCalendarEvent(evt: CalendarRailEvent): WorkspaceTab | null {
@@ -38,7 +86,8 @@ export function tabFromCalendarEvent(evt: CalendarRailEvent): WorkspaceTab | nul
     id: `cal-${evt.id}`,
     title: evt.title,
     source: evt.kind === 'meet' ? 'meet' : 'calendar',
-    summary: evt.timeLabel
+    summary: evt.timeLabel,
+    tabKind: 'temp'
   })
 }
 
@@ -101,13 +150,13 @@ export function toWorkspaceTab(event: CentralStreamEvent): WorkspaceTab | null {
       ? event.title || 'Google Meet'
       : event.title || event.source.charAt(0).toUpperCase() + event.source.slice(1)
 
-  return {
+  return tabFromUrl(url, {
     id: `${event.source}-${event.id}`,
     title,
     source: event.source === 'calcom' ? 'calcom' : event.source,
-    url,
-    summary: event.title || event.body
-  }
+    summary: event.title || event.body,
+    tabKind: 'temp'
+  })
 }
 
 /** URL to open when clicking a feed item for in-app verification. */

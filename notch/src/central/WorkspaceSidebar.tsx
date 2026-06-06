@@ -2,20 +2,16 @@ import { useState } from 'react'
 import { BROWSER_QUICK_LINKS } from './browserUrl'
 import type { WorkspaceTab } from './workspace'
 
-type NotchNavMode = 'expanded' | 'compact' | 'hidden'
-
 type Props = {
   homeLabel: string
   tabs: WorkspaceTab[]
   activeTabId: string | null
   collapsed?: boolean
-  notchNavMode: NotchNavMode
   onSelectHome: () => void
   onSelectTab: (id: string) => void
   onCloseTab: (id: string) => void
   onNewTab: (url: string) => void
   onToggleCollapsed: () => void
-  onCycleNotchNav: () => void
 }
 
 function tabIcon(source: WorkspaceTab['source']): string {
@@ -48,13 +44,11 @@ export function WorkspaceSidebar({
   tabs,
   activeTabId,
   collapsed,
-  notchNavMode,
   onSelectHome,
   onSelectTab,
   onCloseTab,
   onNewTab,
-  onToggleCollapsed,
-  onCycleNotchNav
+  onToggleCollapsed
 }: Props) {
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState('')
@@ -67,27 +61,15 @@ export function WorkspaceSidebar({
     setAdding(false)
   }
 
-  const notchNavLabel =
-    notchNavMode === 'hidden' ? 'Show Notch nav' : notchNavMode === 'compact' ? 'Expand Notch nav' : 'Collapse Notch nav'
-
   return (
     <aside className={`x-browser-sidebar${collapsed ? ' x-browser-sidebar-collapsed' : ''}`}>
       <div className="x-browser-sidebar-head">
-        <button
-          type="button"
-          className="x-browser-sidebar-icon-btn"
-          title={notchNavLabel}
-          aria-label={notchNavLabel}
-          onClick={onCycleNotchNav}
-        >
-          {notchNavMode === 'hidden' ? '☰' : notchNavMode === 'compact' ? '»' : '«'}
-        </button>
         {!collapsed ? (
           <span className="x-browser-sidebar-title">Browser</span>
         ) : null}
         <button
           type="button"
-          className="x-browser-sidebar-icon-btn"
+          className="x-browser-sidebar-icon-btn x-browser-sidebar-icon-btn-end"
           title={collapsed ? 'Expand tabs' : 'Collapse tabs'}
           aria-label={collapsed ? 'Expand tabs' : 'Collapse tabs'}
           onClick={onToggleCollapsed}

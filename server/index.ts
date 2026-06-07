@@ -70,6 +70,22 @@ async function main(): Promise<void> {
 
   bindDashboardSocket(io)
 
+  io.use((socket, next) => {
+    const { measureProtectionEnabled, verifyMeasureToken } =
+      require('./measureAuth') as typeof import('./measureAuth')
+    if (!measureProtectionEnabled()) {
+      next()
+      return
+    }
+    const secret = process.env.MEASURE_API_SECRET!.trim()
+    const token = socket.handshake.auth?.token
+    if (typeof token === 'string' && verifyMeasureToken(token, secret)) {
+      next()
+      return
+    }
+    next(new Error('Unauthorized'))
+  })
+
   io.on('connection', (socket) => {
     console.log('[socket] client connected', socket.id)
     const cached = getRecentItems(100)

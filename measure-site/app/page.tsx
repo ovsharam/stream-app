@@ -1,5 +1,7 @@
 'use client'
 
+import { UserMenu } from '@/components/UserMenu'
+import { statusMessage } from '@/lib/dashboard-status'
 import { useDataDashboard } from '@/hooks/useDataDashboard'
 import type { DashboardActivity, DashboardActivityKind } from '@shared/dashboard'
 import { emptyIntentionBlock, emptyInsights } from '@shared/dashboard'
@@ -134,7 +136,7 @@ function ActivityRow({ item }: { item: DashboardActivity }) {
 }
 
 export default function MeasurePage() {
-  const { snapshot, connected, error, loading, refresh, apiConfigured } = useDataDashboard()
+  const { snapshot, connected, error, loading, refresh, apiConfigured, apiStatus } = useDataDashboard()
 
   if (loading && !snapshot) {
     return (
@@ -152,7 +154,7 @@ export default function MeasurePage() {
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#0a0a0a] px-6 text-center">
         <p className="text-red-300">{error}</p>
         <p className="max-w-md text-sm text-zinc-500">
-          Set <code className="text-zinc-300">NEXT_PUBLIC_STREAM_API_URL</code> to your STREAM API (e.g. a
+          Set <code className="text-zinc-300">STREAM_API_URL</code> on the server (Vercel env) to your STREAM API (e.g. a
           Cloudflare Tunnel to local <code className="text-zinc-300">:3131</code>) or run locally with{' '}
           <code className="text-zinc-300">npm run dev</code> in <code className="text-zinc-300">measure-site</code>.
         </p>
@@ -219,17 +221,20 @@ export default function MeasurePage() {
             >
               Refresh
             </button>
+            <UserMenu />
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-6xl space-y-8 px-6 py-8">
-        {!apiConfigured ? (
+        {!apiConfigured && !apiStatus.checking ? (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-            <strong className="font-medium">Waiting for live data.</strong> Set{' '}
-            <code className="rounded bg-black/30 px-1.5 py-0.5 text-amber-50">NEXT_PUBLIC_STREAM_API_URL</code> in
-            Vercel to your STREAM API (e.g. Cloudflare Tunnel → local <code className="text-amber-50">:3131</code>).
-            Showing empty dashboard until connected.
+            <strong className="font-medium">Waiting for live data.</strong> {statusMessage(apiStatus)}
+            {apiStatus.apiUrl ? (
+              <span className="mt-1 block text-xs text-amber-200/80">
+                Target: <code className="rounded bg-black/30 px-1 py-0.5">{apiStatus.apiUrl}</code>
+              </span>
+            ) : null}
           </div>
         ) : null}
         {error ? (

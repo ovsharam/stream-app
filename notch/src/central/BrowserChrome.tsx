@@ -45,21 +45,19 @@ export function BrowserChrome({
     <header className="x-browser-chrome">
       <button
         type="button"
-        className="x-browser-chrome-btn"
+        className={`x-browser-chrome-btn${canGoBack ? '' : ' x-browser-chrome-btn-muted'}`}
         title="Back"
         aria-label="Back"
-        disabled={!canGoBack}
-        onClick={onBack}
+        onClick={() => onBack?.()}
       >
         ←
       </button>
       <button
         type="button"
-        className="x-browser-chrome-btn"
+        className={`x-browser-chrome-btn${canGoForward ? '' : ' x-browser-chrome-btn-muted'}`}
         title="Forward"
         aria-label="Forward"
-        disabled={!canGoForward}
-        onClick={onForward}
+        onClick={() => onForward?.()}
       >
         →
       </button>

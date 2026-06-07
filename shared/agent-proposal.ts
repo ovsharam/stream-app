@@ -120,6 +120,8 @@ export type AgentProposal = {
   brief?: AgentBrief
   threadMessages?: AgentThreadMessage[]
   actionProposals?: AgentActionProposal[]
+  /** Stable dedupe key (thread/sender + message prefix). */
+  dedupeKey?: string
 }
 
 export type LinkedInIngestInput = {

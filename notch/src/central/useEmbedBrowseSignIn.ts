@@ -1,11 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { EmbedBrowseKind } from './embedBrowse'
-import {
-  EMBED_BROWSE_PARTITIONS,
-  isEmbedAuthPopupUrl,
-  isGoogleDirectSignInUrl,
-  isGoogleOAuthUrl
-} from './embedBrowse'
+import { EMBED_BROWSE_PARTITIONS, isEmbedAuthPopupUrl } from './embedBrowse'
 
 export type EmbedBrowseAuthState = 'ok' | 'signin' | 'blocked'
 
@@ -96,14 +91,6 @@ export function useEmbedBrowseSignIn(
       if (!url || !isEmbedAuthPopupUrl(url)) return
       event?.preventDefault?.()
       onAuthStateRef.current?.('signin')
-      if (opts.kind === 'google' && isGoogleDirectSignInUrl(url)) {
-        onSignInNeededRef.current?.()
-        return
-      }
-      if (opts.kind === 'google' && isGoogleOAuthUrl(url)) {
-        onSignInNeededRef.current?.()
-        return
-      }
       void window.notchDesktop?.openAuthWindow?.({
         partition,
         url,
@@ -133,13 +120,13 @@ export function useEmbedBrowseSignIn(
         webview.reload?.()
       }, 400)
     })
-    const offGoogleSignIn = window.notchDesktop?.onGoogleSignInNeeded?.((closedPartition) => {
-      if (closedPartition !== partition) return
-      onSignInNeededRef.current?.()
-    })
     const offEmbedSignIn = window.notchDesktop?.onEmbedSignInNeeded?.((neededPartition) => {
       if (neededPartition !== partition) return
       onAuthStateRef.current?.('signin')
+    })
+    const offAuthFallback = window.notchDesktop?.onAuthExternalFallback?.((fallbackPartition) => {
+      if (fallbackPartition !== partition) return
+      onAuthStateRef.current?.('blocked')
     })
 
     return () => {
@@ -152,8 +139,8 @@ export function useEmbedBrowseSignIn(
       webview.removeEventListener('will-navigate', interceptAuthNavigation)
       webview.removeEventListener('will-redirect', interceptAuthNavigation)
       offAuth?.()
-      offGoogleSignIn?.()
       offEmbedSignIn?.()
+      offAuthFallback?.()
     }
   }, [el, opts.enabled, opts.kind, partition])
 }

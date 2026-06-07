@@ -1686,9 +1686,14 @@ export function createRouter(io?: SocketServer): Router {
   })
 
   router.get('/agent/proposals', (req, res) => {
-    const { listAgentProposals } = require('./agent/service') as typeof import('./agent/service')
+    const { listAgentProposals, countAgentPendingProposals } =
+      require('./agent/service') as typeof import('./agent/service')
     const status = req.query.status ? String(req.query.status) : undefined
-    res.json({ proposals: listAgentProposals(status as import('../shared/agent-proposal').AgentProposalStatus | undefined) })
+    const proposals = listAgentProposals(status as import('../shared/agent-proposal').AgentProposalStatus | undefined)
+    res.json({
+      proposals,
+      pendingCount: status === 'pending' ? countAgentPendingProposals() : undefined
+    })
   })
 
   router.get('/agent/proposals/:id', (req, res) => {
@@ -1927,7 +1932,10 @@ export function createRouter(io?: SocketServer): Router {
     res.json({ ok: true })
   })
 
-  router.get('/dashboard/data', async (req, res) => {
+  router.get('/dashboard/data', (req, res, next) => {
+    const { requireMeasureAuth } = require('./measureAuth') as typeof import('./measureAuth')
+    requireMeasureAuth(req, res, next)
+  }, async (req, res) => {
     try {
       const since = req.query.since ? Number(req.query.since) : undefined
       const { buildDashboardSnapshot } =

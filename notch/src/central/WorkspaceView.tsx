@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { integrationApi, openBrowserLink } from '../lib/api'
+import { openBrowserLink } from '../lib/api'
 import type { WorkspaceTab } from './workspace'
 import { EmbeddedWebview } from './EmbeddedWebview'
 import {
@@ -31,10 +31,14 @@ export function WorkspaceView({ tab, active, reloadNonce = 0, miniPlayerTarget =
   useEffect(() => {
     if (embedAuthState !== 'checking') return
     const t = window.setTimeout(() => {
-      setEmbedAuthState((s) => (s === 'checking' ? 'signin' : s))
-    }, 4500)
+      setEmbedAuthState((s) => {
+        if (s !== 'checking') return s
+        // Google tabs (YouTube, Docs, etc.) work unsigned — only gate on explicit sign-in detection.
+        return embedBrowseKind === 'linkedin' ? 'signin' : 'ok'
+      })
+    }, embedBrowseKind === 'linkedin' ? 4500 : 3000)
     return () => window.clearTimeout(t)
-  }, [embedAuthState, tab.id])
+  }, [embedAuthState, tab.id, embedBrowseKind])
   const showSignInGate = embedBrowseKind !== null && embedAuthState !== 'ok'
 
   const onEmbedAuthState = useCallback((state: EmbedBrowseAuthState) => {
@@ -44,16 +48,10 @@ export function WorkspaceView({ tab, active, reloadNonce = 0, miniPlayerTarget =
   const signInEmbedded = useCallback(async () => {
     if (!embedBrowseKind) return
     try {
-      if (embedBrowseKind === 'google') {
-        const { url } = await integrationApi.gmailAuthUrl(false)
-        if (!url) return
-        openBrowserLink(url, { forceExternal: true })
-        return
-      }
       await window.notchDesktop?.openAuthWindow?.({
-        partition: EMBED_BROWSE_PARTITIONS.linkedin,
-        url: embedBrowseSignInUrl('linkedin', tab.url),
-        title: 'Sign in to LinkedIn'
+        partition: EMBED_BROWSE_PARTITIONS[embedBrowseKind],
+        url: embedBrowseSignInUrl(embedBrowseKind, tab.url),
+        title: embedBrowseKind === 'linkedin' ? 'Sign in to LinkedIn' : 'Sign in to Google'
       })
     } catch {
       openBrowserLink(tab.url, { forceExternal: true, title: tab.title, source: tab.source })
@@ -61,7 +59,7 @@ export function WorkspaceView({ tab, active, reloadNonce = 0, miniPlayerTarget =
   }, [embedBrowseKind, tab])
 
   const signInLabel =
-    embedBrowseKind === 'linkedin' ? 'Sign in to LinkedIn' : 'Connect in Chrome'
+    embedBrowseKind === 'linkedin' ? 'Sign in to LinkedIn' : 'Sign in to Google'
 
   const bannerCopy =
     embedBrowseKind === 'linkedin'
@@ -69,8 +67,8 @@ export function WorkspaceView({ tab, active, reloadNonce = 0, miniPlayerTarget =
         ? 'LinkedIn may block embedded sign-in. Open the sign-in window once to save your session in Notch.'
         : 'Sign in to LinkedIn in Notch to use messages and notifications in-app.'
       : embedAuthState === 'blocked'
-        ? 'Google blocks sign-in inside Notch. Connect in Chrome for Gmail sync — use Open in Chrome for Docs and YouTube.'
-        : 'Google blocks in-app sign-in. Connect in Chrome to link Gmail, then use Open in Chrome for Docs and YouTube tabs.'
+        ? 'Google blocked sign-in in this window. Try again or open in Chrome.'
+        : 'Sign in once in Notch to save your Google session — YouTube preferences and other Google sites will remember you after restart.'
 
   const onLocationChange = useCallback(
     (url: string) => {
@@ -98,7 +96,7 @@ export function WorkspaceView({ tab, active, reloadNonce = 0, miniPlayerTarget =
           ) : (
             <div className="x-workspace-signin-card">
               <p className="x-workspace-signin-title">
-                {embedBrowseKind === 'linkedin' ? 'Sign in to LinkedIn' : 'Connect Google'}
+                {embedBrowseKind === 'linkedin' ? 'Sign in to LinkedIn' : 'Sign in to Google'}
               </p>
               <p className="x-workspace-signin-copy">{bannerCopy}</p>
               <div className="x-workspace-signin-actions">

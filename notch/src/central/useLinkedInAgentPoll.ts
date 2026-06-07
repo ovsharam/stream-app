@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { AgentThreadMessage } from '@shared/agent-proposal'
+import { linkedInIngestSeenKey } from '@shared/agent-dedupe'
 import { agentApi } from '../lib/api'
 import { LINKEDIN_MESSAGING_URL } from './embedBrowse'
 
@@ -186,7 +187,11 @@ export async function handleIngest(
 ): Promise<number> {
   let ingested = 0
   for (const hit of hits) {
-    const key = `${hit.threadId}|${hit.message.slice(0, 120)}`
+    const key = linkedInIngestSeenKey({
+      threadId: hit.threadId,
+      senderName: normalizeLinkedInSenderName(hit.senderName),
+      message: hit.message
+    })
     if (seenRef.has(key)) continue
 
     let threadMessages: AgentThreadMessage[] | undefined

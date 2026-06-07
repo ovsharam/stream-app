@@ -467,7 +467,7 @@ export const agentApi = {
       { method: 'POST', body: JSON.stringify(input) }
     ),
   listProposals: (status?: import('@shared/agent-proposal').AgentProposalStatus) =>
-    json<{ proposals: import('@shared/agent-proposal').AgentProposal[] }>(
+    json<{ proposals: import('@shared/agent-proposal').AgentProposal[]; pendingCount?: number }>(
       `/agent/proposals${status ? `?status=${encodeURIComponent(status)}` : ''}`
     ),
   approveProposal: (id: string, body: import('@shared/agent-proposal').ApproveAgentProposalInput = {}) =>
@@ -624,6 +624,7 @@ declare global {
       onAuthClosed?: (cb: (partition: string) => void) => () => void
       onGoogleSignInNeeded?: (cb: (partition: string) => void) => () => void
       onEmbedSignInNeeded?: (cb: (partition: string) => void) => () => void
+      onAuthExternalFallback?: (cb: (partition: string) => void) => () => void
       onNavAppRendererReady?: (cb: () => void) => () => void
       onOpenUrl?: (cb: (url: string) => void) => () => void
       getGuestPreloadPath?: () => Promise<string>

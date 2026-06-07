@@ -95,6 +95,11 @@ contextBridge.exposeInMainWorld('notchDesktop', {
     ipcRenderer.on('embedded:embed-signin-needed', handler)
     return () => ipcRenderer.removeListener('embedded:embed-signin-needed', handler)
   },
+  onAuthExternalFallback: (cb: (partition: string) => void) => {
+    const handler = (_: unknown, partition: string) => cb(partition)
+    ipcRenderer.on('embedded:auth-external-fallback', handler)
+    return () => ipcRenderer.removeListener('embedded:auth-external-fallback', handler)
+  },
   onNavAppRendererReady: (cb: () => void) => {
     const handler = () => cb()
     ipcRenderer.on('navapp:renderer-ready', handler)
@@ -173,6 +178,7 @@ declare global {
       onAuthClosed?: (cb: (partition: string) => void) => () => void
       onGoogleSignInNeeded?: (cb: (partition: string) => void) => () => void
       onEmbedSignInNeeded?: (cb: (partition: string) => void) => () => void
+      onAuthExternalFallback?: (cb: (partition: string) => void) => () => void
       onNavAppRendererReady?: (cb: () => void) => () => void
       onOpenUrl?: (cb: (url: string) => void) => () => void
       getGuestPreloadPath?: () => Promise<string>

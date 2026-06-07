@@ -8,6 +8,11 @@ const PAGE_SPOOF = `(function() {
     if (h.endsWith('linkedin.com')) {
       Object.defineProperty(navigator, 'credentials', { value: undefined, configurable: true, writable: true });
     }
+    if (h.endsWith('google.com') || h.endsWith('youtube.com') || h.endsWith('googleusercontent.com')) {
+      if (!window.chrome) {
+        window.chrome = { runtime: {}, loadTimes: function() {}, csi: function() {}, app: {} };
+      }
+    }
   } catch {}
 })();`
 

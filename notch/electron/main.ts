@@ -784,10 +784,7 @@ function wireEmbedBrowseAuthNavigation(contents: WebContents, partition: string)
     if (partition === 'persist:google-browse') {
       if (!isNavAppAuthUrl(url)) return
       event.preventDefault()
-      if (isGoogleDirectSignInUrl(url)) {
-        notifyGoogleSignInNeeded(partition)
-        return
-      }
+      notifyEmbedSignInNeeded(partition)
       openAuthWindow({ partition, url, title: 'Sign in to Google' })
       return
     }

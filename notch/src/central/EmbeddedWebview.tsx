@@ -34,6 +34,15 @@ type WebviewEl = HTMLElement & {
   removeEventListener?: (type: string, listener: (event: Event) => void) => void
 }
 
+function urlsSameDocument(a: string, b: string): boolean {
+  if (a === b) return true
+  try {
+    return new URL(a).href === new URL(b).href
+  } catch {
+    return false
+  }
+}
+
 export function EmbeddedWebview({
   className,
   src,
@@ -145,16 +154,16 @@ export function EmbeddedWebview({
     el?.reload?.()
   }, [reloadNonce, webviewEl, domReady])
 
-  /** Explicit navigation (address bar) — skip reload when change came from in-page webview sync. */
+  /** Explicit navigation (address bar) — never loadURL for guest-initiated navigations. */
   useEffect(() => {
     if (!webviewEl || !domReady || !src.startsWith('http')) return
     const webview = webviewEl as WebviewEl
     const current = safeGetUrl(webview)
 
-    if (lastEmittedUrlRef.current && workspaceUrlsEquivalent(src, lastEmittedUrlRef.current)) {
+    if (lastEmittedUrlRef.current && urlsSameDocument(src, lastEmittedUrlRef.current)) {
       return
     }
-    if (current.startsWith('http') && workspaceUrlsEquivalent(src, current)) {
+    if (current.startsWith('http') && urlsSameDocument(src, current)) {
       return
     }
     // First load is driven by the static src attribute on <webview>.
@@ -201,6 +210,7 @@ export function EmbeddedWebview({
       className={className}
       src={initialSrcRef.current}
       partition={partition}
+      {...(dataTabId ? { 'data-workspace-tab-id': dataTabId } : {})}
       {...(guestPreload ? { preload: guestPreload } : {})}
       allowpopups="true"
       webpreferences="contextIsolation=yes,nativeWindowOpen=yes,javascript=yes"

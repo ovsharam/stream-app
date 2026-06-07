@@ -7,7 +7,7 @@ export function useAgentPendingCount(): number {
   const load = useCallback(async () => {
     try {
       const data = await agentApi.listProposals('pending')
-      setCount(data.proposals.length)
+      setCount(data.pendingCount ?? data.proposals.length)
     } catch {
       /* ignore — badge is optional */
     }

@@ -5,6 +5,7 @@ import type {
   ApproveAgentProposalInput,
   LinkedInIngestInput
 } from '../../shared/agent-proposal'
+import { proposalDedupeKey } from '../../shared/agent-dedupe'
 import { classifyLinkedInMessage, messageLooksActionable } from './classifier'
 import { enrichRescheduleBooking } from './bookingContext'
 import { buildAgentBrief, threadAsText } from './brief'
@@ -12,13 +13,14 @@ import { buildAgentActionProposals, summarizeAgentActions } from './actions'
 import { bookingTaskToComposeCommand, resolveInvitee } from './invitee'
 import { parseSchedulingTimeFromText } from '../sources/calcom'
 import {
-  findRecentProposalByThread,
+  findProposalByDedupeKey,
   getProposal,
   insertProposal,
   listInteractionLog,
   listProposals,
   logInteraction,
-  updateProposal
+  updateProposal,
+  countUniquePendingProposals
 } from './store'
 import { executeApprovedProposal } from './execute'
 import { emitServerEvent } from '../telemetry/service'
@@ -141,9 +143,14 @@ export async function ingestLinkedInMessage(
     throw new Error('threadId, senderName, and message are required')
   }
 
-  const recent = findRecentProposalByThread(threadId)
-  if (recent && recent.rawMessage === message) {
-    return { proposal: recent, duplicate: true }
+  const dedupeKey = proposalDedupeKey({
+    threadId,
+    senderName: input.senderName.trim(),
+    rawMessage: message
+  })
+  const existing = findProposalByDedupeKey(dedupeKey)
+  if (existing) {
+    return { proposal: existing, duplicate: true }
   }
 
   if (!messageLooksActionable(message)) {
@@ -178,7 +185,8 @@ export async function ingestLinkedInMessage(
     status: 'pending',
     createdAt: now,
     updatedAt: now,
-    threadMessages: input.threadMessages
+    threadMessages: input.threadMessages,
+    dedupeKey
   }
 
   logInteraction(proposalId, 'drafts_created', {
@@ -211,6 +219,10 @@ export function getAgentProposal(id: string): AgentProposal | null {
 
 export function listAgentProposals(status?: AgentProposal['status']): AgentProposal[] {
   return listProposals({ status, limit: 50 })
+}
+
+export function countAgentPendingProposals(): number {
+  return countUniquePendingProposals()
 }
 
 export function getAgentProposalLog(id: string) {

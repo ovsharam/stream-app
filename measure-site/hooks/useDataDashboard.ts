@@ -8,7 +8,8 @@ import type { IntentionEpisode } from '@shared/intention-episode'
 import { formatEpisodeChain } from '@shared/intention-episode'
 import { streamItemFromApi } from '@shared/serialize'
 import { dashboardApi } from '@/lib/dashboard-api'
-import { streamSocketUrl } from '@/lib/stream-api-base'
+import { hasStreamApi, streamSocketUrl } from '@/lib/stream-api-base'
+import { emptyDashboardSnapshot } from '@shared/dashboard'
 
 function mergeEpisodes(prev: IntentionEpisode[], incoming: IntentionEpisode): IntentionEpisode[] {
   const byId = new Map<string, IntentionEpisode>()
@@ -76,6 +77,12 @@ export function useDataDashboard() {
   }, [])
 
   const refresh = useCallback(async (since?: number) => {
+    if (!hasStreamApi()) {
+      setSnapshot(emptyDashboardSnapshot())
+      setError(null)
+      setLoading(false)
+      return
+    }
     try {
       const data = await dashboardApi.getSnapshot(since)
       lastFetchRef.current = data.generatedAt
@@ -104,6 +111,7 @@ export function useDataDashboard() {
 
   useEffect(() => {
     void refresh()
+    if (!hasStreamApi()) return
 
     let pollTimer: ReturnType<typeof setInterval> | null = null
     const startPolling = () => {
@@ -165,5 +173,5 @@ export function useDataDashboard() {
     }
   }, [applyActivity, applyEpisode, refresh])
 
-  return { snapshot, connected, error, loading, refresh }
+  return { snapshot, connected, error, loading, refresh, apiConfigured: hasStreamApi() }
 }

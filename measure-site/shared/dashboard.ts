@@ -238,3 +238,40 @@ export function emptyInsights(): DashboardInsights {
     supabaseConfigured: false
   }
 }
+
+export function emptyDashboardSnapshot(): DataDashboardSnapshot {
+  return {
+    generatedAt: Date.now(),
+    counts: {
+      streamItems: 0,
+      operatorEvents: 0,
+      operatorEventsByType: {},
+      fde: {
+        meetingRecords: 0,
+        transcriptChunks: 0,
+        signals: 0,
+        starredMoments: 0,
+        predictions: 0,
+        extractionRevisions: 0,
+        requirements: 0,
+        buildRuns: 0,
+        feedbackEvents: 0,
+        decisionEvents: 0,
+        assistInvocations: 0
+      },
+      kb: { entities: 0, datapoints: 0, edges: 0, traces: 0 },
+      graph: {
+        entities: 0,
+        edges: 0,
+        deals: 0,
+        falkorConfigured: false,
+        falkorConnected: false
+      },
+      engagements: 0
+    },
+    moments: { starred: [], signals: [], predictions: [], meetings: [] },
+    intention: emptyIntentionBlock(),
+    insights: emptyInsights(),
+    activity: []
+  }
+}

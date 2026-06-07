@@ -134,11 +134,14 @@ function ActivityRow({ item }: { item: DashboardActivity }) {
 }
 
 export default function MeasurePage() {
-  const { snapshot, connected, error, loading, refresh } = useDataDashboard()
+  const { snapshot, connected, error, loading, refresh, apiConfigured } = useDataDashboard()
 
   if (loading && !snapshot) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a] text-zinc-400">
+      <div
+        className="flex min-h-screen items-center justify-center bg-[#0a0a0a] text-zinc-400"
+        style={{ color: '#a1a1aa' }}
+      >
         Loading Scope Measure…
       </div>
     )
@@ -164,7 +167,23 @@ export default function MeasurePage() {
     )
   }
 
-  if (!snapshot) return null
+  if (!snapshot) {
+    return (
+      <div
+        className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#0a0a0a] px-6 text-center"
+        style={{ color: '#a1a1aa' }}
+      >
+        <p style={{ color: '#fca5a5' }}>Dashboard failed to initialize.</p>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          className="rounded-lg bg-zinc-800 px-4 py-2 text-sm text-zinc-100 hover:bg-zinc-700"
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
 
   const { counts, moments, activity, intention = emptyIntentionBlock(), insights = emptyInsights() } = snapshot
   const { stats: intentionStats, episodes } = intention
@@ -205,6 +224,19 @@ export default function MeasurePage() {
       </header>
 
       <main className="mx-auto max-w-6xl space-y-8 px-6 py-8">
+        {!apiConfigured ? (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            <strong className="font-medium">Waiting for live data.</strong> Set{' '}
+            <code className="rounded bg-black/30 px-1.5 py-0.5 text-amber-50">NEXT_PUBLIC_STREAM_API_URL</code> in
+            Vercel to your STREAM API (e.g. Cloudflare Tunnel → local <code className="text-amber-50">:3131</code>).
+            Showing empty dashboard until connected.
+          </div>
+        ) : null}
+        {error ? (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            API error: {error}
+          </div>
+        ) : null}
         <section>
           <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">What we measure</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

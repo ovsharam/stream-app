@@ -5,11 +5,12 @@ export function streamApiBase(): string {
   return raw.replace(/\/$/, '')
 }
 
+export function hasStreamApi(): boolean {
+  return streamApiBase().length > 0
+}
+
 export function streamSocketUrl(): string {
   const fromEnv = process.env.NEXT_PUBLIC_SOCKET_URL?.trim()
   if (fromEnv) return fromEnv.replace(/\/$/, '')
-  const api = streamApiBase()
-  if (api) return api
-  if (typeof window !== 'undefined') return window.location.origin
-  return ''
+  return streamApiBase()
 }

@@ -3,13 +3,15 @@ import type { CentralStreamEvent } from '@shared/cluster'
 import { HomeChat } from './HomeChat'
 import { useHomeChat } from './homeChatContext'
 import { groupSessionsByDate } from './homeChatStore'
+import type { WorkspaceBrowserPageContext } from './workspaceBrowserContext'
 
 type Props = {
   events: CentralStreamEvent[]
   onOpenHome?: () => void
+  browserPageContext?: WorkspaceBrowserPageContext | null
 }
 
-export function FeedRailChatPanel({ events, onOpenHome }: Props) {
+export function FeedRailChatPanel({ events, onOpenHome, browserPageContext }: Props) {
   const chat = useHomeChat()
   const sessionGroups = useMemo(() => groupSessionsByDate(chat.sessions), [chat.sessions])
 
@@ -50,12 +52,23 @@ export function FeedRailChatPanel({ events, onOpenHome }: Props) {
         ) : null}
       </div>
       <div className="x-rail-chat-body">
+        {browserPageContext ? (
+          <div className="x-rail-chat-page-context">
+            <span className="x-rail-chat-page-context-label">
+              Viewing: {browserPageContext.title}
+            </span>
+            <span className="x-rail-chat-page-context-url" title={browserPageContext.url}>
+              {browserPageContext.hostname}
+            </span>
+          </div>
+        ) : null}
         <HomeChat
           compact
           events={events}
           messages={chat.messages}
           onMessagesChange={chat.setMessages}
           onFocusMeeting={() => {}}
+          browserPageContext={browserPageContext}
         />
       </div>
     </div>

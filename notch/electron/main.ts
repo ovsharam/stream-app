@@ -4,7 +4,7 @@ import type { BrowserWindow as BW, Input, Session, WebContents } from 'electron'
 import type { NativeImage } from 'electron'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
-import { spawn } from 'child_process'
+import { spawn, type ChildProcess } from 'child_process'
 import { existsSync } from 'fs'
 import { AudioTap, resolveWhisperRoot } from './services/AudioTap'
 import { CallSessionManager } from './services/CallSessionManager'
@@ -35,6 +35,60 @@ let mobileVisible = false
 let mobilePosition: { x: number; y: number } | null = null
 let audioTap: AudioTap | null = null
 let callSession: CallSessionManager | null = null
+let apiProcess: ChildProcess | null = null
+
+function packagedServerDir(): string {
+  return join(process.resourcesPath, 'server')
+}
+
+async function waitForApi(maxMs = 60_000): Promise<void> {
+  const start = Date.now()
+  while (Date.now() - start < maxMs) {
+    try {
+      const res = await fetch(`${API}/health`)
+      if (res.ok) return
+    } catch {
+      /* retry */
+    }
+    await new Promise((r) => setTimeout(r, 400))
+  }
+  throw new Error(`Local API at ${API} did not become ready within ${maxMs}ms`)
+}
+
+async function startPackagedApi(): Promise<void> {
+  if (isDev) return
+  const serverDir = packagedServerDir()
+  const entry = join(serverDir, 'index.js')
+  if (!existsSync(entry)) {
+    throw new Error(`Bundled API missing: ${entry}`)
+  }
+  apiProcess = spawn(process.execPath, [entry], {
+    cwd: serverDir,
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      NOTCH_PROTOTYPE: '1',
+      SIMULATION_MODE: 'false',
+      DEMO_MODE: '0',
+      PORT: '3131'
+    },
+    stdio: ['ignore', 'pipe', 'pipe']
+  })
+  apiProcess.stdout?.on('data', (chunk: Buffer) => console.log('[api]', chunk.toString().trim()))
+  apiProcess.stderr?.on('data', (chunk: Buffer) => console.error('[api]', chunk.toString().trim()))
+  apiProcess.on('exit', (code) => {
+    console.error('[api] exited', code)
+    apiProcess = null
+  })
+  await waitForApi()
+}
+
+function stopPackagedApi(): void {
+  if (apiProcess && !apiProcess.killed) {
+    apiProcess.kill('SIGTERM')
+    apiProcess = null
+  }
+}
 
 /** Google blocks OAuth in Electron/webview UAs — present as current Chrome instead. */
 const CHROME_USER_AGENT =
@@ -984,7 +1038,18 @@ if (!gotSingleInstanceLock) {
     }
   })
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  if (!isDev) {
+    try {
+      await startPackagedApi()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      dialog.showErrorBox('Notch', `Could not start local API:\n${msg}`)
+      app.quit()
+      return
+    }
+  }
+
   setupEmbeddedBrowsing()
   mobileWindow = createMobileWindow()
   if (!mobileOnly) centralWindow = createCentralWindow()
@@ -1112,6 +1177,7 @@ app.whenReady().then(() => {
 } // gotSingleInstanceLock
 
 app.on('will-quit', () => {
+  stopPackagedApi()
   if (!SIM) void callSession?.end().catch(() => {})
   audioTap?.stop()
   globalShortcut.unregisterAll()

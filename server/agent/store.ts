@@ -321,3 +321,22 @@ export function exportAgentTrainingRecords(limit = 200): Array<{
     return { proposal, log: listInteractionLog(proposal.id) }
   })
 }
+
+export function countAgentProposals(): number {
+  const row = getDb().prepare('SELECT COUNT(*) AS n FROM agent_proposals').get() as { n: number }
+  return Number(row?.n ?? 0)
+}
+
+export function countAgentProposalsByStatus(): Record<string, number> {
+  const rows = getDb()
+    .prepare('SELECT status, COUNT(*) AS n FROM agent_proposals GROUP BY status')
+    .all() as { status: string; n: number }[]
+  const out: Record<string, number> = {}
+  for (const row of rows) out[row.status] = Number(row.n)
+  return out
+}
+
+export function countAgentInteractionLog(): number {
+  const row = getDb().prepare('SELECT COUNT(*) AS n FROM agent_interaction_log').get() as { n: number }
+  return Number(row?.n ?? 0)
+}

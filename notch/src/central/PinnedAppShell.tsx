@@ -1,4 +1,5 @@
 import { BrowserChrome } from './BrowserChrome'
+import { useWebviewNavigation } from './useWebviewNavigation'
 import type { PinnedAppSession } from './workspace'
 
 type Props = {
@@ -22,6 +23,8 @@ export function PinnedAppShell({
   railCollapsed,
   onToggleRail
 }: Props) {
+  const { canGoBack, canGoForward, goBack, goForward } = useWebviewNavigation(session.tab.id)
+
   return (
     <div className="x-pinned-app-shell">
       <header className="x-pinned-app-head">
@@ -38,6 +41,10 @@ export function PinnedAppShell({
         onNavigate={onNavigate}
         onReload={onReload}
         onExternal={onExternal}
+        canGoBack={canGoBack}
+        canGoForward={canGoForward}
+        onBack={goBack}
+        onForward={goForward}
         railCollapsed={railCollapsed}
         onToggleRail={onToggleRail}
         workspaceMode

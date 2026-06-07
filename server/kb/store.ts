@@ -137,6 +137,51 @@ export function upsertEntity(input: {
   }
 }
 
+/** Stable-id upsert for graph sync (deal / requirement vertices). */
+export function upsertGraphEntity(input: {
+  id: string
+  kind: KbEntity['kind']
+  label: string
+  ontologyType?: string
+}): KbEntity {
+  const d = getDb()
+  const normalized = input.label.toLowerCase().replace(/\s+/g, ' ').trim()
+  const now = Date.now()
+  const existing = d.prepare('SELECT * FROM kb_entities WHERE id = ?').get(input.id) as
+    | Record<string, unknown>
+    | undefined
+
+  if (existing) {
+    d.prepare(
+      `UPDATE kb_entities SET kind = ?, label = ?, normalized = ?, ontology_type = ?, updated_at = ? WHERE id = ?`
+    ).run(input.kind, input.label.trim(), normalized, input.ontologyType ?? null, now, input.id)
+    return rowEntity({ ...existing, kind: input.kind, label: input.label, normalized, ontology_type: input.ontologyType ?? null, updated_at: now })
+  }
+
+  d.prepare(
+    `INSERT INTO kb_entities (id, kind, label, normalized, ontology_type, mention_count, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 1, ?, ?)`
+  ).run(input.id, input.kind, input.label.trim(), normalized, input.ontologyType ?? null, now, now)
+
+  return {
+    id: input.id,
+    kind: input.kind,
+    ontologyType: input.ontologyType,
+    label: input.label.trim(),
+    normalized,
+    mentionCount: 1,
+    createdAt: now,
+    updatedAt: now
+  }
+}
+
+export function getEntity(id: string): KbEntity | undefined {
+  const row = getDb().prepare('SELECT * FROM kb_entities WHERE id = ?').get(id) as
+    | Record<string, unknown>
+    | undefined
+  return row ? rowEntity(row) : undefined
+}
+
 export function linkEntities(
   fromId: string,
   toId: string,
@@ -215,6 +260,13 @@ export function listEntities(limit = 100): KbEntity[] {
   ).map(rowEntity)
 }
 
+export function listAllEntities(): KbEntity[] {
+  const d = getDb()
+  return (d.prepare('SELECT * FROM kb_entities ORDER BY updated_at DESC').all() as Record<string, unknown>[]).map(
+    rowEntity
+  )
+}
+
 export function listEdges(limit = 200): KbEdge[] {
   const d = getDb()
   return (
@@ -225,8 +277,32 @@ export function listEdges(limit = 200): KbEdge[] {
   ).map(rowEdge)
 }
 
+export function listAllEdges(): KbEdge[] {
+  const d = getDb()
+  return (d.prepare('SELECT * FROM kb_edges ORDER BY created_at DESC').all() as Record<string, unknown>[]).map(
+    rowEdge
+  )
+}
+
+export function countEntities(): number {
+  const row = getDb().prepare('SELECT COUNT(*) AS n FROM kb_entities').get() as { n: number }
+  return Number(row?.n ?? 0)
+}
+
 export function countEdges(): number {
   const row = getDb().prepare('SELECT COUNT(*) AS n FROM kb_edges').get() as { n: number }
+  return Number(row?.n ?? 0)
+}
+
+export function countDatapoints(): number {
+  const row = getDb().prepare(`SELECT COUNT(*) AS n FROM kb_datapoints WHERE kind != 'telemetry'`).get() as {
+    n: number
+  }
+  return Number(row?.n ?? 0)
+}
+
+export function countTraces(): number {
+  const row = getDb().prepare('SELECT COUNT(*) AS n FROM kb_traces').get() as { n: number }
   return Number(row?.n ?? 0)
 }
 

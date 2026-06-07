@@ -394,12 +394,23 @@ export function normalizeCalcomBooking(booking: Record<string, unknown>): Stream
   ].filter(Boolean)
 
   const body = bodyParts.join(' · ')
+  const createdRaw = booking.createdAt ?? booking.updatedAt
+  const createdAt =
+    createdRaw && String(createdRaw).trim() ? new Date(String(createdRaw)) : null
+  const nowMs = Date.now()
+  const startMs = start.getTime()
+  const feedTimestamp =
+    createdAt && !Number.isNaN(createdAt.getTime())
+      ? createdAt
+      : startMs <= nowMs
+        ? start
+        : new Date(nowMs)
 
   return {
     id: `calcom-${uid}`,
     source: 'calcom',
     sender: { name: 'Cal.com', handle: 'calcom' },
-    timestamp: start,
+    timestamp: feedTimestamp,
     title,
     body: truncate(body),
     bodyFull: body,

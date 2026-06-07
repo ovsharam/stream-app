@@ -153,6 +153,17 @@ export const INTEGRATION_CATALOG: IntegrationDef[] = [
     feedSources: ['gdocs']
   },
   {
+    id: 'obsidian',
+    name: 'Obsidian',
+    tagline: 'Append to vault markdown — Notes page or @obsidian',
+    status: 'live',
+    auth: 'native',
+    capabilities: ['execute'],
+    composePrefix: 'obsidian',
+    actions: ['update_field'],
+    feedSources: []
+  },
+  {
     id: 'gong',
     name: 'Gong',
     tagline: 'Call recordings & notes',

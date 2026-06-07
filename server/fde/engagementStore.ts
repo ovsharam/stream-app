@@ -74,6 +74,11 @@ export function listEngagements(limit = 50): FdeEngagement[] {
   return rows.map(rowToEngagement)
 }
 
+export function countEngagements(): number {
+  const row = getDb().prepare('SELECT COUNT(*) AS n FROM fde_engagements').get() as { n: number }
+  return Number(row?.n ?? 0)
+}
+
 export function getEngagement(id: string): FdeEngagement | null {
   const row = getDb().prepare(`SELECT * FROM fde_engagements WHERE id = ?`).get(id) as
     | Record<string, unknown>
@@ -81,7 +86,10 @@ export function getEngagement(id: string): FdeEngagement | null {
   return row ? rowToEngagement(row) : null
 }
 
-export function upsertEngagement(input: Partial<FdeEngagement> & { clientName: string }): FdeEngagement {
+export function upsertEngagement(
+  input: Partial<FdeEngagement> & { clientName: string },
+  trainingMeta?: { sessionId?: string; extraction?: MeetingExtraction }
+): FdeEngagement {
   const now = Date.now()
   const existing = input.id ? getEngagement(input.id) : null
   const id = input.id ?? `eng-${randomUUID()}`
@@ -141,6 +149,33 @@ export function upsertEngagement(input: Partial<FdeEngagement> & { clientName: s
       updated_at: engagement.updatedAt
     })
 
+  try {
+    const { captureEngagementUpsert } = require('./trainingLog') as typeof import('./trainingLog')
+    const extraction =
+      trainingMeta?.extraction ??
+      (input.summary !== undefined ||
+      input.buildPrompt !== undefined ||
+      input.scope !== undefined
+        ? {
+            summary: engagement.summary ?? '',
+            buildPrompt: engagement.buildPrompt ?? '',
+            nextSteps: engagement.nextSteps,
+            flags: engagement.flags,
+            decisions: [] as string[],
+            questions: engagement.openQuestions,
+            scopeDecision: engagement.scope
+          }
+        : undefined)
+    captureEngagementUpsert({
+      previous: existing,
+      next: engagement,
+      sessionId: trainingMeta?.sessionId,
+      extraction
+    })
+  } catch {
+    /* training capture optional */
+  }
+
   return engagement
 }
 
@@ -190,5 +225,5 @@ export function upsertEngagementFromMeeting(input: {
     googleDocUrl: input.googleDocUrl ?? existing?.googleDocUrl,
     escalationLevel:
       input.extraction.flags.length > 2 ? 1 : (existing?.escalationLevel ?? 0)
-  })
+  }, { sessionId: input.sessionId, extraction: input.extraction })
 }

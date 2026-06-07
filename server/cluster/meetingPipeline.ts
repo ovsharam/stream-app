@@ -108,6 +108,12 @@ export function startMeetingSession(input: { title?: string; dealHint?: string }
       surface: 'workspace'
     }
   )
+  try {
+    const { captureMeetingStart } = require('../fde/trainingLog') as typeof import('../fde/trainingLog')
+    captureMeetingStart(active)
+  } catch {
+    /* training capture optional */
+  }
   return active
 }
 
@@ -153,11 +159,18 @@ export function ingestChunk(chunk: { text: string; ts?: number }): MeetingSessio
     if (text.startsWith(last.text)) {
       last.text = text
       last.ts = chunk.ts ?? Date.now()
-      detectSignalsForChunk(active, active.chunks.length - 1)
+      const idx = active.chunks.length - 1
+      detectSignalsForChunk(active, idx)
       try {
-        graphMeetingChunk(active, active.chunks.length - 1)
+        graphMeetingChunk(active, idx)
       } catch (e) {
         console.warn('[meeting] kb chunk ingest failed:', (e as Error).message)
+      }
+      try {
+        const { captureTranscriptChunk } = require('../fde/trainingLog') as typeof import('../fde/trainingLog')
+        captureTranscriptChunk(active.id, idx, text, chunk.ts ?? Date.now())
+      } catch {
+        /* training capture optional */
       }
       return active
     }
@@ -172,10 +185,16 @@ export function ingestChunk(chunk: { text: string; ts?: number }): MeetingSessio
   } catch (e) {
     console.warn('[meeting] kb chunk ingest failed:', (e as Error).message)
   }
+  try {
+    const { captureTranscriptChunk } = require('../fde/trainingLog') as typeof import('../fde/trainingLog')
+    captureTranscriptChunk(active.id, idx, text, chunk.ts ?? Date.now())
+  } catch {
+    /* training capture optional */
+  }
   return active
 }
 
-export function starMoment(text?: string): MeetingStarred | null {
+export function starMoment(text?: string, reason?: string): MeetingStarred | null {
   if (!active) return null
   const ts = Date.now()
   const moment: MeetingStarred = {
@@ -184,6 +203,18 @@ export function starMoment(text?: string): MeetingStarred | null {
     predictionId: active.latestPredictionId
   }
   active.starred.push(moment)
+  try {
+    const { captureStarredMoment } = require('../fde/trainingLog') as typeof import('../fde/trainingLog')
+    captureStarredMoment({
+      sessionId: active.id,
+      text: moment.text,
+      predictionId: moment.predictionId,
+      reason: reason as import('../../shared/fde-training').StarMomentReason | undefined,
+      ts: moment.ts
+    })
+  } catch {
+    /* training capture optional */
+  }
   try {
     ingestMeetingStar({
       sessionId: active.id,
@@ -225,6 +256,18 @@ function detectSignalsForChunk(session: MeetingSession, idx: number): void {
     if (!exists) {
       const signal = { type, text, ts: chunk.ts, chunkIndex: idx }
       session.signals.push(signal)
+      try {
+        const { captureMeetingSignal } = require('../fde/trainingLog') as typeof import('../fde/trainingLog')
+        captureMeetingSignal({
+          sessionId: session.id,
+          type: signal.type,
+          text: signal.text,
+          chunkIndex: signal.chunkIndex,
+          ts: signal.ts
+        })
+      } catch {
+        /* training capture optional */
+      }
       try {
         ingestMeetingSignal({
           sessionId: session.id,
@@ -316,6 +359,20 @@ What is the AE about to need?`
 
   active.predictions.push(prediction)
   active.latestPredictionId = prediction.id
+  try {
+    const { captureAssistPrediction } = require('../fde/trainingLog') as typeof import('../fde/trainingLog')
+    captureAssistPrediction({
+      id: prediction.id,
+      sessionId: active.id,
+      signalText: prediction.signalText,
+      sayThis: prediction.sayThis,
+      followUp: prediction.followUp,
+      flag: prediction.flag,
+      ts: prediction.ts
+    })
+  } catch {
+    /* training capture optional */
+  }
   try {
     ingestMeetingPrediction({
       sessionId: active.id,
@@ -697,9 +754,11 @@ export async function endMeetingSession(
   } catch (e) {
     console.warn('[meeting] kb ingest failed:', (e as Error).message)
   }
+  let engagementId: string | undefined
+  let engagement: import('../../shared/fde-engagement').FdeEngagement | undefined
   try {
     const { upsertEngagementFromMeeting } = require('../fde/engagementStore') as typeof import('../fde/engagementStore')
-    upsertEngagementFromMeeting({
+    engagement = upsertEngagementFromMeeting({
       sessionId: session.id,
       feedItemId: feedItem.id,
       title: session.title,
@@ -707,8 +766,39 @@ export async function endMeetingSession(
       extraction,
       googleDocUrl: docUrl
     })
+    engagementId = engagement.id
   } catch (e) {
     console.warn('[meeting] engagement upsert failed:', (e as Error).message)
+  }
+  try {
+    const { captureMeetingEnd } = require('../fde/trainingLog') as typeof import('../fde/trainingLog')
+    captureMeetingEnd({
+      session,
+      engagementId,
+      transcript,
+      durationMs,
+      extraction
+    })
+  } catch (e) {
+    console.warn('[fde-training] meeting end capture failed:', (e as Error).message)
+  }
+  try {
+    const { queuePostMeetingSupabaseSync } =
+      require('../supabase/postMeetingSync') as typeof import('../supabase/postMeetingSync')
+    queuePostMeetingSupabaseSync(session.id, engagementId)
+  } catch (e) {
+    console.warn('[supabase] post-meeting queue failed:', (e as Error).message)
+  }
+  try {
+    if (engagement) {
+      const { appendEngagementGraph } =
+        require('../graph/syncService') as typeof import('../graph/syncService')
+      void appendEngagementGraph(engagement).catch((e: Error) => {
+        console.warn('[graph] post-meeting append failed:', e.message)
+      })
+    }
+  } catch (e) {
+    console.warn('[graph] post-meeting append failed:', (e as Error).message)
   }
   input.io?.emit('stream:item', feedItem)
 

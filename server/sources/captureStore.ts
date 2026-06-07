@@ -64,6 +64,15 @@ export function getCaptureProfile(sessionId: string, profileId?: string): Captur
   return profile
 }
 
+export function isObsidianConfigured(sessionId: string, profileId?: string): boolean {
+  try {
+    const profile = getCaptureProfile(sessionId, profileId)
+    return Boolean(profile.obsidianVaultPath?.trim() && profile.obsidianNotePath?.trim())
+  } catch {
+    return false
+  }
+}
+
 export async function captureNote(
   sessionId: string,
   input: {

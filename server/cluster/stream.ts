@@ -4,6 +4,7 @@ import { getActiveMeeting } from './meetingPipeline'
 import { prototypeRealEnabled } from '../prototype'
 import { getSimIntel, getSimSignals, getSimTranscript, isSimCallActive } from '../sim/engine'
 import { agentProposalStreamEvents } from '../agent/feedEvents'
+import { rankFeedEvents } from '../graph/feedRanker'
 
 type UserRole = 'ae' | 'am' | 'csm' | 'fde'
 type ExternalSource =
@@ -211,7 +212,17 @@ function externalEvents(now: number): CentralStreamEvent[] {
     .sort((a, b) => b.ts - a.ts)
     .slice(0, 24)
 
-  const nonMondayEvents: CentralStreamEvent[] = nonMondayItems.map((item, idx) => ({
+  const nonMondayEvents: CentralStreamEvent[] = []
+  const seenCalcomBookings = new Set<string>()
+
+  for (const [idx, item] of nonMondayItems.entries()) {
+    if (item.source === 'calcom') {
+      const bookingUid = String(item.metadata?.bookingUid ?? item.id.replace(/^calcom-/, '')).trim()
+      if (bookingUid && seenCalcomBookings.has(bookingUid)) continue
+      if (bookingUid) seenCalcomBookings.add(bookingUid)
+    }
+
+    nonMondayEvents.push({
       id: `ext-${item.id}`,
       ts: item.timestamp.getTime() || now - idx * 1000,
       source: mapExternalSource(item.source as ExternalSource),
@@ -292,7 +303,8 @@ function externalEvents(now: number): CentralStreamEvent[] {
           : {}),
         ...(item.sender.handle ? { senderHandle: String(item.sender.handle) } : {})
       }
-    }))
+    })
+  }
 
   if (mondayThreadEvents.length > 0) {
     return [...mondayThreadEvents, ...nonMondayEvents].sort((a, b) => b.ts - a.ts)
@@ -334,10 +346,10 @@ function realMeetingEvents(now: number): CentralStreamEvent[] {
   return [...transcriptEvents, ...signalEvents]
 }
 
-function dedupeSort(events: CentralStreamEvent[]): CentralStreamEvent[] {
+function finalizeStream(events: CentralStreamEvent[]): CentralStreamEvent[] {
   const unique = new Map<string, CentralStreamEvent>()
   for (const e of events) if (!unique.has(e.id)) unique.set(e.id, e)
-  return [...unique.values()].sort((a, b) => b.ts - a.ts)
+  return rankFeedEvents([...unique.values()])
 }
 
 function simLiveEvents(role: UserRole, now: number): CentralStreamEvent[] {
@@ -397,7 +409,7 @@ function simLiveEvents(role: UserRole, now: number): CentralStreamEvent[] {
   const gongEvent = gongRoleEvent(role, now)
   if (gongEvent) intelEvents.push(gongEvent)
 
-  return dedupeSort([...transcriptEvents, ...signalEvents, ...intelEvents])
+  return finalizeStream([...transcriptEvents, ...signalEvents, ...intelEvents])
 }
 
 export function getCentralStream(role: UserRole = 'ae'): CentralStreamEvent[] {
@@ -408,13 +420,13 @@ export function getCentralStream(role: UserRole = 'ae'): CentralStreamEvent[] {
   if (prototypeRealEnabled() && !isDemoStreamMode()) {
     const realSession = getActiveMeeting()
     if (realSession) {
-      return dedupeSort([...realMeetingEvents(now), ...agentEvents, ...external])
+      return finalizeStream([...realMeetingEvents(now), ...agentEvents, ...external])
     }
   }
 
   if (isSimCallActive()) {
-    return dedupeSort([...simLiveEvents(role, now), ...agentEvents, ...external])
+    return finalizeStream([...simLiveEvents(role, now), ...agentEvents, ...external])
   }
 
-  return dedupeSort([...agentEvents, ...external])
+  return finalizeStream([...agentEvents, ...external])
 }

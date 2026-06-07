@@ -8,6 +8,7 @@ import { useAgentPendingCount } from './useAgentPendingCount'
 import { FeedRailStreamPanel } from './FeedRailStreamPanel'
 import type { ComposeMentionTarget } from '@shared/compose'
 import { IconGmail, IconMonday, IconSettings, IconVideoCall } from './Icons'
+import type { WorkspaceBrowserPageContext } from './workspaceBrowserContext'
 import { RailWidgetsConfigSheet } from './RailWidgetsConfig'
 import {
   getVisibleWidgets,
@@ -112,13 +113,13 @@ function splitDayEvents(events: CalendarRailEvent[]): {
 }
 
 function buildDayStrip(dayGroups: ReturnType<typeof groupByDay>) {
-  return [0, 1, 2].map((idx) => {
+  return Array.from({ length: 7 }, (_, idx) => {
     const d = new Date()
     d.setDate(d.getDate() + idx)
     const count = dayGroups.find((g) => g.dayIndex === idx)?.events.length ?? 0
     return {
       dayIndex: idx,
-      weekday: idx === 0 ? 'Today' : d.toLocaleDateString(undefined, { weekday: 'short' }),
+      weekday: d.toLocaleDateString(undefined, { weekday: 'short' }).replace(/\.$/, ''),
       date: d.getDate(),
       month: d.toLocaleDateString(undefined, { month: 'short' }),
       count
@@ -381,12 +382,16 @@ function CalendarDayStrip({
           type="button"
           role="tab"
           aria-selected={selectedDay === day.dayIndex}
-          className={`x-cal-strip-day ${day.dayIndex === 0 ? 'x-cal-strip-day-today' : ''} ${selectedDay === day.dayIndex ? 'x-cal-strip-day-active' : ''} ${day.count === 0 ? 'x-cal-strip-day-empty' : ''}`}
+          className={`x-cal-strip-day${day.dayIndex === 0 ? ' x-cal-strip-day-today' : ''}${selectedDay === day.dayIndex ? ' x-cal-strip-day-active' : ''}`}
           onClick={() => onSelect(selectedDay === day.dayIndex ? null : day.dayIndex)}
         >
           <span className="x-cal-strip-weekday">{day.weekday}</span>
           <span className="x-cal-strip-date">{day.date}</span>
-          {day.count > 0 ? <span className="x-cal-strip-count">{day.count}</span> : null}
+          {day.count > 0 ? (
+            <span className="x-cal-strip-count" aria-label={`${day.count} events`}>
+              {day.count}
+            </span>
+          ) : null}
         </button>
       ))}
     </div>
@@ -783,13 +788,19 @@ export function ContextRail({
   onOpenHome,
   railContext = {},
   feedRail,
-  composeRail
+  composeRail,
+  browserTabId = null,
+  browserPageContext = null,
+  onRefreshBrowserPageContext
 }: {
   events?: CentralStreamEvent[]
   onOpenHome?: () => void
   railContext?: RailContext
   feedRail?: FeedRailHandlers
   composeRail?: ComposeRailProps
+  browserTabId?: string | null
+  browserPageContext?: WorkspaceBrowserPageContext | null
+  onRefreshBrowserPageContext?: () => void | Promise<void>
 }) {
   const widgets = useRailWidgets()
   const visibleWidgets = useMemo(
@@ -812,6 +823,11 @@ export function ContextRail({
       setActiveTab(defaultTab)
     }
   }, [activeTab, defaultTab, visibleIds, visibleWidgets])
+
+  useEffect(() => {
+    if (activeTab !== 'chat' || !browserTabId || !onRefreshBrowserPageContext) return
+    void onRefreshBrowserPageContext()
+  }, [activeTab, browserTabId, onRefreshBrowserPageContext])
 
   return (
     <>
@@ -895,7 +911,13 @@ export function ContextRail({
                 calendarHint={calendar.calendarHint}
               />
             )}
-            {activeTab === 'chat' && <FeedRailChatPanel events={events} onOpenHome={onOpenHome} />}
+            {activeTab === 'chat' && (
+              <FeedRailChatPanel
+                events={events}
+                onOpenHome={onOpenHome}
+                browserPageContext={browserPageContext}
+              />
+            )}
             {activeTab === 'news' && (
               <NewsPanel
                 pplxNews={calendar.pplxNews}

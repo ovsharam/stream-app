@@ -17,6 +17,7 @@ import {
   useMergedRunningAgents,
   useRunningAgentsPanel
 } from './runningAgentsStore'
+import type { WorkspaceBrowserPageContext } from './workspaceBrowserContext'
 
 const STARTERS = [
   { id: 'today', label: 'What needs my attention today?', hint: 'Priorities & open loops' },
@@ -37,6 +38,7 @@ type Props = {
   onMessagesChange: (updater: HomeChatMessage[] | ((prev: HomeChatMessage[]) => HomeChatMessage[])) => void
   onFocusMeeting: (itemId: string) => void
   onOpenSearchHit?: (hit: ClusterSearchHit) => void
+  browserPageContext?: WorkspaceBrowserPageContext | null
 }
 
 function greetingForHour(h: number): string {
@@ -61,7 +63,8 @@ export function HomeChat({
   messages,
   onMessagesChange,
   onFocusMeeting,
-  onOpenSearchHit
+  onOpenSearchHit,
+  browserPageContext
 }: Props) {
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -173,7 +176,20 @@ export function HomeChat({
 
     try {
       updateAgentStatus(agentId, 'Searching context…')
-      const result = await clusterApi.assist(trimmed, undefined, { chat: true, history, signal })
+      const pageContext = browserPageContext
+        ? {
+            url: browserPageContext.url,
+            title: browserPageContext.title,
+            excerpt: browserPageContext.excerpt,
+            selectedText: browserPageContext.selectedText
+          }
+        : undefined
+      const result = await clusterApi.assist(trimmed, undefined, {
+        chat: true,
+        history,
+        signal,
+        pageContext
+      })
       if (signal.aborted) {
         aborted = true
         return

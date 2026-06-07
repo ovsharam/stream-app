@@ -1,6 +1,8 @@
 import { randomUUID } from 'crypto'
 import type { OperatorEvent, OperatorEventType } from '../../shared/operator-events'
 import { isOperatorEventType } from '../../shared/operator-events'
+import { operatorEventToActivity } from '../dashboard/activity'
+import { emitDashboardActivities, emitDashboardActivity } from '../dashboard/broadcast'
 import {
   exportOperatorEventsForTraining,
   insertOperatorEvents,
@@ -43,6 +45,12 @@ export function recordOperatorEvents(events: unknown[]): { ok: true; inserted: n
     return { ok: false, error: 'no valid events' }
   }
   const inserted = insertOperatorEvents(valid)
+  if (inserted > 0) {
+    const { processOperatorEventsForEpisodes } =
+      require('../intention/service') as typeof import('../intention/service')
+    processOperatorEventsForEpisodes(valid.slice(-inserted))
+    emitDashboardActivities(valid.slice(-inserted).map(operatorEventToActivity))
+  }
   void queueSupabaseOperatorSync(valid)
   return { ok: true, inserted }
 }
@@ -84,6 +92,10 @@ export function emitServerEvent(
     payload
   }
   insertOperatorEvents([event])
+  const { processOperatorEventsForEpisodes } =
+    require('../intention/service') as typeof import('../intention/service')
+  processOperatorEventsForEpisodes([event])
+  emitDashboardActivity(operatorEventToActivity(event))
   queueSupabaseOperatorSync([event])
   return event
 }

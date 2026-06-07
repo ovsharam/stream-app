@@ -13,6 +13,7 @@ export const COMPOSE_PROVIDERS = [
   'gemini',
   'gdocs',
   'gong',
+  'obsidian',
   'mind',
   'calcom'
 ] as const
@@ -47,6 +48,9 @@ const PROVIDER_ALIASES: Record<string, ComposeProvider> = {
   gdocs: 'gdocs',
   docs: 'gdocs',
   gong: 'gong',
+  obsidian: 'obsidian',
+  obs: 'obsidian',
+  vault: 'obsidian',
   mind: 'mind',
   kb: 'mind',
   think: 'mind',
@@ -131,6 +135,17 @@ export function parseComposeCommand(raw: string): ComposeCommand | null {
     }
   }
 
+  const obsidianPathAppend = rest.match(/^(.+\.md)\s+append\s*:\s*(.+)$/is)
+  if (provider === 'obsidian' && obsidianPathAppend) {
+    return {
+      provider,
+      target: obsidianPathAppend[1].trim(),
+      intent: 'append',
+      body: obsidianPathAppend[2].trim(),
+      raw: text
+    }
+  }
+
   const gdocsAppend = rest.match(/^#([\w-]+)\s+append\s*:\s*(.+)$/is)
   if (provider === 'gdocs' && gdocsAppend) {
     return {
@@ -185,7 +200,9 @@ export function parseComposeCommand(raw: string): ComposeCommand | null {
             ? 'create'
             : provider === 'gong'
               ? 'note'
-              : provider === 'mind'
+              : provider === 'obsidian'
+                ? 'append'
+                : provider === 'mind'
                 ? 'capture'
                 : provider === 'perplexity' ||
                   provider === 'claude' ||
@@ -252,6 +269,7 @@ const COMPOSE_MENTION_META: Record<
   github: { label: 'GitHub', kind: 'app', hint: 'Issues & PRs' },
   gemini: { label: 'Gemini', kind: 'agent', hint: 'Google AI' },
   gdocs: { label: 'Google Docs', kind: 'app', hint: 'Documents' },
+  obsidian: { label: 'Obsidian', kind: 'app', hint: 'Vault notes' },
   gong: { label: 'Gong', kind: 'app', hint: 'Call notes' },
   mind: { label: 'Mind', kind: 'agent', hint: 'Personal KB' },
   calcom: { label: 'Cal.com', kind: 'app', hint: 'Scheduling' }
@@ -265,6 +283,7 @@ export function listComposeMentionTargets(
   const out: ComposeMentionTarget[] = []
   for (const provider of COMPOSE_PROVIDERS) {
     const meta = COMPOSE_MENTION_META[provider]
+    if (!meta) continue
     seen.add(provider)
     out.push({
       token: provider,
@@ -276,6 +295,7 @@ export function listComposeMentionTargets(
   for (const [alias, provider] of Object.entries(PROVIDER_ALIASES)) {
     if (alias === provider || seen.has(alias)) continue
     const meta = COMPOSE_MENTION_META[provider]
+    if (!meta) continue
     out.push({
       token: alias,
       label: meta.label,
@@ -393,6 +413,7 @@ export const COMPOSE_SUGGESTIONS: Partial<Record<ComposeProvider, ComposeSuggest
     { label: 'create:', insert: 'create: ', hint: 'New doc' },
     { label: '#ID append:', insert: '#DOC_ID append: ', hint: 'Append to doc' }
   ],
+  obsidian: [{ label: 'append:', insert: 'append: ', hint: 'Append to vault note' }],
   gong: [{ label: '#ID note:', insert: '#CALL_ID note: ', hint: 'Call note' }],
   mind: [{ label: 'capture', insert: '', hint: 'Freeform KB note' }],
   calcom: [{ label: 'book', insert: 'book @name for July 10 2:30pm PST', hint: '@cal book @martin @apoorva …' }]
@@ -517,6 +538,13 @@ export const COMPOSE_HELP: { provider: ComposeProvider; examples: string[] }[] =
     examples: ['@github org/repo: Fix webhook retries / root cause…', '@github #42 comment: patch shipped']
   },
   { provider: 'gdocs', examples: ['@gdocs create: Q2 pilot notes / Agenda and owners…', '@gdocs #DOC_ID append: Action items from call'] },
+  {
+    provider: 'obsidian',
+    examples: [
+      '@obsidian append: Standup — blocked on webhook retries',
+      '@obsidian Work/inbox.md append: Follow up with Jane on pilot timeline'
+    ]
+  },
   { provider: 'gong', examples: ['@gong #CALL_ID note: Customer wants EU residency confirmed'] },
   {
     provider: 'mind',

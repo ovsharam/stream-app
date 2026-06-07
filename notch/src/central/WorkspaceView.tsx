@@ -17,10 +17,11 @@ type Props = {
   tab: WorkspaceTab
   active: boolean
   reloadNonce?: number
+  miniPlayerTarget?: boolean
   onUrlChange?: (url: string) => void
 }
 
-export function WorkspaceView({ tab, active, reloadNonce = 0, onUrlChange }: Props) {
+export function WorkspaceView({ tab, active, reloadNonce = 0, miniPlayerTarget = false, onUrlChange }: Props) {
   const partition = workspacePartitionForTab(tab)
   const embedBrowseKind = embedBrowseKindForTab(tab)
   const [embedAuthState, setEmbedAuthState] = useState<EmbedBrowseAuthState | 'checking'>(() =>
@@ -85,7 +86,11 @@ export function WorkspaceView({ tab, active, reloadNonce = 0, onUrlChange }: Pro
     linkedInTab && isLinkedInNavigationNoise(tab.url) ? LINKEDIN_FEED_URL : tab.url
 
   return (
-    <section className={`x-workspace${active ? ' x-workspace-active' : ''}`} aria-hidden={!active}>
+    <section
+      className={`x-workspace${active ? ' x-workspace-active' : ''}${miniPlayerTarget ? ' x-workspace-mini-target' : ''}`}
+      aria-hidden={!active && !miniPlayerTarget}
+      data-workspace-tab-id={tab.id}
+    >
       {showSignInGate ? (
         <div className="x-workspace-signin-gate">
           {embedAuthState === 'checking' ? (
@@ -116,6 +121,7 @@ export function WorkspaceView({ tab, active, reloadNonce = 0, onUrlChange }: Pro
         className={`x-workspace-webview${showSignInGate ? ' x-workspace-webview-gated' : ''}`}
         src={webviewSrc}
         partition={partition}
+        dataTabId={tab.id}
         embedBrowseKind={embedBrowseKind}
         reloadNonce={reloadNonce}
         onEmbedAuthState={onEmbedAuthState}

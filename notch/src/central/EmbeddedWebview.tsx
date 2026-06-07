@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useWebviewPopups } from './useWebviewPopups'
+import { useWebviewResizeSync } from './useWebviewResizeSync'
 import { useEmbedBrowseSignIn, type EmbedBrowseAuthState } from './useEmbedBrowseSignIn'
 import {
   ingestFromHits,
@@ -14,6 +15,7 @@ type Props = {
   className?: string
   src: string
   partition: string
+  dataTabId?: string
   embedBrowseKind?: EmbedBrowseKind | null
   reloadNonce?: number
   onEmbedAuthState?: (state: EmbedBrowseAuthState) => void
@@ -36,6 +38,7 @@ export function EmbeddedWebview({
   className,
   src,
   partition,
+  dataTabId,
   embedBrowseKind,
   reloadNonce = 0,
   onEmbedAuthState,
@@ -62,6 +65,7 @@ export function EmbeddedWebview({
   const linkedInSeenRef = useRef<Set<string>>(new Set())
 
   useWebviewPopups(webviewEl)
+  useWebviewResizeSync(webviewEl, Boolean(webviewEl && domReady))
   useEmbedBrowseSignIn(webviewEl, {
     enabled: Boolean(webviewEl && domReady && embedBrowseKind),
     kind: embedBrowseKind ?? null,
@@ -185,6 +189,11 @@ export function EmbeddedWebview({
       webview.removeEventListener('did-navigate-in-page', sync)
     }
   }, [webviewEl, onLocationChange])
+
+  useEffect(() => {
+    if (!webviewEl || !dataTabId) return
+    webviewEl.setAttribute('data-workspace-tab-id', dataTabId)
+  }, [webviewEl, dataTabId])
 
   return (
     <webview

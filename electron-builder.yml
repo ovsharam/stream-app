@@ -1,0 +1,41 @@
+appId: com.appliedscope.notch
+productName: Notch
+copyright: Copyright © Applied Scope
+
+directories:
+  output: release/dist
+  buildResources: build
+
+files:
+  - notch/dist-electron/**/*
+  - notch/dist-renderer/**/*
+  - package.json
+
+extraResources:
+  - from: release/server
+    to: server
+    filter:
+      - "**/*"
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+  darkModeSupport: true
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+
+dmg:
+  title: Notch
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+publish: null

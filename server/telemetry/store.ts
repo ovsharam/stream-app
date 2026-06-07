@@ -136,3 +136,17 @@ export function exportOperatorEventsForTraining(): OperatorEvent[] {
     .all() as StoredRow[]
   return rows.map(rowToEvent)
 }
+
+export function countOperatorEvents(): number {
+  const row = getDb().prepare('SELECT COUNT(*) AS n FROM operator_events').get() as { n: number }
+  return Number(row?.n ?? 0)
+}
+
+export function countOperatorEventsByType(): Record<string, number> {
+  const rows = getDb()
+    .prepare('SELECT type, COUNT(*) AS n FROM operator_events GROUP BY type ORDER BY n DESC')
+    .all() as { type: string; n: number }[]
+  const out: Record<string, number> = {}
+  for (const row of rows) out[row.type] = Number(row.n)
+  return out
+}

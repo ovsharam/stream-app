@@ -7,10 +7,11 @@ import { trackOperatorEvent } from '../lib/operatorTelemetry'
 import { feedEventBrowseUrl } from './workspace'
 import { getFeedVote, setFeedVote } from './feedFeedbackStore'
 import { AgentProposalFeedCard } from './AgentProposalFeedCard'
-import { IconGmail, IconMonday, IconReply, IconRepost, IconShare, IconViews } from './Icons'
+import { IconGmail, IconLinkedin, IconMonday, IconReply, IconRepost, IconShare, IconViews } from './Icons'
 
 const AVATAR: Record<string, { bg: string; color: string; label: string }> = {
   notch: { bg: '#181715', color: '#cc785c', label: 'N' },
+  linkedin: { bg: '#0a66c2', color: '#fff', label: 'in' },
   meet: { bg: '#00897b', color: '#fff', label: '▶' },
   meeting: { bg: '#00897b', color: '#fff', label: '✦' },
   slack: { bg: '#611f69', color: '#fff', label: 'S' },
@@ -71,6 +72,13 @@ function FeedAvatar({ source }: { source: string }) {
       </div>
     )
   }
+  if (source === 'linkedin') {
+    return (
+      <div className="x-avatar x-avatar-linkedin" aria-hidden>
+        <IconLinkedin className="x-avatar-brand-icon" />
+      </div>
+    )
+  }
   const av = AVATAR[source] ?? AVATAR.insight
   return (
     <div className="x-avatar" style={{ background: av.bg, color: av.color }}>
@@ -80,10 +88,36 @@ function FeedAvatar({ source }: { source: string }) {
 }
 
 function timeAgo(ts: number): string {
-  const m = Math.floor((Date.now() - ts) / 60000)
+  const diffMs = Date.now() - ts
+  if (diffMs < 0) {
+    const futureMin = Math.ceil(-diffMs / 60_000)
+    if (futureMin < 60) return `in ${futureMin}m`
+    const futureHours = Math.ceil(-diffMs / 3_600_000)
+    if (futureHours < 48) return `in ${futureHours}h`
+    const futureDays = Math.ceil(-diffMs / 86_400_000)
+    return `in ${futureDays}d`
+  }
+  const m = Math.floor(diffMs / 60_000)
   if (m < 1) return 'now'
   if (m < 60) return `${m}m`
-  return `${Math.floor(m / 60)}h`
+  const h = Math.floor(m / 60)
+  if (h < 48) return `${h}h`
+  const d = Math.floor(h / 24)
+  return `${d}d`
+}
+
+function feedTimeLabel(event: CentralStreamEvent, ts: number): string {
+  const source = metaStr(event.meta, 'source') ?? event.source
+  if (source === 'calcom') {
+    const startRaw = metaStr(event.meta, 'startTime')
+    if (startRaw) {
+      const startMs = new Date(startRaw).getTime()
+      if (!Number.isNaN(startMs) && startMs > Date.now() + 60_000) {
+        return timeAgo(startMs)
+      }
+    }
+  }
+  return timeAgo(ts)
 }
 
 
@@ -313,6 +347,11 @@ function SourceCardBody({ event }: { event: CentralStreamEvent }) {
       return <GdocsCard event={event} />
     case 'x':
       return <XCard event={event} />
+    case 'linkedin':
+      if (parseAgentBriefMeta(event.meta)) {
+        return event.body ? <p className="x-post-body x-post-linkedin-msg">&ldquo;{event.body}&rdquo;</p> : null
+      }
+      return <GenericCard event={event} />
     case 'notch':
       if (event.kind === 'transcript_live' || event.kind === 'transcript_done') {
         return <MeetingCard event={event} />
@@ -532,18 +571,21 @@ export function FeedPost({
   const isMondayThread = event.source === 'monday' && event.meta?.grouped === 'true'
   const isGmailThread = event.source === 'gmail'
   const isThreadable = isMondayThread || isGmailThread
+  const isAgentLinkedIn = Boolean(parseAgentBriefMeta(event.meta))
   const handle =
     isMondayThread
       ? 'Monday'
-      : event.source === 'notch'
-        ? 'Notch AI'
-        : event.source === 'meet'
-          ? 'Google Meet'
-          : event.source === 'gmail'
-            ? metaStr(event.meta, 'sender') ?? 'Gmail'
-            : event.source === 'x' && metaStr(event.meta, 'sender')
-              ? metaStr(event.meta, 'sender')!
-              : metaStr(event.meta, 'sender') ?? event.source.charAt(0).toUpperCase() + event.source.slice(1)
+      : event.source === 'linkedin'
+        ? metaStr(event.meta, 'senderName') || event.title.trim() || 'LinkedIn'
+        : event.source === 'notch'
+          ? 'Notch AI'
+          : event.source === 'meet'
+            ? 'Google Meet'
+            : event.source === 'gmail'
+              ? metaStr(event.meta, 'sender') ?? 'Gmail'
+              : event.source === 'x' && metaStr(event.meta, 'sender')
+                ? metaStr(event.meta, 'sender')!
+                : metaStr(event.meta, 'sender') ?? event.source.charAt(0).toUpperCase() + event.source.slice(1)
   const threadCount = Number(event.meta?.threadCount ?? '0')
   const threadItemId = streamItemId(event)
   const threadDay = event.meta?.day ? String(event.meta.day) : undefined
@@ -595,8 +637,9 @@ export function FeedPost({
 
   const hideTitle =
     event.kind === 'transcript_live' ||
-    ['gmail', 'github', 'gdocs', 'x', 'slack', 'discord', 'meeting'].includes(event.source) ||
-    isMondayThread
+    ['gmail', 'github', 'gdocs', 'x', 'slack', 'discord', 'meeting', 'linkedin'].includes(event.source) ||
+    isMondayThread ||
+    isAgentLinkedIn
   const hasBrowseTarget = Boolean(feedEventBrowseUrl(event))
 
   const inlineActions: { label: string; onClick: (e: MouseEvent) => void }[] = []
@@ -635,8 +678,14 @@ export function FeedPost({
       <div className="x-post-content">
         <div className="x-post-head">
           <span className="x-name">{handle}</span>
+          {event.source === 'linkedin' ? (
+            <>
+              <span className="x-dot">·</span>
+              <span className="x-post-channel">LinkedIn</span>
+            </>
+          ) : null}
           <span className="x-dot">·</span>
-          <span className="x-time">{timeAgo(parentTs)}</span>
+          <span className="x-time">{feedTimeLabel(event, parentTs)}</span>
           {isMondayThread && threadCount > 0 ? (
             <>
               <span className="x-dot">·</span>

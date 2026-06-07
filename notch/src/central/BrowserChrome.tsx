@@ -6,6 +6,10 @@ type Props = {
   onNavigate: (url: string) => void
   onReload: () => void
   onExternal: () => void
+  canGoBack?: boolean
+  canGoForward?: boolean
+  onBack?: () => void
+  onForward?: () => void
   railCollapsed?: boolean
   onToggleRail?: () => void
   /** Pinned app or home browser — label rail toggle as Stream panel. */
@@ -17,6 +21,10 @@ export function BrowserChrome({
   onNavigate,
   onReload,
   onExternal,
+  canGoBack = false,
+  canGoForward = false,
+  onBack,
+  onForward,
   railCollapsed,
   onToggleRail,
   workspaceMode = false
@@ -35,6 +43,26 @@ export function BrowserChrome({
 
   return (
     <header className="x-browser-chrome">
+      <button
+        type="button"
+        className="x-browser-chrome-btn"
+        title="Back"
+        aria-label="Back"
+        disabled={!canGoBack}
+        onClick={onBack}
+      >
+        ←
+      </button>
+      <button
+        type="button"
+        className="x-browser-chrome-btn"
+        title="Forward"
+        aria-label="Forward"
+        disabled={!canGoForward}
+        onClick={onForward}
+      >
+        →
+      </button>
       <button type="button" className="x-browser-chrome-btn" title="Reload" aria-label="Reload" onClick={onReload}>
         ↻
       </button>

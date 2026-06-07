@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { GmailAccount, GoogleCalendarOption, MondayAccount } from '@shared/cluster'
-import { clusterApi, contactsApi, integrationApi, type IntegrationConnections } from '../lib/api'
+import { clusterApi, contactsApi, captureApi, integrationApi, type IntegrationConnections } from '../lib/api'
 import { IconGmail, IconMonday, IconYoutube, IconLinkedin } from './Icons'
 import { McpAgentsSection } from './McpAgentsSection'
 import { isNavAppDesktop, isNavAppPinned, pinnableEntryById, pinnableEntryForIntegration, type NavApp } from './navAppsStore'
@@ -22,13 +22,19 @@ type IntegrationId =
   | 'cursor'
   | 'github'
   | 'gdocs'
+  | 'obsidian'
   | 'gong'
+
+type IntegrationCategory = 'desktop' | 'productivity' | 'communication' | 'ai' | 'sales'
+
+type MarketCategoryFilter = 'all' | 'connected' | IntegrationCategory
 
 type IntegrationDef = {
   id: IntegrationId
   name: string
   tagline: string
   feeds: string
+  category: IntegrationCategory
   brandClass: string
   icon: ReactNode
   compose?: string
@@ -40,6 +46,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'YouTube',
     tagline: 'In-app tab · sidebar pin',
     feeds: 'Sidebar',
+    category: 'desktop',
     brandClass: 'x-int-card-youtube',
     icon: <IconYoutube className="x-int-brand-icon" />
   },
@@ -48,6 +55,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'LinkedIn',
     tagline: 'In-app tab · sidebar pin',
     feeds: 'Sidebar',
+    category: 'desktop',
     brandClass: 'x-int-card-linkedin',
     icon: <IconLinkedin className="x-int-brand-icon" />
   },
@@ -56,6 +64,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'Gmail',
     tagline: 'Inbox threads + Google Calendar',
     feeds: 'Feed · Calendar rail',
+    category: 'productivity',
     brandClass: 'x-int-card-gmail',
     icon: <IconGmail className="x-int-brand-icon" />
   },
@@ -64,6 +73,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'Slack',
     tagline: 'Workspace channels in your feed',
     feeds: 'Feed',
+    category: 'communication',
     brandClass: 'x-int-card-slack',
     icon: <span className="x-int-brand-letter">S</span>
   },
@@ -72,6 +82,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'Cal.com',
     tagline: 'Scheduling — upcoming & past bookings',
     feeds: 'Feed',
+    category: 'productivity',
     brandClass: 'x-int-card-calcom',
     icon: <span className="x-int-brand-letter">Cal</span>
   },
@@ -80,6 +91,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'Monday.com',
     tagline: 'Board updates and item threads',
     feeds: 'Feed',
+    category: 'productivity',
     brandClass: 'x-int-card-monday',
     icon: <IconMonday className="x-int-brand-icon" />
   },
@@ -88,6 +100,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'MCP Agents',
     tagline: 'Register your agency MCP servers for custom compose dispatch',
     feeds: 'Compose',
+    category: 'ai',
     brandClass: 'x-int-card-agents',
     icon: <span className="x-int-brand-letter">MCP</span>,
     compose: '@alias ask: … (when executor wired)'
@@ -97,6 +110,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'GitHub',
     tagline: 'Issues in feed, create & comment',
     feeds: 'Feed',
+    category: 'productivity',
     brandClass: 'x-int-card-github',
     icon: <span className="x-int-brand-letter">GH</span>,
     compose: '@github org/repo: title / body'
@@ -106,15 +120,27 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'Google Docs',
     tagline: 'Recent docs via Gmail OAuth',
     feeds: 'Feed',
+    category: 'productivity',
     brandClass: 'x-int-card-gdocs',
     icon: <span className="x-int-brand-letter">Gd</span>,
     compose: '@gdocs create: title / body'
+  },
+  {
+    id: 'obsidian',
+    name: 'Obsidian',
+    tagline: 'Append markdown to your vault',
+    feeds: 'Notes · Compose',
+    category: 'productivity',
+    brandClass: 'x-int-card-obsidian',
+    icon: <span className="x-int-brand-letter">Ob</span>,
+    compose: '@obsidian append: note text'
   },
   {
     id: 'gong',
     name: 'Gong',
     tagline: 'Call recordings & notes',
     feeds: 'Feed',
+    category: 'sales',
     brandClass: 'x-int-card-gong',
     icon: <span className="x-int-brand-letter">Go</span>,
     compose: '@gong #CALL_ID note: …'
@@ -124,6 +150,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'Claude',
     tagline: 'Sign in with Claude Pro — sync chats',
     feeds: 'Feed · Compose',
+    category: 'ai',
     brandClass: 'x-int-card-claude',
     icon: <span className="x-int-brand-letter">C</span>,
     compose: '@claude ask: …'
@@ -133,6 +160,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'Gemini',
     tagline: 'Google AI ask & summarize',
     feeds: 'Feed · Compose',
+    category: 'ai',
     brandClass: 'x-int-card-gemini',
     icon: <span className="x-int-brand-letter">G</span>,
     compose: '@gemini ask: …'
@@ -142,6 +170,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'Cursor',
     tagline: 'Agent prompts & cloud runs',
     feeds: 'Feed · Compose',
+    category: 'ai',
     brandClass: 'x-int-card-cursor',
     icon: <span className="x-int-brand-letter">Cu</span>,
     compose: '@cursor ask: …'
@@ -151,6 +180,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'Perplexity',
     tagline: 'Sign in · news in calendar rail',
     feeds: 'Feed · Calendar rail · Compose',
+    category: 'ai',
     brandClass: 'x-int-card-perplexity',
     icon: <span className="x-int-brand-letter">P</span>,
     compose: '@perplexity ask: …'
@@ -160,6 +190,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'X',
     tagline: 'Timeline posts via bearer token',
     feeds: 'Feed',
+    category: 'communication',
     brandClass: 'x-int-card-x',
     icon: <span className="x-int-brand-letter">𝕏</span>
   },
@@ -168,18 +199,38 @@ const INTEGRATIONS: IntegrationDef[] = [
     name: 'Discord',
     tagline: 'Channel messages via bot token',
     feeds: 'Feed',
+    category: 'communication',
     brandClass: 'x-int-card-discord',
     icon: <span className="x-int-brand-letter">D</span>
   }
 ]
 
-function StatusBadge({ connected }: { connected: boolean }) {
-  return (
-    <span className={`x-int-status ${connected ? 'x-int-status-on' : 'x-int-status-off'}`}>
-      {connected ? 'Connected' : 'Not connected'}
-    </span>
-  )
+const MARKET_CATEGORIES: { id: MarketCategoryFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'connected', label: 'Your apps' },
+  { id: 'productivity', label: 'Productivity' },
+  { id: 'communication', label: 'Communication' },
+  { id: 'ai', label: 'AI & Agents' },
+  { id: 'desktop', label: 'Desktop' },
+  { id: 'sales', label: 'Sales' }
+]
+
+const MARKET_CATEGORY_ORDER: IntegrationCategory[] = [
+  'productivity',
+  'communication',
+  'ai',
+  'desktop',
+  'sales'
+]
+
+const MARKET_CATEGORY_LABELS: Record<IntegrationCategory, string> = {
+  productivity: 'Productivity',
+  communication: 'Communication',
+  ai: 'AI & Agents',
+  desktop: 'Desktop tabs',
+  sales: 'Sales & calls'
 }
+
 
 function openOAuthUrl(url: string, statusMessage: string, setStatus: (s: string) => void) {
   if (window.notchDesktop?.openExternal) {
@@ -192,11 +243,11 @@ function openOAuthUrl(url: string, statusMessage: string, setStatus: (s: string)
 
 function PinIcon({ filled }: { filled?: boolean }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} aria-hidden>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} aria-hidden>
       <path
-        d="M16 3v2h2v13a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5h2V3h8zM9 5v11h6V5H9z"
+        d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"
         stroke="currentColor"
-        strokeWidth="1.5"
+        strokeWidth="1.6"
         strokeLinejoin="round"
       />
     </svg>
@@ -223,16 +274,20 @@ export function IntegrationsPanel({
   navApps,
   onOpenNavApp,
   onPinNavApp,
-  onUnpinNavApp
+  onUnpinNavApp,
+  onOpenNotes
 }: {
   navApps: NavApp[]
   onOpenNavApp?: (id: string) => void
   onPinNavApp?: (id: string) => void
   onUnpinNavApp?: (id: string) => void
+  onOpenNotes?: () => void
 }) {
   const desktop = isNavAppDesktop()
   const [connections, setConnections] = useState<IntegrationConnections | null>(null)
-  const [selected, setSelected] = useState<IntegrationId>('gmail')
+  const [selected, setSelected] = useState<IntegrationId | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState<MarketCategoryFilter>('all')
   const [status, setStatus] = useState('')
   const [xToken, setXToken] = useState('')
   const [mondayToken, setMondayToken] = useState('')
@@ -272,6 +327,10 @@ export function IntegrationsPanel({
   const [contactsSyncedAt, setContactsSyncedAt] = useState<number | null>(null)
   const [contactsError, setContactsError] = useState<string | null>(null)
   const [contactsSyncing, setContactsSyncing] = useState(false)
+  const [obsidianVault, setObsidianVault] = useState('')
+  const [obsidianNotePath, setObsidianNotePath] = useState('Daily Notes/{{date}}.md')
+  const [obsidianProfileId, setObsidianProfileId] = useState('personal')
+  const [obsidianSaving, setObsidianSaving] = useState(false)
 
   const loadMcpAgents = useCallback(async () => {
     try {
@@ -377,6 +436,15 @@ export function IntegrationsPanel({
   }, [selected, loadMcpAgents])
 
   useEffect(() => {
+    if (!selected) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelected(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selected])
+
+  useEffect(() => {
     if (selected !== 'claude') return
     void integrationApi
       .claudeAuthUrl()
@@ -386,6 +454,35 @@ export function IntegrationsPanel({
       void integrationApi.refreshClaudeApiKey().catch(() => {})
     }
   }, [selected, connections?.connected.claude])
+
+  useEffect(() => {
+    if (selected !== 'obsidian') return
+    void captureApi
+      .state()
+      .then((state) => {
+        const profile =
+          state.profiles.find((p) => p.id === state.activeProfileId) ?? state.profiles[0]
+        if (!profile) return
+        setObsidianProfileId(profile.id)
+        setObsidianVault(profile.obsidianVaultPath ?? '')
+        setObsidianNotePath(profile.obsidianNotePath ?? 'Daily Notes/{{date}}.md')
+      })
+      .catch(() => undefined)
+  }, [selected])
+
+  useEffect(() => {
+    void captureApi
+      .state()
+      .then((state) => {
+        const profile =
+          state.profiles.find((p) => p.id === state.activeProfileId) ?? state.profiles[0]
+        if (!profile) return
+        setObsidianProfileId(profile.id)
+        setObsidianVault(profile.obsidianVaultPath ?? '')
+        setObsidianNotePath(profile.obsidianNotePath ?? 'Daily Notes/{{date}}.md')
+      })
+      .catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     if (connections?.connected.gmail) {
@@ -427,6 +524,48 @@ export function IntegrationsPanel({
 
   const gmailRateLimited =
     connections?.syncErrors?.gmail?.toLowerCase().includes('rate limit') ?? false
+
+  const isIntegrationConnected = useCallback(
+    (id: IntegrationId): boolean => {
+      if (id === 'youtube' || id === 'linkedin') return false
+      if (id === 'agents') return mcpAgentCount > 0
+      return connections?.connected[id] ?? false
+    },
+    [connections, mcpAgentCount]
+  )
+
+  const filteredIntegrations = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    return INTEGRATIONS.filter((item) => {
+      if (categoryFilter === 'connected') {
+        if (!isIntegrationConnected(item.id)) return false
+      } else if (categoryFilter !== 'all' && item.category !== categoryFilter) {
+        return false
+      }
+      if (!q) return true
+      return (
+        item.name.toLowerCase().includes(q) ||
+        item.tagline.toLowerCase().includes(q)
+      )
+    })
+  }, [searchQuery, categoryFilter, isIntegrationConnected])
+
+  const connectedApps = useMemo(
+    () => INTEGRATIONS.filter((item) => isIntegrationConnected(item.id)),
+    [isIntegrationConnected]
+  )
+
+  const showGroupedCatalog =
+    categoryFilter === 'all' && !searchQuery.trim() && filteredIntegrations.length > 0
+
+  const groupedCatalog = useMemo(() => {
+    if (!showGroupedCatalog) return null
+    return MARKET_CATEGORY_ORDER.map((category) => ({
+      category,
+      label: MARKET_CATEGORY_LABELS[category],
+      items: filteredIntegrations.filter((item) => item.category === category)
+    })).filter((group) => group.items.length > 0)
+  }, [showGroupedCatalog, filteredIntegrations])
 
   const syncContacts = useCallback(async () => {
     if (gmailRateLimited) {
@@ -574,34 +713,6 @@ export function IntegrationsPanel({
       setStatus(`Calendar update failed: ${String(err)}`)
       await loadCalendars()
     }
-  }
-
-  const cardMeta = (id: IntegrationId): string => {
-    if (!connections) return 'Loading…'
-    if (id === 'gmail' && connections.connected.gmail) {
-      const feedCount = gmailAccounts.filter((a) => a.feedEnabled).length
-      const calCount = gmailAccounts.filter((a) => a.calendarEnabled).length
-      return `${gmailAccounts.length} account${gmailAccounts.length === 1 ? '' : 's'} · ${feedCount} in feed · ${calCount} calendar`
-    }
-    if (id === 'youtube' || id === 'linkedin') return 'Always available'
-    if (id === 'slack' && connections.connected.slack) {
-      return 'Workspace connected'
-    }
-    if (id === 'calcom' && connections.connected.calcom) {
-      return 'Bookings sync to feed'
-    }
-    if (id === 'monday' && connections.connected.monday) {
-      if (mondayAccount?.email) return mondayAccount.email
-      if (mondayAccount?.name) return mondayAccount.name
-      return 'Connected · active in stream'
-    }
-    if (id === 'agents') {
-      return mcpAgentCount > 0
-        ? `${mcpAgentCount} agent${mcpAgentCount === 1 ? '' : 's'} registered`
-        : 'Register stdio or HTTP MCP servers'
-    }
-    if (connections.connected[id]) return 'Active in stream'
-    return 'Tap to connect'
   }
 
   const renderDetail = () => {
@@ -1289,6 +1400,83 @@ export function IntegrationsPanel({
                 in GCP project {connections.googleApiEnable?.gdocsDrive?.match(/project=(\d+)/)?.[1] ?? 'from your OAuth client'}.
               </p>
             ) : null}
+          </div>
+        </div>
+      )
+    }
+
+    if (selected === 'obsidian') {
+      return (
+        <div className="x-int-detail">
+          <div className="x-int-detail-head">
+            <div>
+              <h3>Obsidian</h3>
+              <p>
+                Append markdown to your local vault — no OAuth. Notch writes files directly (same as
+                the Notes page).
+              </p>
+            </div>
+            {onOpenNotes ? (
+              <button type="button" className="x-int-btn x-int-btn-ghost" onClick={onOpenNotes}>
+                Open Notes
+              </button>
+            ) : null}
+          </div>
+          <div className="x-int-block x-int-block-first">
+            <p className="x-int-muted">
+              Compose: <code>@obsidian append: standup notes</code> or{' '}
+              <code>@obsidian Work/inbox.md append: follow-up</code>
+            </p>
+            <h4>Vault (active profile)</h4>
+            <div className="x-int-token-stack">
+              <input
+                className="x-int-input"
+                value={obsidianVault}
+                onChange={(e) => setObsidianVault(e.target.value)}
+                placeholder="/Users/you/Obsidian/Personal"
+                autoComplete="off"
+              />
+              <input
+                className="x-int-input"
+                value={obsidianNotePath}
+                onChange={(e) => setObsidianNotePath(e.target.value)}
+                placeholder="Daily Notes/{{date}}.md"
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                className="x-int-btn x-int-btn-wide"
+                disabled={obsidianSaving || !obsidianVault.trim() || !obsidianNotePath.trim()}
+                onClick={async () => {
+                  setObsidianSaving(true)
+                  try {
+                    const state = await captureApi.state()
+                    const profiles = state.profiles.map((p) =>
+                      p.id === obsidianProfileId
+                        ? {
+                            ...p,
+                            obsidianVaultPath: obsidianVault.trim(),
+                            obsidianNotePath: obsidianNotePath.trim()
+                          }
+                        : p
+                    )
+                    await captureApi.saveState({ profiles, activeProfileId: state.activeProfileId })
+                    setStatus('Obsidian vault saved.')
+                    await refreshConnections()
+                  } catch (err) {
+                    setStatus(`Obsidian save failed: ${String(err)}`)
+                  } finally {
+                    setObsidianSaving(false)
+                  }
+                }}
+              >
+                {connections?.connected.obsidian ? 'Update vault' : 'Connect vault'}
+              </button>
+            </div>
+            <p className="x-int-muted">
+              Use <code>{'{{date}}'}</code> in the note path for daily notes. Personal vs business
+              profiles are configured on the Notes page.
+            </p>
           </div>
         </div>
       )
@@ -2003,89 +2191,177 @@ export function IntegrationsPanel({
     return null
   }
 
+  const renderAppTile = (item: IntegrationDef) => {
+    const connected = isIntegrationConnected(item.id)
+    const isDesktopTab = item.id === 'youtube' || item.id === 'linkedin'
+    const pinnable = pinnableForItem(item.id)
+    const showPin = canPinItem(item.id, connected || isDesktopTab, desktop)
+    const pinned = pinnable ? isNavAppPinned(pinnable.id, navApps) : false
+    const statusLabel = isDesktopTab
+      ? pinned
+        ? 'Pinned to sidebar'
+        : 'Available'
+      : connected
+        ? 'Connected'
+        : 'Not connected'
+
+    return (
+      <div key={item.id} className="x-market-tile-wrap">
+        {showPin ? (
+          <button
+            type="button"
+            className={`x-market-tile-pin${pinned ? ' x-market-tile-pin-active' : ''}`}
+            title={pinned ? 'Unpin from sidebar' : 'Pin to sidebar'}
+            aria-label={pinned ? `Unpin ${item.name}` : `Pin ${item.name} to sidebar`}
+            aria-pressed={pinned}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (!pinnable) return
+              if (pinned) onUnpinNavApp?.(pinnable.id)
+              else onPinNavApp?.(pinnable.id)
+            }}
+          >
+            <PinIcon filled={pinned} />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className={`x-market-tile ${item.brandClass}${connected || pinned ? ' x-market-tile-active' : ''}`}
+          onClick={() => setSelected(item.id)}
+        >
+          <div className="x-market-tile-icon-wrap">
+            <div className={`x-market-tile-icon ${item.brandClass}`}>{item.icon}</div>
+            {connected || pinned ? (
+              <span className="x-market-tile-dot" aria-hidden />
+            ) : null}
+          </div>
+          <strong className="x-market-tile-name">{item.name}</strong>
+          <p className="x-market-tile-tagline">{item.tagline}</p>
+          <span className="x-market-tile-status">{statusLabel}</span>
+        </button>
+      </div>
+    )
+  }
+
+  const selectedItem = selected ? INTEGRATIONS.find((i) => i.id === selected) : null
+
   return (
     <div className="x-int-page">
-      <header className="x-int-header">
-        <div>
+      <header className="x-int-header x-market-header">
+        <div className="x-market-header-copy">
           <h1>Apps</h1>
-          <p>{connectedCount} of {feedIntegrationTotal} integrations connected</p>
+          <p className="x-market-header-meta">
+            {connections ? (
+              <>
+                {connectedCount} of {feedIntegrationTotal} connected
+                {connectedApps.length > 0 ? (
+                  <>
+                    {' · '}
+                    <button
+                      type="button"
+                      className="x-market-header-link"
+                      onClick={() => setCategoryFilter('connected')}
+                    >
+                      View your apps
+                    </button>
+                  </>
+                ) : null}
+              </>
+            ) : (
+              'Loading integrations…'
+            )}
+          </p>
         </div>
-        <button type="button" className="x-int-btn" onClick={() => void syncAll()}>
+        <button type="button" className="x-int-btn x-market-sync-btn" onClick={() => void syncAll()}>
           Sync all
         </button>
       </header>
 
       <div className="x-int-body">
-        <div className="x-int-feed-layout">
-          <div className="x-int-feed-col">
-            <div className="x-int-section-head x-int-section-head-col">
-              <h2>Apps</h2>
-              <p>Connect integrations · tap the pin on any app to add it to the sidebar.</p>
-            </div>
-            <div className="x-int-grid">
-          {INTEGRATIONS.map((item) => {
-            const connected =
-              item.id === 'youtube' || item.id === 'linkedin'
-                ? true
-                : item.id === 'agents'
-                  ? mcpAgentCount > 0
-                  : (connections?.connected[item.id] ?? false)
-            const isSelected = selected === item.id
-            const pinnable = pinnableForItem(item.id)
-            const showPin = canPinItem(item.id, connected, desktop)
-            const pinned = pinnable ? isNavAppPinned(pinnable.id, navApps) : false
-            return (
-              <div
-                key={item.id}
-                className={`x-int-card-wrap ${isSelected ? 'x-int-card-wrap-selected' : ''}`}
-              >
-                {showPin ? (
+        <div className="x-market">
+          <div className="x-market-toolbar">
+            <input
+              type="search"
+              className="x-market-search"
+              placeholder="Search apps…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Search apps"
+            />
+            <div className="x-market-chips-wrap">
+              <div className="x-market-chips" role="tablist" aria-label="App categories">
+                {MARKET_CATEGORIES.map((cat) => (
                   <button
+                    key={cat.id}
                     type="button"
-                    className={`x-int-card-pin${pinned ? ' x-int-card-pin-active' : ''}`}
-                    title={pinned ? 'Unpin from sidebar' : 'Pin to sidebar'}
-                    aria-label={pinned ? `Unpin ${item.name}` : `Pin ${item.name} to sidebar`}
-                    aria-pressed={pinned}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (!pinnable) return
-                      if (pinned) onUnpinNavApp?.(pinnable.id)
-                      else onPinNavApp?.(pinnable.id)
-                    }}
+                    role="tab"
+                    aria-selected={categoryFilter === cat.id}
+                    className={`x-market-chip${categoryFilter === cat.id ? ' x-market-chip-active' : ''}`}
+                    onClick={() => setCategoryFilter(cat.id)}
                   >
-                    <PinIcon filled={pinned} />
+                    {cat.label}
+                    {cat.id === 'connected' && connectedApps.length > 0 ? (
+                      <span className="x-market-chip-count">{connectedApps.length}</span>
+                    ) : null}
                   </button>
-                ) : null}
-                <button
-                  type="button"
-                  className={`x-int-card ${item.brandClass} ${isSelected ? 'x-int-card-selected' : ''}`}
-                  onClick={() => setSelected(item.id)}
-                >
-                  <div className={`x-int-card-icon ${item.brandClass}`}>{item.icon}</div>
-                  <div className="x-int-card-body">
-                    <div className="x-int-card-top">
-                      <strong>{item.name}</strong>
-                      {item.id === 'youtube' || item.id === 'linkedin' ? (
-                        <span className={`x-int-status ${pinned ? 'x-int-status-on' : 'x-int-status-off'}`}>
-                          {pinned ? 'Pinned' : 'Available'}
-                        </span>
-                      ) : (
-                        <StatusBadge connected={connected} />
-                      )}
-                    </div>
-                    <p>{item.tagline}</p>
-                    <span className="x-int-card-meta">{cardMeta(item.id)}</span>
-                  </div>
-                </button>
+                ))}
               </div>
-            )
-          })}
             </div>
           </div>
 
-          <div className="x-int-detail-wrap">{renderDetail()}</div>
+          {filteredIntegrations.length > 0 ? (
+            showGroupedCatalog && groupedCatalog ? (
+              <div className="x-market-sections">
+                {groupedCatalog.map((group) => (
+                  <section key={group.category} className="x-market-section">
+                    <h2 className="x-market-section-title">{group.label}</h2>
+                    <div className="x-market-grid">{group.items.map((item) => renderAppTile(item))}</div>
+                  </section>
+                ))}
+              </div>
+            ) : (
+              <div className="x-market-grid">
+                {filteredIntegrations.map((item) => renderAppTile(item))}
+              </div>
+            )
+          ) : (
+            <p className="x-market-empty">
+              {categoryFilter === 'connected'
+                ? 'No connected apps yet — pick one below to get started.'
+                : 'No apps match your search.'}
+            </p>
+          )}
         </div>
       </div>
+
+      {selected && selectedItem ? (
+        <div
+          className="x-market-modal-backdrop"
+          onClick={() => setSelected(null)}
+          role="presentation"
+        >
+          <div
+            className="x-market-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="x-market-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="x-market-modal-head">
+              <h2 id="x-market-modal-title">{selectedItem.name}</h2>
+              <button
+                type="button"
+                className="x-market-modal-close"
+                onClick={() => setSelected(null)}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <div className="x-market-modal-body">{renderDetail()}</div>
+          </div>
+        </div>
+      ) : null}
 
       {status ? <p className="x-int-toast">{status}</p> : null}
     </div>

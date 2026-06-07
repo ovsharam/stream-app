@@ -152,6 +152,7 @@ import { buildClusterContext, searchCluster } from './cluster/service'
 import { buildMobileContext, mobileAssist } from './mobile/service'
 import { startSimCall, stopSimCall } from './sim/engine'
 import { getCentralStream } from './cluster/stream'
+import { pollIntegrationsIfDue } from './integrationPoll'
 import type { ClusterThread, AssistResult } from '../shared/cluster'
 import { cleanKbExcerpt, normalizeAssistResult, normalizeChatAssistResult } from '../shared/assistText'
 import { toThreadUpdate } from './cluster/threadUtils'
@@ -214,8 +215,10 @@ export function createRouter(io?: SocketServer): Router {
     res.json({ ok: true })
   })
 
-  router.get('/connections', async (_req, res) => {
+  router.get('/connections', async (req, res) => {
     try {
+    const sid = getSessionId(req, res)
+    const { isObsidianConfigured } = await import('./sources/captureStore')
     const demo = process.env.DEMO_MODE === '1'
     const gmailError = getLastGmailError()
     const calendarError = getLastCalendarError()
@@ -254,7 +257,8 @@ export function createRouter(io?: SocketServer): Router {
         github: true,
         gdocs: isGmailConfigured() || demo,
         gong: true,
-        calcom: true
+        calcom: true,
+        obsidian: true
       },
       connected: demo
         ? {
@@ -270,7 +274,8 @@ export function createRouter(io?: SocketServer): Router {
             github: true,
             gdocs: true,
             gong: true,
-            calcom: true
+            calcom: true,
+            obsidian: true
           }
         : {
             gmail: gmailConnected,
@@ -285,7 +290,8 @@ export function createRouter(io?: SocketServer): Router {
             github: isGithubConnected(),
             gdocs: gdocsConnected,
             gong: isGongConnected(),
-            calcom: isCalcomConnected()
+            calcom: isCalcomConnected(),
+            obsidian: isObsidianConfigured(sid)
           },
       syncErrors: demo
         ? {}
@@ -1033,6 +1039,7 @@ export function createRouter(io?: SocketServer): Router {
   })
 
   router.get('/cluster/stream', (req, res) => {
+    pollIntegrationsIfDue(io)
     const role = String(req.query.role ?? 'ae') as 'ae' | 'am' | 'csm' | 'fde'
     res.json(getCentralStream(role))
   })
@@ -1480,6 +1487,21 @@ export function createRouter(io?: SocketServer): Router {
         startedAt
       })
 
+      try {
+        const { captureBuildRun } = require('./fde/trainingLog') as typeof import('./fde/trainingLog')
+        const store = require('./fde/trainingStore') as typeof import('./fde/trainingStore')
+        captureBuildRun({
+          engagementId: contextItemId ? store.engagementIdForFeedItem(contextItemId) : undefined,
+          executor: parsed.provider,
+          prompt: raw,
+          ok: result.ok,
+          trace: { message: result.message, intent: parsed.intent },
+          startedAt
+        })
+      } catch {
+        /* training capture optional */
+      }
+
       if (!result.ok) {
         res.status(400).json({ ...result, error: result.message })
         return
@@ -1507,6 +1529,21 @@ export function createRouter(io?: SocketServer): Router {
 
     try {
       const result = await approveMeetingAction({ itemId, actionId, io })
+      if (result.ok) {
+        try {
+          const { captureMeetingActionApproved } =
+            require('./fde/trainingLog') as typeof import('./fde/trainingLog')
+          const store = require('./fde/trainingStore') as typeof import('./fde/trainingStore')
+          captureMeetingActionApproved({
+            engagementId: store.engagementIdForFeedItem(itemId),
+            itemId,
+            actionId,
+            actionKind: result.provider
+          })
+        } catch {
+          /* training capture optional */
+        }
+      }
       if (!result.ok && result.message === 'Meeting feed item not found') {
         res.status(404).json({ ...result, error: result.message })
         return
@@ -1604,21 +1641,22 @@ export function createRouter(io?: SocketServer): Router {
 
   router.get('/training/dataset', (_req, res) => {
     const { buildFdeTrainingDataset } = require('./training/dataset') as typeof import('./training/dataset')
-    res.json(buildFdeTrainingDataset())
+    const { getTrainingSummary } = require('./fde/trainingStore') as typeof import('./fde/trainingStore')
+    const dataset = buildFdeTrainingDataset()
+    res.json({ ...dataset, corpus: getTrainingSummary() })
   })
 
   router.post('/training/sync', async (_req, res) => {
-    const { buildFdeTrainingDataset } = require('./training/dataset') as typeof import('./training/dataset')
-    const { isSupabaseConfigured, syncTrainingSessionsToSupabase } =
-      require('./supabase/sync') as typeof import('./supabase/sync')
+    const { isSupabaseConfigured } = require('./supabase/sync') as typeof import('./supabase/sync')
+    const { runFullTrainingSupabaseSync } =
+      require('./supabase/postMeetingSync') as typeof import('./supabase/postMeetingSync')
     if (!isSupabaseConfigured()) {
       res.status(503).json({ error: 'Supabase not configured — set SUPABASE_SECRET_KEY (sb_secret_...) in .env.local' })
       return
     }
     try {
-      const dataset = buildFdeTrainingDataset()
-      const synced = await syncTrainingSessionsToSupabase(dataset.sessions, dataset.exportedAt)
-      res.json({ ok: true, synced, stats: dataset.stats })
+      const { synced, intentionEpisodesSynced, stats } = await runFullTrainingSupabaseSync()
+      res.json({ ok: true, synced, intentionEpisodesSynced, stats })
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
     }
@@ -1747,13 +1785,111 @@ export function createRouter(io?: SocketServer): Router {
       company: req.body?.company !== undefined ? String(req.body.company) : existing.company,
       stage: req.body?.stage ?? existing.stage,
       scope: req.body?.scope ?? existing.scope,
+      summary: req.body?.summary !== undefined ? String(req.body.summary) : existing.summary,
+      buildPrompt:
+        req.body?.buildPrompt !== undefined ? String(req.body.buildPrompt) : existing.buildPrompt,
+      nextSteps: Array.isArray(req.body?.nextSteps)
+        ? (req.body.nextSteps as unknown[]).map(String)
+        : existing.nextSteps,
+      flags: Array.isArray(req.body?.flags)
+        ? (req.body.flags as unknown[]).map(String)
+        : existing.flags,
+      openQuestions: Array.isArray(req.body?.openQuestions)
+        ? (req.body.openQuestions as unknown[]).map(String)
+        : existing.openQuestions,
       escalationLevel:
         typeof req.body?.escalationLevel === 'number'
           ? req.body.escalationLevel
           : existing.escalationLevel
     })
+    if (req.body?.scopeApproved === true) {
+      try {
+        const { captureScopeApproved } = require('./fde/trainingLog') as typeof import('./fde/trainingLog')
+        captureScopeApproved({ engagementId: engagement.id })
+      } catch {
+        /* training capture optional */
+      }
+    }
     io?.emit('cluster:refresh', { reason: 'fde-engagement' })
     res.json({ engagement })
+  })
+
+  router.get('/fde/training/summary', (_req, res) => {
+    const { getTrainingSummary } = require('./fde/trainingStore') as typeof import('./fde/trainingStore')
+    res.json(getTrainingSummary())
+  })
+
+  router.post('/graph/sync', async (_req, res) => {
+    try {
+      const { syncGraph } = require('./graph/syncService') as typeof import('./graph/syncService')
+      res.json(await syncGraph())
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message })
+    }
+  })
+
+  router.get('/graph/stats', async (_req, res) => {
+    try {
+      const { graphStats } = require('./graph/syncService') as typeof import('./graph/syncService')
+      res.json(await graphStats())
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message })
+    }
+  })
+
+  router.get('/graph/neighbors/:engagementId', async (req, res) => {
+    try {
+      const { getDealGraphNeighbors } =
+        require('./graph/queryService') as typeof import('./graph/queryService')
+      const hops = Math.min(Number(req.query.hops ?? 2), 3)
+      const neighbors = await getDealGraphNeighbors(String(req.params.engagementId), hops)
+      res.json({ engagementId: req.params.engagementId, neighbors })
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message })
+    }
+  })
+
+  router.get('/cluster/feed/rank', (req, res) => {
+    const eventId = String(req.query.eventId ?? '')
+    if (!eventId) {
+      res.status(400).json({ error: 'eventId required' })
+      return
+    }
+    const role = String(req.query.role ?? 'ae') as 'ae' | 'am' | 'csm' | 'fde'
+    const { getCentralStream } = require('./cluster/stream') as typeof import('./cluster/stream')
+    const { explainFeedRank } = require('./graph/feedRanker') as typeof import('./graph/feedRanker')
+    const events = getCentralStream(role)
+    const breakdown = explainFeedRank(eventId, events)
+    if (!breakdown) {
+      res.status(404).json({ error: 'event not found' })
+      return
+    }
+    res.json({ eventId, breakdown })
+  })
+
+  router.get('/fde/training/decisions/:engagementId', (req, res) => {
+    const { listDecisionEvents } = require('./fde/trainingStore') as typeof import('./fde/trainingStore')
+    res.json({ events: listDecisionEvents(String(req.params.engagementId)) })
+  })
+
+  router.post('/fde/training/feedback', (req, res) => {
+    const engagementId = String(req.body?.engagementId ?? '').trim()
+    const text = String(req.body?.text ?? '').trim()
+    if (!engagementId || !text) {
+      res.status(400).json({ error: 'engagementId and text required' })
+      return
+    }
+    const { captureFeedback } = require('./fde/trainingLog') as typeof import('./fde/trainingLog')
+    captureFeedback({
+      engagementId,
+      source: (req.body?.source as import('../shared/fde-training').FeedbackSource) ?? 'fde_retro',
+      feedbackType:
+        (req.body?.feedbackType as import('../shared/fde-training').FeedbackType) ?? 'other',
+      text,
+      requirementId: req.body?.requirementId ? String(req.body.requirementId) : undefined,
+      buildRunId: req.body?.buildRunId ? String(req.body.buildRunId) : undefined
+    })
+    res.json({ ok: true })
   })
 
   router.get('/fde/mcp-agents', (_req, res) => {
@@ -1789,6 +1925,21 @@ export function createRouter(io?: SocketServer): Router {
       return
     }
     res.json({ ok: true })
+  })
+
+  router.get('/dashboard/data', async (req, res) => {
+    try {
+      const since = req.query.since ? Number(req.query.since) : undefined
+      const { buildDashboardSnapshot } =
+        require('./dashboard/aggregate') as typeof import('./dashboard/aggregate')
+      res.json(
+        await buildDashboardSnapshot({
+          since: Number.isFinite(since) ? since : undefined
+        })
+      )
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message })
+    }
   })
 
   router.get('/kb/stats', (_req, res) => {
@@ -1833,8 +1984,22 @@ export function createRouter(io?: SocketServer): Router {
           .map((t) => ({ role: t.role as 'user' | 'assistant', content: String(t.content) }))
           .slice(-10)
       : undefined
+    const rawPageContext = req.body.pageContext as
+      | { url?: string; title?: string; excerpt?: string; selectedText?: string }
+      | undefined
+    const pageContext =
+      rawPageContext?.url && rawPageContext?.title
+        ? {
+            url: String(rawPageContext.url),
+            title: String(rawPageContext.title),
+            excerpt: rawPageContext.excerpt ? String(rawPageContext.excerpt) : undefined,
+            selectedText: rawPageContext.selectedText
+              ? String(rawPageContext.selectedText)
+              : undefined
+          }
+        : undefined
     try {
-      const result = await mobileAssist(query, objective, { chat, history })
+      const result = await mobileAssist(query, objective, { chat, history, pageContext })
       const cleaned = chat
         ? normalizeChatAssistResult(result, query.trim())
         : normalizeAssistResult(result, query.trim())
@@ -1855,6 +2020,32 @@ export function createRouter(io?: SocketServer): Router {
         } catch (e) {
           console.warn('[kb] mobile assist ingest failed:', (e as Error).message)
         }
+      }
+      try {
+        const session = getActiveMeeting()
+        const prediction = getLatestPrediction()
+        const { captureAssistInvocation } =
+          require('./fde/trainingLog') as typeof import('./fde/trainingLog')
+        const { engagementIdForSession } =
+          require('./fde/trainingStore') as typeof import('./fde/trainingStore')
+        captureAssistInvocation({
+          engagementId: session ? engagementIdForSession(session.id) : undefined,
+          sessionId: session?.id,
+          surface: chat ? 'chat' : 'mobile',
+          query: query.trim(),
+          predictionId: prediction?.id,
+          suggestion: prediction?.sayThis,
+          response: payload.response,
+          pageContext: pageContext
+            ? {
+                url: pageContext.url,
+                title: pageContext.title,
+                excerpt: pageContext.excerpt
+              }
+            : undefined
+        })
+      } catch {
+        /* training capture optional */
       }
       res.json(payload)
     } catch (e) {
@@ -1899,7 +2090,8 @@ export function createRouter(io?: SocketServer): Router {
 
   router.post('/meeting/star', (req, res) => {
     const text = req.body?.text ? String(req.body.text) : undefined
-    const moment = starMoment(text)
+    const reason = req.body?.reason ? String(req.body.reason) : undefined
+    const moment = starMoment(text, reason)
     if (!moment) {
       res.status(400).json({ error: 'no active meeting' })
       return

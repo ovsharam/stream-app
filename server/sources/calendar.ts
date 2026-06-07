@@ -27,8 +27,8 @@ export function clearLastCalendarError(): void {
 
 const COMPOSITE_SEP = '::'
 
-/** Today + next 2 days */
-const CALENDAR_RAIL_DAYS = 3
+/** Today + next 13 days (2-week rail horizon; Cal.com may show further). */
+const CALENDAR_RAIL_DAYS = 14
 const MAX_UPCOMING_PER_DAY = 4
 /** Ended meetings kept visible for today only */
 const MAX_PAST_TODAY = 6
@@ -336,7 +336,7 @@ export async function fetchCalendarEvents(): Promise<CalendarRailEvent[]> {
             calendarId,
             timeMin,
             timeMax,
-            maxResults: 40,
+            maxResults: 100,
             singleEvents: true,
             orderBy: 'startTime'
           },

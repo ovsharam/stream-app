@@ -31,6 +31,9 @@ import {
   syncCalcom
 } from '../../sources/calcom'
 import { runMind } from '../../kb/mindExecutor'
+import { appendObsidianNote } from '../../sources/obsidian'
+import { getCaptureProfile, isObsidianConfigured } from '../../sources/captureStore'
+import { ingestConsciousness } from '../../kb/pipeline'
 import type { ComposeCommand } from '../../../shared/compose'
 import { parseComposeCommand } from '../../../shared/compose'
 import { getRecentItems } from '../../db'
@@ -332,6 +335,32 @@ async function runCalcom(ctx: ActionRunContext): Promise<ActionRunResult> {
   }
 }
 
+async function runObsidian(ctx: ActionRunContext): Promise<ActionRunResult> {
+  if (!isObsidianConfigured(ctx.sessionId)) {
+    return fail(
+      'obsidian',
+      'Obsidian not configured — Notes → set vault path and note path (e.g. Daily Notes/{{date}}.md)'
+    )
+  }
+
+  const profile = getCaptureProfile(ctx.sessionId)
+  const notePath = ctx.parsed.target?.trim() || profile.obsidianNotePath!.trim()
+  const text = ctx.parsed.body.trim()
+  if (!text) return fail('obsidian', 'Use @obsidian append: your note text')
+
+  try {
+    const { path } = await appendObsidianNote({
+      vaultPath: profile.obsidianVaultPath!,
+      notePath,
+      text
+    })
+    ingestConsciousness(text, 'obsidian')
+    return ok('obsidian', `Appended to ${path.split('/').slice(-2).join('/')}`)
+  } catch (err) {
+    return fail('obsidian', err instanceof Error ? err.message : String(err))
+  }
+}
+
 export function registerIntegrationExecutors(): void {
   const wrap =
     (provider: ComposeCommand['provider'], fn: (ctx: ActionRunContext) => Promise<ActionRunResult>) =>
@@ -354,6 +383,7 @@ export function registerIntegrationExecutors(): void {
   registerActionExecutor('cursor', wrap('cursor', runCursor))
   registerActionExecutor('github', wrap('github', runGithub))
   registerActionExecutor('gdocs', wrap('gdocs', runGdocs))
+  registerActionExecutor('obsidian', wrap('obsidian', runObsidian))
   registerActionExecutor('gong', wrap('gong', runGong))
   registerActionExecutor('calcom', wrap('calcom', runCalcom))
   registerActionExecutor('mind', wrap('mind', runMind))

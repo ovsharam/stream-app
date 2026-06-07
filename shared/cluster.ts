@@ -148,6 +148,7 @@ export type StreamSource =
   | 'build'
   | 'insight'
   | 'calcom'
+  | 'linkedin'
 
 export type StreamEventKind =
   | 'transcript_live'

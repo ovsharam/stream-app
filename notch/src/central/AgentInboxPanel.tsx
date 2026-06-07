@@ -11,6 +11,15 @@ function intentLabel(intent: AgentProposal['intent']): string {
   return intent.replace(/_/g, ' ')
 }
 
+const ACTION_PROVIDER_LABEL: Record<string, string> = {
+  calcom: 'Cal.com',
+  monday: 'Monday',
+  gmail: 'Gmail',
+  contacts: 'Contacts',
+  gdocs: 'Docs',
+  slack: 'Slack'
+}
+
 type ApproveNotice = {
   senderName: string
   replyText: string
@@ -163,22 +172,21 @@ export function AgentInboxPanel() {
                   <h4>Suggested actions</h4>
                   <ul className="x-agent-action-proposals">
                     {p.actionProposals.map((action) => (
-                      <li key={action.id} className="x-agent-action-row">
-                        <span className={`x-agent-action-provider x-agent-action-${action.provider}`}>
-                          {action.provider}
-                        </span>
-                        <div className="x-agent-action-body">
-                          <strong>{action.label}</strong>
-                          <p>{action.description}</p>
-                          <code className="x-agent-compose">{action.composeText}</code>
+                      <li key={action.id} className="x-agent-action-card">
+                        <div className="x-agent-action-top">
+                          <span className={`x-agent-action-provider x-agent-action-${action.provider}`}>
+                            {ACTION_PROVIDER_LABEL[action.provider] ?? action.provider}
+                          </span>
+                          <strong className="x-agent-action-label">{action.label}</strong>
+                          <button
+                            type="button"
+                            className="x-int-btn x-int-btn-ghost x-agent-copy-task"
+                            onClick={() => void copyText(action.composeText)}
+                          >
+                            Copy
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          className="x-int-btn x-int-btn-ghost x-agent-copy-task"
-                          onClick={() => void copyText(action.composeText)}
-                        >
-                          Copy
-                        </button>
+                        <p className="x-agent-action-desc">{action.description}</p>
                       </li>
                     ))}
                   </ul>

@@ -84,6 +84,8 @@ type Props = {
   live: boolean
   navApps: NavApp[]
   activeNavAppId: string | null
+  /** Pinned workspace tab (YouTube, LinkedIn, etc.) — not embed navapp player. */
+  activePinnedAppId: string | null
   onNavigate: (target: NavTarget) => void
   onOpenNavApp: (appId: string) => void
   onPinApp: (appId: string) => void
@@ -133,9 +135,16 @@ function isActive(
   page: Page,
   area: Area,
   tab: Tab,
-  activeNavAppId: string | null
+  activeNavAppId: string | null,
+  activePinnedAppId: string | null
 ): boolean {
-  if (target.navAppId) return page === 'navapp' && activeNavAppId === target.navAppId
+  if (target.navAppId) {
+    if (activePinnedAppId) return activePinnedAppId === target.navAppId
+    return page === 'navapp' && activeNavAppId === target.navAppId
+  }
+  if (target.id === 'home') {
+    return page === 'stream' && area === 'work' && activePinnedAppId == null
+  }
   if (target.page) return page === target.page
   return page === 'stream' && target.area === area && (target.tab == null || target.tab === tab)
 }
@@ -263,6 +272,7 @@ export function SideNav({
   live,
   navApps,
   activeNavAppId,
+  activePinnedAppId,
   onNavigate,
   onOpenNavApp,
   onPinApp,
@@ -306,7 +316,7 @@ export function SideNav({
             <NavButton
               key={target.id}
               target={target}
-              active={isActive(target, page, area, tab, activeNavAppId)}
+              active={isActive(target, page, area, tab, activeNavAppId, activePinnedAppId)}
               live={live}
               onClick={() => onNavigate(target)}
             />
@@ -319,7 +329,7 @@ export function SideNav({
             <NavButton
               key={target.id}
               target={target}
-              active={isActive(target, page, area, tab, activeNavAppId)}
+              active={isActive(target, page, area, tab, activeNavAppId, activePinnedAppId)}
               live={false}
               onClick={() => onOpenNavApp(target.navAppId!)}
               onRemove={() => onRemoveNavApp(target.navAppId!)}
@@ -354,7 +364,7 @@ export function SideNav({
             <NavButton
               key={target.id}
               target={target}
-              active={isActive(target, page, area, tab, activeNavAppId)}
+              active={isActive(target, page, area, tab, activeNavAppId, activePinnedAppId)}
               live={live}
               onClick={() => onNavigate(target)}
             />

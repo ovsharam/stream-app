@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import type { StreamItem } from '../../shared/types'
 import type { Datapoint, GraphRagContext, GraphRagChunk, KbEntity } from '../../shared/personal-kb'
 import { cleanAssistField, cleanKbExcerpt } from '../../shared/assistText'
+import type { GraphEdgeRecord } from '../../shared/graph-sync'
 import { inferIntention, blendIntention } from './intention'
 import { getRecentItems } from '../db'
 import {
@@ -19,6 +20,7 @@ import {
   upsertOntologyEntity,
   type ExtractContext
 } from './ontology'
+import { buildFeedOperatorContext } from '../graph/feedRanker'
 
 function extractEntities(text: string): KbEntity[] {
   const entities: KbEntity[] = []
@@ -131,6 +133,34 @@ function writeDatapoint(
   applyOntologyRelations(ontology.relations)
   dp.entityIds = [...new Set([...dp.entityIds, ...allEntities.map((e) => e.id)])]
   insertDatapoint(dp)
+
+  try {
+    const { appendGraphDelta } = require('../graph/graphAppend') as typeof import('../graph/graphAppend')
+    const { entityToVertex, datapointToVertex, makeGraphEdge } =
+      require('../graph/kbToGraph') as typeof import('../graph/kbToGraph')
+    const vertices = [datapointToVertex(dp), ...allEntities.map(entityToVertex)]
+    if (parentEntity) vertices.push(entityToVertex(parentEntity))
+    const edges: GraphEdgeRecord[] = []
+    for (const ent of allEntities) {
+      edges.push(makeGraphEdge(dp.id, ent.id, 'mentions', 1))
+      if (parentEntity) edges.push(makeGraphEdge(parentEntity.id, ent.id, 'relates_to', 0.5))
+    }
+    if (parentEntity) {
+      edges.push(makeGraphEdge(dp.id, parentEntity.id, 'part_of', 1))
+      if (ontologyCtx?.dealHint) {
+        const deal = upsertOntologyEntity('deal', ontologyCtx.dealHint)
+        edges.push(makeGraphEdge(deal.id, parentEntity.id, 'part_of_deal', 1))
+        vertices.push(entityToVertex(deal))
+      }
+    }
+    for (const r of ontology.relations) {
+      edges.push(makeGraphEdge(r.fromId, r.toId, r.type, r.weight))
+    }
+    appendGraphDelta({ vertices, edges })
+  } catch (e) {
+    console.warn('[graph] ingest append failed:', e instanceof Error ? e.message : e)
+  }
+
   return dp
 }
 
@@ -389,7 +419,32 @@ export function ingestRecentStream(limit = 40): number {
   return n
 }
 
-function scoreChunk(query: string, dp: Datapoint, entityLabels: Map<string, string>): number {
+function graphRetrievalBoost(
+  dp: Datapoint,
+  entityLabels: Map<string, string>,
+  dealKeywords?: Set<string>,
+  dealEntityIds?: Set<string>
+): number {
+  if (!dealKeywords?.size && !dealEntityIds?.size) return 0
+  let boost = 0
+  const hay = `${dp.title ?? ''} ${dp.body}`.toLowerCase()
+  for (const kw of dealKeywords ?? []) {
+    if (kw.length > 3 && hay.includes(kw)) boost += 0.06
+  }
+  for (const eid of dp.entityIds) {
+    if (dealEntityIds?.has(eid)) boost += 0.12
+    const label = entityLabels.get(eid)?.toLowerCase()
+    if (label && hay.includes(label)) boost += 0.08
+  }
+  return Math.min(0.35, boost)
+}
+
+function scoreChunk(
+  query: string,
+  dp: Datapoint,
+  entityLabels: Map<string, string>,
+  graphBoost = 0
+): number {
   const q = query.toLowerCase()
   const hay = `${dp.title ?? ''} ${dp.body}`.toLowerCase()
   if (!q) return 0.5
@@ -405,7 +460,7 @@ function scoreChunk(query: string, dp: Datapoint, entityLabels: Map<string, stri
   if (labels.toLowerCase().split(/\s+/).some((w) => q.includes(w.toLowerCase()))) score += 0.2
   score += dp.intention.execute * (/\b(do|fix|ship|task)\b/i.test(q) ? 0.15 : 0)
   score += dp.intention.explore * (/\b(why|how|learn|research)\b/i.test(q) ? 0.15 : 0)
-  return Math.min(1, score)
+  return Math.min(1, score + graphBoost)
 }
 
 /** GraphRAG-lite: lexical + intention-weighted retrieval (embedding slot later). */
@@ -414,13 +469,21 @@ export function retrieveContext(query: string, limit = 12): GraphRagContext {
   const entities = listEntities(150)
   const entityLabels = new Map(entities.map((e) => [e.id, e.label]))
   const traces = listTraces(20)
+  const feedCtx = buildFeedOperatorContext()
+  const dealKeywords = feedCtx.activeDeal?.keywords
+  const dealEntityIds = feedCtx.activeDeal?.entityIds
 
   const chunks: GraphRagChunk[] = datapoints
     .map((dp) => ({
       datapointId: dp.id,
       title: cleanKbExcerpt(dp.title ?? dp.body.slice(0, 80), 80),
       excerpt: cleanKbExcerpt(dp.body, 280),
-      score: scoreChunk(query, dp, entityLabels),
+      score: scoreChunk(
+        query,
+        dp,
+        entityLabels,
+        graphRetrievalBoost(dp, entityLabels, dealKeywords, dealEntityIds)
+      ),
       intention: dp.intention,
       entityLabels: dp.entityIds.map((id) => entityLabels.get(id) ?? '').filter(Boolean),
       source: dp.source,

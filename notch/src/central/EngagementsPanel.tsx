@@ -159,7 +159,11 @@ export function EngagementsPanel({ onOpenMeeting, onSelect, compact }: Props) {
                 </button>
               ) : null}
               {e.stage === 'intake' && e.scope !== 'unknown' ? (
-                <button type="button" className="x-eng-action" onClick={() => void patch(e.id, { stage: 'build' })}>
+                <button
+                  type="button"
+                  className="x-eng-action"
+                  onClick={() => void patch(e.id, { stage: 'build', scopeApproved: true } as Partial<FdeEngagement> & { scopeApproved?: boolean })}
+                >
                   Start build
                 </button>
               ) : null}

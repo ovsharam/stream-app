@@ -32,7 +32,12 @@ function calcomAction(proposal: AgentProposal, task: BookingTaskPayload): AgentA
     id: `calcom-${proposal.id}`,
     provider: 'calcom',
     label,
-    description: composeText,
+    description:
+      task.action === 'reschedule'
+        ? 'Move the matched booking to the proposed time'
+        : task.action === 'cancel'
+          ? 'Cancel the matched Cal.com booking'
+          : 'Book the proposed time on Cal.com',
     composeText,
     primary: true
   }
@@ -102,17 +107,6 @@ export async function buildAgentActionProposals(proposal: AgentProposal): Promis
         optional: true
       })
     }
-  }
-
-  if (connections.gmail) {
-    actions.push({
-      id: `contacts-${proposal.id}`,
-      provider: 'contacts',
-      label: 'Find contact email',
-      description: `Match ${proposal.senderName} in Google contacts`,
-      composeText: `@contacts ${proposal.senderName}`,
-      optional: true
-    })
   }
 
   if (connections.gdocs && (proposal.intent === 'info_request' || RECRUITER_RE.test(lower))) {

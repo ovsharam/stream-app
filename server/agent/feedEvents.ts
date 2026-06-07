@@ -8,10 +8,10 @@ export function agentProposalToStreamEvent(proposal: AgentProposal): CentralStre
   return {
     id: `agent-${proposal.id}`,
     ts: proposal.updatedAt,
-    source: 'notch',
+    source: 'linkedin',
     kind: 'action',
-    title: `${proposal.senderName} · LinkedIn`,
-    body: proposal.brief.humanSummary,
+    title: proposal.senderName,
+    body: proposal.rawMessage.slice(0, 280),
     highlight: 'Needs approval',
     meta: {
       agentProposalId: proposal.id,
@@ -20,6 +20,7 @@ export function agentProposalToStreamEvent(proposal: AgentProposal): CentralStre
       intent: proposal.intent,
       senderName: proposal.senderName,
       threadId: proposal.threadId,
+      channel: 'LinkedIn',
       linkedinReplyDraft: proposal.linkedinReplyDraft,
       hasBookingTask: proposal.bookingTask ? 'true' : undefined
     }

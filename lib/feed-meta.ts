@@ -18,7 +18,8 @@ export const SOURCE_META: Record<
   salesforce: { handle: '@salesforce', avatar: 'SF', color: '#00a1e0', bg: '#061820' },
   build: { handle: '@build', avatar: '⚡', color: '#ffd400', bg: '#2a2400' },
   insight: { handle: '@notch', avatar: '✦', color: '#e7e9ea', bg: '#16181c' },
-  calcom: { handle: '@calcom', avatar: 'Ca', color: '#292929', bg: '#1a1a1a' }
+  calcom: { handle: '@calcom', avatar: 'Ca', color: '#292929', bg: '#1a1a1a' },
+  linkedin: { handle: '@linkedin', avatar: 'in', color: '#0a66c2', bg: '#0a2540' }
 }
 
 export function formatFeedTime(ts: number): string {

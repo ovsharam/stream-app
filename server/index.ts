@@ -22,6 +22,8 @@ import { getCorsOrigins } from './corsOrigins'
 import { ingestRecentStream } from './kb/pipeline'
 import { initOperatorTelemetryStore } from './telemetry/store'
 import { initAgentStore } from './agent/store'
+import { bindDashboardSocket } from './dashboard/broadcast'
+import { initIntentionEpisodes } from './intention/service'
 
 config({ path: join(process.cwd(), '.env.local') })
 config()
@@ -35,6 +37,7 @@ async function main(): Promise<void> {
   await initDb(dataDir)
   initOperatorTelemetryStore()
   initAgentStore()
+  initIntentionEpisodes()
 
   if (process.env.GEMINI_API_KEY?.trim()) {
     console.log('[server] GEMINI_API_KEY loaded — auto-connects per session')
@@ -65,6 +68,8 @@ async function main(): Promise<void> {
     }
   })
 
+  bindDashboardSocket(io)
+
   io.on('connection', (socket) => {
     console.log('[socket] client connected', socket.id)
     const cached = getRecentItems(100)
@@ -93,7 +98,7 @@ async function main(): Promise<void> {
   httpServer.listen(PORT, () => {
     console.log(`[server] STREAM API ready on :${PORT}`)
     void backgroundSync()
-    setInterval(() => void backgroundSync(), 30 * 60_000)
+    setInterval(() => void backgroundSync(), 5 * 60_000)
     void startSlackSocketMode(io).catch((e) =>
       console.warn('[slack] socket mode skipped:', e.message)
     )

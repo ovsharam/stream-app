@@ -223,6 +223,13 @@ function parseAssistFromLlm(
 
 export type ChatTurn = { role: 'user' | 'assistant'; content: string }
 
+export type BrowserPageContext = {
+  url: string
+  title: string
+  excerpt?: string
+  selectedText?: string
+}
+
 function llmAvailable(): boolean {
   return (
     isGeminiConnected() ||
@@ -260,10 +267,26 @@ function buildChatContextBlock(
   q: string,
   latent: ReturnType<typeof retrieveAssistContext>,
   session: ReturnType<typeof getActiveMeeting>,
-  history?: ChatTurn[]
+  history?: ChatTurn[],
+  pageContext?: BrowserPageContext
 ): string {
   const parts: string[] = []
   const planning = isPlanningQuery(q)
+
+  if (pageContext) {
+    const lines = [
+      'Browser page the user is viewing:',
+      `URL: ${pageContext.url}`,
+      `Title: ${pageContext.title}`
+    ]
+    if (pageContext.selectedText) {
+      lines.push(`Selected text: ${pageContext.selectedText}`)
+    }
+    if (pageContext.excerpt) {
+      lines.push(`Page excerpt:\n${pageContext.excerpt}`)
+    }
+    parts.push(lines.join('\n'))
+  }
 
   if (history && history.length > 0) {
     parts.push(
@@ -404,11 +427,12 @@ function kbFallbackAssist(query: string, latent: ReturnType<typeof retrieveAssis
 async function assistReal(
   query: string,
   objective?: 'discovery' | 'v1_ship',
-  options?: { chat?: boolean; history?: ChatTurn[] }
+  options?: { chat?: boolean; history?: ChatTurn[]; pageContext?: BrowserPageContext }
 ): Promise<AssistResult> {
   const q = query.trim()
   const chat = options?.chat === true
   const history = options?.history
+  const pageContext = options?.pageContext
   const latent = retrieveAssistContext(q)
   const session = getActiveMeeting()
 
@@ -434,6 +458,7 @@ Rules:
 - Do NOT repeat the user's question back.
 - Do NOT copy-paste the daily inbox digest unless they explicitly ask what needs attention today.
 - Answer the specific question asked (e.g. financial comparisons, prep, summaries).
+- The user may be asking about a browser page included in context — use that page content when relevant.
 - For priority/today questions only, group under: **Tasks**, **Reminders**, **Reviews & FYI**
 - If context lacks the data to answer, say so plainly and suggest connecting Apps or pasting the data — never invent emails, events, or numbers.
 ${isPlanningQuery(q) ? `
@@ -456,7 +481,7 @@ SAY THIS: one sentence the FDE can read aloud to the client (in quotes)
 Objective: ${objective === 'v1_ship' ? 'fastest shippable win' : 'discovery'}.`
 
   const userPrompt = chat
-    ? buildChatContextBlock(q, latent, session, history)
+    ? buildChatContextBlock(q, latent, session, history, pageContext)
     : (() => {
         const transcript = session?.chunks
           .slice(-8)
@@ -524,9 +549,10 @@ Objective: ${objective === 'v1_ship' ? 'fastest shippable win' : 'discovery'}.`
 export async function mobileAssist(
   query: string,
   objective?: 'discovery' | 'v1_ship',
-  options?: { chat?: boolean; history?: ChatTurn[] }
+  options?: { chat?: boolean; history?: ChatTurn[]; pageContext?: BrowserPageContext }
 ): Promise<AssistResult> {
   const chat = options?.chat === true
+  const pageContext = options?.pageContext
   if (!prototypeRealEnabled()) {
     if (chat) {
       if (isAttentionQuery(query) && !llmAvailable()) {
@@ -545,7 +571,11 @@ export async function mobileAssist(
       if (!llmAvailable()) {
         return chatFallbackResponse(query.trim())
       }
-      const llmResult = await assistReal(query, objective, { chat: true, history: options?.history })
+      const llmResult = await assistReal(query, objective, {
+        chat: true,
+        history: options?.history,
+        pageContext
+      })
       return {
         query: llmResult.query,
         intent: llmResult.intent,
@@ -561,7 +591,7 @@ export async function mobileAssist(
       guideQuestions: result.guideQuestions ?? defaultGuideQuestions(objective)
     }
   }
-  const result = await assistReal(query, objective, { chat, history: options?.history })
+  const result = await assistReal(query, objective, { chat, history: options?.history, pageContext })
   if (chat) {
     return {
       query: result.query,

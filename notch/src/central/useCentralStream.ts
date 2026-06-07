@@ -34,10 +34,11 @@ function mergeEvents(
   incoming: CentralStreamEvent[]
 ): CentralStreamEvent[] {
   const prevById = new Map(prev.map((e) => [e.id, e]))
-  return incoming.map((e) => {
+  const merged = incoming.map((e) => {
     const old = prevById.get(e.id)
     return old && eventsEqual(old, e) ? old : e
   })
+  return merged.sort((a, b) => b.ts - a.ts)
 }
 
 function pollIntervalMs(live: boolean, lastSyncMs: number): number {

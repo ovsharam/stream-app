@@ -34,6 +34,7 @@ export const PINNABLE_APPS: NavAppCatalogEntry[] = [
     label: 'YouTube',
     url: 'https://www.youtube.com',
     surface: 'workspace',
+    miniPlayer: true,
     description: 'YouTube in an in-app tab.',
     brandClass: 'x-int-card-youtube'
   },

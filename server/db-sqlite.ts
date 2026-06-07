@@ -73,6 +73,18 @@ export function upsertItems(items: StreamItem[]): void {
   tx(items)
 }
 
+export function countStreamItems(): number {
+  const row = getDb().prepare('SELECT COUNT(*) AS n FROM stream_items').get() as { n: number }
+  return Number(row?.n ?? 0)
+}
+
+export function countStreamItemsBySource(): { source: string; count: number }[] {
+  const rows = getDb()
+    .prepare('SELECT source, COUNT(*) AS n FROM stream_items GROUP BY source ORDER BY n DESC')
+    .all() as { source: string; n: number }[]
+  return rows.map((r) => ({ source: r.source, count: Number(r.n) }))
+}
+
 export function getRecentItems(limit = 100, source?: StreamSource): StreamItem[] {
   const database = getDb()
   const query = source

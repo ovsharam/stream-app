@@ -12,6 +12,7 @@ import { NotesView } from './NotesView'
 import { NavBladeToggle, persistNavOpen, readNavOpen } from './NavBladeToggle'
 import { SideNav, type NavTarget, type Page } from './SideNav'
 import { NavAppPlayer } from './NavAppPlayer'
+import { WorkspaceMiniPlayer } from './WorkspaceMiniPlayer'
 import { getNavApp, isNavAppPinned, useNavApps } from './navAppsStore'
 import { SettingsPanel } from './SettingsPanel'
 import { ThemeMenu } from './ThemeMenu'
@@ -54,6 +55,26 @@ import {
   type PinnedAppSession,
   type WorkspaceTab
 } from './workspace'
+import {
+  applyYoutubeMiniLayout,
+  findWorkspaceWebview,
+  getWorkspaceWebviewPlayback,
+  pauseWorkspaceMedia,
+  tabEligibleForMiniPlayer
+} from './workspacePlayback'
+import { forceWebviewRepaint } from './useWebviewResizeSync'
+import { useWebviewNavigation } from './useWebviewNavigation'
+import {
+  captureWorkspaceBrowserContext,
+  type WorkspaceBrowserPageContext
+} from './workspaceBrowserContext'
+
+type WorkspaceMini = {
+  tabId: string
+  label: string
+  url: string
+  pinId?: string
+}
 
 type WorkspaceView = 'home' | 'pinned'
 import {
@@ -168,7 +189,9 @@ export function CentralApp() {
   const [feedStreamId, setFeedStreamId] = useFeedStreamId()
   const [feedRailCollapsed, setFeedRailCollapsed] = useState(() => {
     try {
-      return localStorage.getItem('notch.feedRailCollapsed') === '1'
+      const stored = localStorage.getItem('notch.feedRailCollapsed')
+      // Default open on feed — only collapse when user explicitly hid the panel.
+      return stored === '1'
     } catch {
       return false
     }
@@ -204,6 +227,10 @@ export function CentralApp() {
   const { apps: navApps, remove: removeNavApp, pinCatalog: pinNavApp } = useNavApps()
   const [activeNavAppId, setActiveNavAppId] = useState<string | null>(null)
   const [navAppMini, setNavAppMini] = useState(false)
+  const [workspaceMini, setWorkspaceMini] = useState<WorkspaceMini | null>(null)
+  const [browserPageContext, setBrowserPageContext] = useState<WorkspaceBrowserPageContext | null>(
+    null
+  )
   const autoShadedRef = useRef(new Set<string>())
 
   const activeNavApp = activeNavAppId ? getNavApp(activeNavAppId, navApps) : null
@@ -239,15 +266,86 @@ export function CentralApp() {
     }
   }, [activeNavAppId, navApps, closeNavApp])
 
-  const withNavAppLeave = useCallback(
+  const resolveWorkspaceMediaTab = useCallback((): WorkspaceTab | null => {
+    if (workspaceView === 'pinned' && pinnedSession) {
+      const app = getNavApp(pinnedSession.pinId, navApps)
+      if (!app?.miniPlayer || !tabEligibleForMiniPlayer(pinnedSession.tab)) return null
+      return pinnedSession.tab
+    }
+    if (workspaceView === 'home' && homePane === 'browser' && activeBrowserTabId) {
+      const tab = browserTabs.find((t) => t.id === activeBrowserTabId)
+      if (!tab || !tabEligibleForMiniPlayer(tab)) return null
+      return tab
+    }
+    return null
+  }, [workspaceView, pinnedSession, navApps, homePane, activeBrowserTabId, browserTabs])
+
+  const closeWorkspaceMini = useCallback(() => {
+    const tabId = workspaceMini?.tabId
+    if (tabId) {
+      const webview = findWorkspaceWebview(tabId)
+      void pauseWorkspaceMedia(webview)
+      void applyYoutubeMiniLayout(webview, false)
+    }
+    setWorkspaceMini(null)
+  }, [workspaceMini?.tabId])
+
+  const expandWorkspaceMini = useCallback(() => {
+    const mini = workspaceMini
+    if (!mini) return
+    void applyYoutubeMiniLayout(findWorkspaceWebview(mini.tabId), false)
+    setWorkspaceMini(null)
+    setPage('stream')
+    setArea('work')
+    if (mini.pinId) {
+      setWorkspaceView('pinned')
+      return
+    }
+    setWorkspaceView('home')
+    setHomePane('browser')
+    setActiveBrowserTabId(mini.tabId)
+  }, [workspaceMini])
+
+  const tryDockWorkspaceMini = useCallback(async (): Promise<WorkspaceMini | null> => {
+    const tab = resolveWorkspaceMediaTab()
+    if (!tab) return null
+    const webview = findWorkspaceWebview(tab.id)
+    const playing = await getWorkspaceWebviewPlayback(webview)
+    if (!playing) return null
+    return {
+      tabId: tab.id,
+      label: tab.title,
+      url: tab.url,
+      pinId: tab.pinId
+    }
+  }, [resolveWorkspaceMediaTab])
+
+  const dockWorkspaceMini = useCallback(async (): Promise<boolean> => {
+    const mini = await tryDockWorkspaceMini()
+    if (!mini) return false
+    setWorkspaceMini(mini)
+    return true
+  }, [tryDockWorkspaceMini])
+
+  const withMediaLeave = useCallback(
     (action: () => void) => {
       if (page === 'navapp' && activeNavAppId) {
         void dockNavAppMini().finally(action)
         return
       }
+      if (resolveWorkspaceMediaTab()) {
+        void tryDockWorkspaceMini().then((mini) => {
+          action()
+          if (!mini) return
+          requestAnimationFrame(() => {
+            setWorkspaceMini(mini)
+          })
+        })
+        return
+      }
       action()
     },
-    [page, activeNavAppId, dockNavAppMini]
+    [page, activeNavAppId, dockNavAppMini, resolveWorkspaceMediaTab, tryDockWorkspaceMini]
   )
 
   const minimizeNavAppToFeed = useCallback(() => {
@@ -269,6 +367,25 @@ export function CentralApp() {
   }, [navAppMini, activeNavAppId, closeNavApp])
 
   useEffect(() => {
+    if (!workspaceMini) return
+    const el = findWorkspaceWebview(workspaceMini.tabId)
+    void applyYoutubeMiniLayout(el, false)
+    forceWebviewRepaint(el)
+    const t = window.setTimeout(() => forceWebviewRepaint(findWorkspaceWebview(workspaceMini.tabId)), 300)
+    return () => window.clearTimeout(t)
+  }, [workspaceMini])
+
+  useEffect(() => {
+    if (!workspaceMini) return
+    const verify = async () => {
+      const playing = await getWorkspaceWebviewPlayback(findWorkspaceWebview(workspaceMini.tabId))
+      if (!playing) closeWorkspaceMini()
+    }
+    const interval = window.setInterval(() => void verify(), 4000)
+    return () => window.clearInterval(interval)
+  }, [workspaceMini, closeWorkspaceMini])
+
+  useEffect(() => {
     void window.notchDesktop?.setNavAppTheme?.(theme)?.catch?.(() => undefined)
   }, [theme])
 
@@ -282,6 +399,10 @@ export function CentralApp() {
       setNavAppMini(false)
       void window.notchDesktop?.destroyNavApp?.()
       setFocusMeetingItemId(null)
+      if (workspaceMini?.pinId === app.id) {
+        expandWorkspaceMini()
+        return
+      }
       if (pinnedSession?.pinId === app.id) {
         setWorkspaceView('pinned')
         if (
@@ -381,7 +502,7 @@ export function CentralApp() {
   const refreshStream = () => window.dispatchEvent(new Event('notch:stream-push'))
 
   const openSearchHit = (hit: ClusterSearchHit) => {
-    withNavAppLeave(() => {
+    withMediaLeave(() => {
       setPage('stream')
       setArea('feed')
       const itemId = hit.itemId ?? hit.id.replace(/^ext-/, '')
@@ -393,7 +514,7 @@ export function CentralApp() {
   }
 
   const openMeetingInWork = (itemId: string) => {
-    withNavAppLeave(() => {
+    withMediaLeave(() => {
       setPage('stream')
       setFocusMeetingItemId(itemId)
     })
@@ -407,10 +528,10 @@ export function CentralApp() {
         openNavApp(item.navAppId)
         return
       }
-      withNavAppLeave(() => openNavApp(item.navAppId))
+      withMediaLeave(() => openNavApp(item.navAppId))
       return
     }
-    withNavAppLeave(() => {
+    withMediaLeave(() => {
       if (item.page) {
         setPage(item.page)
         return
@@ -423,7 +544,7 @@ export function CentralApp() {
   }
 
   const openAgentsFeed = () => {
-    withNavAppLeave(() => {
+    withMediaLeave(() => {
       setPage('build')
       setWorkspaceView('home')
       setFocusMeetingItemId(null)
@@ -431,7 +552,7 @@ export function CentralApp() {
   }
 
   const goHome = () => {
-    withNavAppLeave(() => {
+    withMediaLeave(() => {
       setPage('stream')
       setArea('work')
       setTab('foryou')
@@ -554,9 +675,11 @@ export function CentralApp() {
   }, [])
 
   const selectHomeChat = useCallback(() => {
-    setWorkspaceView('home')
-    setHomePane('chat')
-  }, [])
+    withMediaLeave(() => {
+      setWorkspaceView('home')
+      setHomePane('chat')
+    })
+  }, [withMediaLeave])
 
   const selectHomeBrowser = useCallback(() => {
     setWorkspaceView('home')
@@ -593,10 +716,36 @@ export function CentralApp() {
 
   const activeBrowserTab = browserTabs.find((t) => t.id === activeBrowserTabId) ?? null
   const pinnedActive = workspaceView === 'pinned' && pinnedSession != null
+  const activePinnedAppId =
+    workspaceView === 'pinned' && pinnedSession ? pinnedSession.pinId : null
   const showWorkspaceRail = page === 'stream' && area === 'work' && workspaceView === 'home'
   const homeBrowserActive =
     workspaceView === 'home' && homePane === 'browser' && browserTabs.length > 0
   const browserMode = pinnedActive || homeBrowserActive
+  const homeBrowserNav = useWebviewNavigation(homeBrowserActive ? activeBrowserTabId : null)
+  const browserContextTabId = browserMode
+    ? pinnedActive
+      ? (pinnedSession?.tab.id ?? null)
+      : activeBrowserTabId
+    : null
+
+  const refreshBrowserPageContext = useCallback(async () => {
+    if (!browserContextTabId) {
+      setBrowserPageContext(null)
+      return
+    }
+    const ctx = await captureWorkspaceBrowserContext(browserContextTabId)
+    setBrowserPageContext(ctx)
+  }, [browserContextTabId])
+
+  useEffect(() => {
+    if (!browserMode) {
+      setBrowserPageContext(null)
+      return
+    }
+    void refreshBrowserPageContext()
+  }, [browserMode, browserContextTabId, refreshBrowserPageContext])
+
   const composeAction = parseComposeCommand(compose)
   const contextEvent = contextItemId
     ? events.find((e) => streamItemId(e) === contextItemId)
@@ -936,10 +1085,17 @@ export function CentralApp() {
   const navAppPlayerMode =
     !activeNavApp ? 'off' : page === 'navapp' && !navAppMini ? 'full' : navAppMini ? 'mini' : 'off'
 
+  const pinnedMiniActive =
+    workspaceMini != null &&
+    pinnedSession != null &&
+    workspaceMini.tabId === pinnedSession.tab.id
+  const browserMiniTabId =
+    workspaceMini != null && !workspaceMini.pinId ? workspaceMini.tabId : null
+
   return (
     <LinkedInPerceptionProvider backgroundActive={linkedInPinned}>
     <div
-      className={`x-app ${navOpen ? 'x-app-nav-open' : 'x-app-nav-closed'} ${showThreadRail ? 'x-app-thread-open' : ''} ${showPostCallRail ? 'x-app-post-call-open' : ''} ${browserMode ? 'x-app-browser-mode' : ''} ${showWorkspaceRail ? 'x-app-workspace-open' : ''} ${page === 'navapp' ? 'x-app-nav-app' : page !== 'stream' ? 'x-app-utility' : 'x-app-stream'} ${!hasRightRail ? 'x-app-no-rail' : ''}${slideBladeLayout ? ' x-app-home-chat' : ''}${navAppMini ? ' x-app-nav-app-mini' : ''}${pinnedActive ? ' x-app-pinned-app' : ''}`}
+      className={`x-app ${navOpen ? 'x-app-nav-open' : 'x-app-nav-closed'} ${showThreadRail ? 'x-app-thread-open' : ''} ${showPostCallRail ? 'x-app-post-call-open' : ''} ${browserMode ? 'x-app-browser-mode' : ''} ${showWorkspaceRail ? 'x-app-workspace-open' : ''} ${page === 'navapp' ? 'x-app-nav-app' : page !== 'stream' ? 'x-app-utility' : 'x-app-stream'} ${!hasRightRail ? 'x-app-no-rail' : ''}${slideBladeLayout ? ' x-app-home-chat' : ''}${navAppMini ? ' x-app-nav-app-mini' : ''}${workspaceMini ? ' x-app-workspace-mini' : ''}${pinnedActive ? ' x-app-pinned-app' : ''}`}
     >
       {linkedInPinned ? <LinkedInBackgroundPerception /> : null}
       {typeof window !== 'undefined' &&
@@ -956,6 +1112,7 @@ export function CentralApp() {
             live={live}
             navApps={navApps}
             activeNavAppId={activeNavAppId}
+            activePinnedAppId={activePinnedAppId}
             onNavigate={onNav}
             onOpenNavApp={openNavApp}
             onPinApp={(id) => pinNavApp(id)}
@@ -993,6 +1150,7 @@ export function CentralApp() {
               if (activeNavAppId === id) closeNavApp()
               removeNavApp(id)
             }}
+            onOpenNotes={() => setPage('notes')}
           />
         </main>
       ) : page === 'build' ? (
@@ -1012,18 +1170,8 @@ export function CentralApp() {
       ) : (
         <HomeChatProvider>
           <>
-          <div className={`x-channel ${showThreadRail || showPostCallRail ? 'x-channel-has-thread' : ''}`}>
+          <div className={`x-channel ${showThreadRail || showPostCallRail ? 'x-channel-has-thread' : ''}${hasRightRail ? ' x-channel-has-rail' : ''}`}>
           <div className="x-channel-main">
-          {pinnedSession && !pinnedActive ? (
-            <div className="x-pinned-app-container x-workspace-browser-parked" aria-hidden="true">
-              <WorkspaceBrowser
-                tabs={[pinnedSession.tab]}
-                activeId=""
-                reloadKeys={tabReloadKeys}
-                onTabUrlChange={(_, url) => syncPinnedTabUrl(url)}
-              />
-            </div>
-          ) : null}
           {showWorkspaceRail ? (
             <div className="x-browser-shell">
               <HomeWorkspaceRail
@@ -1064,6 +1212,10 @@ export function CentralApp() {
                         source: activeBrowserTab.source
                       })
                     }
+                    canGoBack={homeBrowserNav.canGoBack}
+                    canGoForward={homeBrowserNav.canGoForward}
+                    onBack={homeBrowserNav.goBack}
+                    onForward={homeBrowserNav.goForward}
                     railCollapsed={workspaceRailCollapsed}
                     onToggleRail={toggleWorkspaceRail}
                     workspaceMode
@@ -1076,6 +1228,7 @@ export function CentralApp() {
                     <WorkspaceBrowser
                       tabs={browserTabs}
                       activeId={homeBrowserActive ? (activeBrowserTabId ?? '') : ''}
+                      miniTabId={browserMiniTabId}
                       reloadKeys={tabReloadKeys}
                       onTabUrlChange={syncBrowserTabUrl}
                     />
@@ -1112,14 +1265,7 @@ export function CentralApp() {
                   railCollapsed={workspaceRailCollapsed}
                   onToggleRail={toggleWorkspaceRail}
                 />
-                <main className="x-main x-main-work x-main-home x-main-workspace x-browser-content">
-                  <WorkspaceBrowser
-                    tabs={[pinnedSession.tab]}
-                    activeId={pinnedSession.tab.id}
-                    reloadKeys={tabReloadKeys}
-                    onTabUrlChange={(_, url) => syncPinnedTabUrl(url)}
-                  />
-                </main>
+                <main className="x-main x-main-work x-main-home x-main-workspace x-browser-content x-workspace-media-slot" />
               </div>
             </div>
           ) : (
@@ -1255,6 +1401,70 @@ export function CentralApp() {
             )}
           </main>
           )}
+          {pinnedSession ? (
+            <div
+              className={`x-workspace-media-layer${
+                pinnedMiniActive
+                  ? ' x-workspace-media-layer--mini'
+                  : pinnedActive
+                    ? ' x-workspace-media-layer--full'
+                    : ' x-workspace-media-layer--parked'
+              }`}
+              aria-hidden={!pinnedActive && !pinnedMiniActive}
+            >
+              {pinnedMiniActive && workspaceMini ? (
+                <header className="x-nav-app-player-bar">
+                  <span className="x-nav-app-player-title">{workspaceMini.label}</span>
+                  <div className="x-nav-app-player-actions">
+                    <button
+                      type="button"
+                      className="x-nav-app-player-btn"
+                      onClick={expandWorkspaceMini}
+                      title="Expand"
+                    >
+                      Expand
+                    </button>
+                    <button
+                      type="button"
+                      className="x-nav-app-player-btn x-nav-app-player-btn-external"
+                      onClick={() =>
+                        openBrowserLink(workspaceMini.url, {
+                          forceExternal: true,
+                          title: workspaceMini.label
+                        })
+                      }
+                      title="Open in browser"
+                    >
+                      ↗
+                    </button>
+                    <button
+                      type="button"
+                      className="x-nav-app-player-btn x-nav-app-player-btn-close"
+                      onClick={closeWorkspaceMini}
+                      title="Close"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </header>
+              ) : null}
+              <WorkspaceBrowser
+                tabs={[pinnedSession.tab]}
+                activeId={pinnedActive || pinnedMiniActive ? pinnedSession.tab.id : ''}
+                reloadKeys={tabReloadKeys}
+                onTabUrlChange={(_, url) => syncPinnedTabUrl(url)}
+              />
+            </div>
+          ) : null}
+          {workspaceMini && !workspaceMini.pinId ? (
+            <WorkspaceMiniPlayer
+              label={workspaceMini.label}
+              url={workspaceMini.url}
+              hasRail={false}
+              onExpand={expandWorkspaceMini}
+              onClose={closeWorkspaceMini}
+            />
+          ) : null}
           {activeNavApp && navAppPlayerMode === 'mini' ? (
             <NavAppPlayer
               app={activeNavApp}
@@ -1268,7 +1478,6 @@ export function CentralApp() {
               onClose={closeNavApp}
             />
           ) : null}
-          </div>
           </div>
 
           {showThreadRail && threadTarget ? (
@@ -1309,11 +1518,14 @@ export function CentralApp() {
               )}
             </aside>
           ) : showContextRail ? (
-            <aside className="x-rail x-col-rail">
+            <aside className="x-rail x-col-rail x-rail-context">
               <ContextRail
                 events={streamFiltered}
                 onOpenHome={goHome}
                 railContext={{ page, area, tab, workspaceMode: browserMode }}
+                browserTabId={browserContextTabId}
+                browserPageContext={browserPageContext}
+                onRefreshBrowserPageContext={refreshBrowserPageContext}
                 feedRail={{
                   live,
                   activeThreadId: threadTarget?.itemId ?? null,
@@ -1352,6 +1564,7 @@ export function CentralApp() {
               />
             </aside>
           ) : null}
+          </div>
         </>
         </HomeChatProvider>
       )}

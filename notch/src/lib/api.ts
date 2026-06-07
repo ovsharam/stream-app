@@ -188,6 +188,7 @@ export const clusterApi = {
     options?: {
       chat?: boolean
       history?: { role: 'user' | 'assistant'; content: string }[]
+      pageContext?: { url: string; title: string; excerpt?: string; selectedText?: string }
       timeoutMs?: number
       signal?: AbortSignal
     }
@@ -198,7 +199,8 @@ export const clusterApi = {
         query,
         objective,
         chat: options?.chat === true,
-        history: options?.history
+        history: options?.history,
+        pageContext: options?.pageContext
       }),
       timeoutMs: options?.timeoutMs ?? 25_000,
       signal: options?.signal
@@ -212,11 +214,49 @@ export const clusterApi = {
     }),
   patchEngagement: (
     id: string,
-    patch: Partial<import('@shared/fde-engagement').FdeEngagement>
+    patch: Partial<import('@shared/fde-engagement').FdeEngagement> & { scopeApproved?: boolean }
   ) =>
     json<{ engagement: import('@shared/fde-engagement').FdeEngagement }>(
       `/fde/engagements/${encodeURIComponent(id)}`,
       { method: 'PATCH', body: JSON.stringify(patch) }
+    ),
+  trainingSummary: () =>
+    json<import('@shared/fde-training').FdeTrainingCorpusStats>('/fde/training/summary'),
+  trainingDecisions: (engagementId: string) =>
+    json<{ events: import('@shared/fde-training').FdeDecisionEvent[] }>(
+      `/fde/training/decisions/${encodeURIComponent(engagementId)}`
+    ),
+  trainingFeedback: (input: {
+    engagementId: string
+    text: string
+    source?: import('@shared/fde-training').FeedbackSource
+    feedbackType?: import('@shared/fde-training').FeedbackType
+    requirementId?: string
+    buildRunId?: string
+  }) =>
+    json<{ ok: boolean }>('/fde/training/feedback', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    }),
+  graphSync: () =>
+    json<import('@shared/graph-sync').GraphSyncResult>('/graph/sync', { method: 'POST' }),
+  graphStats: () =>
+    json<{
+      entities: number
+      edges: number
+      deals: number
+      falkorConfigured: boolean
+      falkorConnected: boolean
+      falkorNodes?: number
+      falkorGraphEdges?: number
+    }>('/graph/stats'),
+  graphNeighbors: (engagementId: string, hops = 2) =>
+    json<{ engagementId: string; neighbors: { id: string; name?: string; label?: string }[] }>(
+      `/graph/neighbors/${encodeURIComponent(engagementId)}?hops=${hops}`
+    ),
+  explainFeedRank: (eventId: string, role = 'fde') =>
+    json<{ eventId: string; breakdown: import('@shared/graph-sync').FeedRankBreakdown }>(
+      `/cluster/feed/rank?eventId=${encodeURIComponent(eventId)}&role=${encodeURIComponent(role)}`
     ),
   mcpAgents: () =>
     json<{ agents: import('@shared/fde-engagement').CustomMcpAgent[] }>('/fde/mcp-agents'),

@@ -10,6 +10,7 @@ import {
   completeAgent,
   createAgentAbortSignal,
   dismissRunningAgentsPanel,
+  reconcileRunningAgentsWithStream,
   startAgent,
   stopAgent,
   stopAll,
@@ -83,6 +84,10 @@ export function HomeChat({
   const { panelDismissed } = useRunningAgentsPanel()
   const showAgentsPanel = mergedAgents.length > 0 && !panelDismissed
   const hasThread = messages.length > 0
+
+  useEffect(() => {
+    reconcileRunningAgentsWithStream(events)
+  }, [events])
 
   useEffect(() => {
     const el = inputRef.current
@@ -298,7 +303,6 @@ export function HomeChat({
           )
         ) : (
           <div className="x-home-thread">
-            {agentsPanel}
             <div className="x-home-messages">
             {messages.map((msg) => (
               <article

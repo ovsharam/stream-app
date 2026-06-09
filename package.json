@@ -9,7 +9,10 @@
     "dev:measure": "concurrently -n web,api -c cyan,magenta \"next dev\" \"tsx server/index.ts\"",
     "dev:ambient": "concurrently -n web,api,mac -c cyan,magenta,green \"next dev\" \"tsx server/index.ts\" \"wait-on http://localhost:3000 && npm run build:ambient && electron ambient/dist/main.js\"",
     "dev:notch": "concurrently -n api,ui,electron -c magenta,blue,green \"tsx watch server/index.ts\" \"vite --config notch/vite.config.ts\" \"wait-on http://localhost:5174/central.html && npm run build:notch-electron && electron notch/dist-electron/electron/main.js\"",
+    "stop:notch": "node scripts/stop-notch-dev.mjs",
+    "predev:notch:live": "node scripts/stop-notch-dev.mjs",
     "dev:notch:live": "concurrently -n api,ui,electron -c magenta,blue,green \"SIMULATION_MODE=false NOTCH_PROTOTYPE=1 tsx watch server/index.ts\" \"SIMULATION_MODE=false vite --config notch/vite.config.ts\" \"wait-on http://localhost:5174/central.html && npm run build:notch-electron && SIMULATION_MODE=false NOTCH_PROTOTYPE=1 electron notch/dist-electron/electron/main.js\"",
+    "restart:notch": "npm run stop:notch && npm run dev:notch:live",
     "dev:notch:demo": "concurrently -n api,ui,electron -c magenta,blue,green \"SIMULATION_MODE=true DEMO_MODE=1 tsx watch server/index.ts\" \"SIMULATION_MODE=true DEMO_MODE=1 vite --config notch/vite.config.ts\" \"wait-on http://localhost:5174/central.html && npm run build:notch-electron && SIMULATION_MODE=true DEMO_MODE=1 electron notch/dist-electron/electron/main.js\"",
     "build:notch-electron": "tsc -p notch/tsconfig.electron.json",
     "build:notch-ui": "vite build --config notch/vite.config.ts",
@@ -20,6 +23,7 @@
     "notch:mobile": "npm run build:notch && SIMULATION_MODE=true electron notch/dist-electron/electron/main.js --mobile-only",
     "dev:web": "next dev",
     "dev:api": "tsx server/index.ts",
+    "tunnel:api": "cloudflared tunnel --url http://localhost:3131",
     "build": "next build",
     "build:ambient": "tsc -p ambient/tsconfig.json",
     "ambient": "npm run build:ambient && electron ambient/dist/main.js",
@@ -29,6 +33,7 @@
     "postinstall": "node -e \"try{require('better-sqlite3')}catch(e){}\" && (npm rebuild better-sqlite3 2>/dev/null; test -d node_modules/electron && npx @electron/rebuild -f -w better-sqlite3 2>/dev/null; true)"
   },
   "dependencies": {
+    "@cursor/sdk": "^1.0.18",
     "@serwist/next": "^9.0.15",
     "@slack/bolt": "^4.2.1",
     "@supabase/supabase-js": "^2.107.0",

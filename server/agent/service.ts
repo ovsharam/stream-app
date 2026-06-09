@@ -6,6 +6,7 @@ import type {
   LinkedInIngestInput
 } from '../../shared/agent-proposal'
 import { proposalDedupeKey } from '../../shared/agent-dedupe'
+import { cleanLinkedInSenderName } from '../../shared/agent-proposal-ui'
 import { classifyLinkedInMessage, messageLooksActionable } from './classifier'
 import { enrichRescheduleBooking } from './bookingContext'
 import { buildAgentBrief, threadAsText } from './brief'
@@ -24,9 +25,10 @@ import {
 } from './store'
 import { executeApprovedProposal } from './execute'
 import { emitServerEvent } from '../telemetry/service'
+import { recordComposeAction } from '../kb/telemetry'
 
 function normalizeLinkedInSenderName(name: string): string {
-  return name.replace(/\s+Status is offline[\s\S]*$/i, '').trim() || name.trim()
+  return cleanLinkedInSenderName(name)
 }
 
 async function draftLinkedInProposal(input: LinkedInIngestInput, proposalId: string) {
@@ -158,6 +160,7 @@ export async function ingestLinkedInMessage(
   }
 
   const now = Date.now()
+  const detectedAt = input.detectedAt ?? now
   const proposalId = `ap-${randomUUID()}`
 
   logInteraction(proposalId, 'raw_message', {
@@ -185,6 +188,7 @@ export async function ingestLinkedInMessage(
     status: 'pending',
     createdAt: now,
     updatedAt: now,
+    detectedAt,
     threadMessages: input.threadMessages,
     dedupeKey
   }
@@ -306,6 +310,18 @@ export async function approveAgentProposal(
   updateProposal(proposal)
   const executed = await executeApprovedProposal(proposal, { skipBooking: input.skipBooking }, io)
   updateProposal(executed)
+
+  recordComposeAction({
+    operatorId: 'local',
+    subjectId: id,
+    contextItemId: `agent-${id}`,
+    provider: 'linkedin',
+    actionKind: 'send',
+    rawCommand: executed.linkedinReplyDraft.slice(0, 240),
+    ok: executed.status === 'executed' || executed.status === 'approved' || executed.status === 'partial',
+    startedAt: now
+  })
+
   io?.emit('agent:proposal-updated', executed)
   io?.emit('cluster:refresh', { reason: 'agent-proposal' })
   return executed
@@ -316,11 +332,82 @@ export function rejectAgentProposal(id: string, reason?: string, io?: SocketServ
   if (!proposal) throw new Error('Proposal not found')
   if (proposal.status !== 'pending') throw new Error(`Proposal already ${proposal.status}`)
 
+  const now = Date.now()
   proposal.status = 'rejected'
-  proposal.updatedAt = Date.now()
+  proposal.updatedAt = now
   logInteraction(id, 'user_rejected', { reason: reason ?? '' })
   updateProposal(proposal)
+
+  recordComposeAction({
+    operatorId: 'local',
+    subjectId: id,
+    contextItemId: `agent-${id}`,
+    provider: 'linkedin',
+    actionKind: 'reject',
+    rawCommand: reason?.trim() || `reject agent proposal ${id}`,
+    ok: true,
+    startedAt: now
+  })
   emitServerEvent('agent_proposal_rejected', { proposalId: id, reason }, { subjectId: id })
+  io?.emit('agent:proposal-updated', proposal)
+  io?.emit('cluster:refresh', { reason: 'agent-proposal' })
+  return proposal
+}
+
+export function updateAgentProposalDraft(
+  id: string,
+  linkedinReply: string,
+  io?: SocketServer
+): AgentProposal {
+  const proposal = getProposal(id)
+  if (!proposal) throw new Error('Proposal not found')
+  if (proposal.status !== 'pending') throw new Error(`Proposal already ${proposal.status}`)
+
+  proposal.linkedinReplyDraft = linkedinReply.trim()
+  proposal.updatedAt = Date.now()
+  updateProposal(proposal)
+  io?.emit('agent:proposal-updated', proposal)
+  return proposal
+}
+
+export function snoozeAgentProposal(
+  id: string,
+  input: import('../../shared/agent-proposal').SnoozeAgentProposalInput,
+  io?: SocketServer
+): AgentProposal {
+  const proposal = getProposal(id)
+  if (!proposal) throw new Error('Proposal not found')
+  if (proposal.status !== 'pending') throw new Error(`Proposal already ${proposal.status}`)
+
+  const now = Date.now()
+  const defaultMs = 24 * 60 * 60 * 1000
+  const snoozedUntil =
+    input.snoozedUntil ??
+    now + (input.remindInMs && input.remindInMs > 0 ? input.remindInMs : defaultMs)
+
+  if (input.linkedinReply?.trim()) {
+    proposal.linkedinReplyDraft = input.linkedinReply.trim()
+  }
+
+  proposal.snoozedUntil = snoozedUntil
+  proposal.updatedAt = now
+  logInteraction(id, 'user_snoozed', {
+    snoozedUntil,
+    linkedinReplyDraft: proposal.linkedinReplyDraft
+  })
+  updateProposal(proposal)
+
+  recordComposeAction({
+    operatorId: 'local',
+    subjectId: id,
+    contextItemId: `agent-${id}`,
+    provider: 'linkedin',
+    actionKind: 'snooze',
+    rawCommand: `remind later until ${new Date(snoozedUntil).toISOString()}`,
+    ok: true,
+    startedAt: now
+  })
+
   io?.emit('agent:proposal-updated', proposal)
   io?.emit('cluster:refresh', { reason: 'agent-proposal' })
   return proposal

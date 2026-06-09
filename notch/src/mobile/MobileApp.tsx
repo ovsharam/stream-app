@@ -8,6 +8,7 @@ import { ContextStrip } from './components/ContextStrip'
 import { GuideQuestions } from './components/GuideQuestions'
 import { LiveAnswer } from './components/LiveAnswer'
 import { MeetingPanel } from './components/MeetingPanel'
+import { useAgentProposalMobileBridge } from './useAgentProposalMobileBridge'
 
 type Phase = 'hidden' | 'open'
 
@@ -18,6 +19,7 @@ export default function MobileApp() {
   const [result, setResult] = useState<AssistResult | null>(null)
   const [loading, setLoading] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+  const { pendingCount, alert, dismissAlert } = useAgentProposalMobileBridge()
 
   const refreshContext = useCallback(() => {
     void mobileApi.context().then(setCtx).catch(() => setCtx(null))
@@ -87,6 +89,11 @@ export default function MobileApp() {
         <div className="pill-header">
           <div className="pill-dot" data-live={ctx?.phase === 'live_call'} />
           <span className="pill-name">stream</span>
+          {pendingCount > 0 ? (
+            <span className="pill-agent-badge" aria-label={`${pendingCount} agent drafts`}>
+              {pendingCount}
+            </span>
+          ) : null}
           {ctx?.dealName && <span className="pill-call">{ctx.dealName}</span>}
           <button type="button" className="pill-close" onClick={() => window.notch?.hide?.()}>
             ⌘⇧M
@@ -98,6 +105,15 @@ export default function MobileApp() {
         <MeetingPanel />
 
         <div className="mobile-body">
+          {alert ? (
+            <div className="mobile-agent-banner" role="status">
+              <p className="mobile-agent-banner-title">LinkedIn draft — {alert.senderName}</p>
+              <p className="mobile-agent-banner-body">{alert.summary}</p>
+              <button type="button" className="mobile-agent-banner-dismiss" onClick={dismissAlert}>
+                Dismiss
+              </button>
+            </div>
+          ) : null}
           {ctx && (
             <div className="ambient-banner">
               <p className="ambient-title">

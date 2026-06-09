@@ -1,3 +1,4 @@
+import { formatElapsedMs, useTick } from './agentDuration'
 import type { PanelAgent } from './runningAgentsStore'
 
 type Props = {
@@ -25,7 +26,14 @@ function AgentGridIcon() {
   )
 }
 
+function statusWithElapsed(status: string, startedAt?: number, now?: number): string {
+  if (!startedAt || now == null) return status
+  const elapsed = formatElapsedMs(now - startedAt)
+  return `${status} · ${elapsed}`
+}
+
 export function RunningAgentsPanel({ agents, onStopAll, onDismiss, onFocusMeeting }: Props) {
+  const now = useTick(1000)
   if (agents.length === 0) return null
 
   const countLabel = agents.length === 1 ? '1 Working' : `${agents.length} Working`
@@ -55,7 +63,9 @@ export function RunningAgentsPanel({ agents, onStopAll, onDismiss, onFocusMeetin
               <AgentGridIcon />
               <div className="x-running-agents-text">
                 <span className="x-running-agents-title">{agent.title}</span>
-                <span className="x-running-agents-status">{agent.status}</span>
+                <span className="x-running-agents-status">
+                  {statusWithElapsed(agent.status, agent.startedAt, now)}
+                </span>
               </div>
             </>
           )

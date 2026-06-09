@@ -168,6 +168,17 @@ export function parseComposeCommand(raw: string): ComposeCommand | null {
     }
   }
 
+  const cursorLocalAsk = rest.match(/^local\s+ask\s*:\s*(.+)$/is)
+  if (provider === 'cursor' && cursorLocalAsk) {
+    return {
+      provider,
+      target: 'local',
+      intent: 'ask',
+      body: cursorLocalAsk[1].trim(),
+      raw: text
+    }
+  }
+
   const intentMatch = rest.match(/^(reply|send|post|ask|comment|create|move|append|note|draft|issue|book)\s*(?:to|:)\s*(.+)$/is)
   if (intentMatch) {
     return {
@@ -404,7 +415,10 @@ export const COMPOSE_SUGGESTIONS: Partial<Record<ComposeProvider, ComposeSuggest
     { label: 'draft:', insert: 'draft: ', hint: 'Draft copy' }
   ],
   gemini: [{ label: 'ask:', insert: 'ask: ', hint: 'Question or task' }],
-  cursor: [{ label: 'ask:', insert: 'ask: ', hint: 'Launch build agent' }],
+  cursor: [
+    { label: 'local ask:', insert: 'local ask: ', hint: 'Local build in active project' },
+    { label: 'ask:', insert: 'ask: ', hint: 'Cloud build agent' }
+  ],
   github: [
     { label: 'org/repo:', insert: 'org/repo: ', hint: 'New issue' },
     { label: '#ID comment:', insert: '#42 comment: ', hint: 'Comment on issue' }

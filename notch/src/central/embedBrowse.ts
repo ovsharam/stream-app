@@ -1,6 +1,9 @@
 /** Shared Electron sessions for OAuth-heavy sites opened as workspace tabs. */
 export type EmbedBrowseKind = 'google' | 'linkedin'
 
+/** One shared profile for all general browser tabs (cookies persist across tabs). */
+export const NOTCH_BROWSER_PARTITION = 'persist:notch-browser'
+
 export const EMBED_BROWSE_PARTITIONS: Record<EmbedBrowseKind, string> = {
   google: 'persist:google-browse',
   linkedin: 'persist:linkedin-browse'
@@ -70,6 +73,7 @@ export function shouldPersistWorkspaceUrl(
   url: string,
   tab: { source?: string; pinId?: string }
 ): boolean {
+  if (isGoogleBlockedAuthUrl(url)) return false
   const linkedInTab = tab.pinId === 'linkedin' || tab.source === 'linkedin'
   if (!linkedInTab) return true
   if (isLinkedInNavigationNoise(url)) return false
@@ -100,11 +104,10 @@ export function embedBrowseKindForTab(tab: {
   return embedBrowseKindForUrl(tab.url)
 }
 
-export function workspacePartitionForUrl(url: string, tabId: string): string {
+export function workspacePartitionForUrl(url: string, _tabId: string): string {
   const kind = embedBrowseKindForUrl(url)
   if (kind) return EMBED_BROWSE_PARTITIONS[kind]
-  const slug = tabId.replace(/[^a-zA-Z0-9-_]/g, '-').slice(0, 48)
-  return `persist:ws-${slug}`
+  return NOTCH_BROWSER_PARTITION
 }
 
 export function workspacePartitionForTab(tab: {
@@ -166,13 +169,21 @@ export function isLinkedInAuthUrl(url: string): boolean {
   }
 }
 
-/** OAuth / login hosts that should open in an in-app auth window (same partition). */
-export function isEmbedAuthPopupUrl(url: string): boolean {
+/** Google login / OAuth hosts — must never load inside Electron webviews. */
+export function isGoogleBlockedAuthUrl(url: string): boolean {
   try {
-    const { hostname } = new URL(url)
+    const { hostname, pathname } = new URL(url)
     if (hostname === 'accounts.google.com') return true
-    return isLinkedInAuthUrl(url)
+    if (hostname === 'myaccount.google.com' && pathname.includes('signin')) return true
+    if (hostname.endsWith('google.com') && pathname.startsWith('/accounts/')) return true
+    return false
   } catch {
     return false
   }
+}
+
+/** OAuth / login hosts intercepted before they load in workspace webviews. */
+export function isEmbedAuthPopupUrl(url: string): boolean {
+  if (isGoogleBlockedAuthUrl(url)) return true
+  return isLinkedInAuthUrl(url)
 }

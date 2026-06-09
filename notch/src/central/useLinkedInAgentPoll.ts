@@ -36,6 +36,31 @@ export const LINKEDIN_MESSAGING_SCAN_JS = `(function() {
     hits.push({ threadId, senderName, message, senderProfileUrl: senderProfileUrl || undefined });
   }
 
+  function threadIdFromListItem(el) {
+    var link = el.querySelector('a[href*="/messaging/thread/"]');
+    if (!link) link = el.closest('a[href*="/messaging/thread/"]');
+    if (link) {
+      var hm = (link.getAttribute('href') || '').match(/thread\\/([^/?]+)/);
+      if (hm && hm[1] && hm[1].indexOf('li-list-') !== 0) return hm[1];
+    }
+    var urnAttrs = ['data-conversation-urn', 'data-urn', 'data-event-urn'];
+    for (var u = 0; u < urnAttrs.length; u++) {
+      var urn = el.getAttribute(urnAttrs[u]) || '';
+      var um = urn.match(/msg_conversation:\\(([^)]+)\\)/);
+      if (um && um[1]) return um[1];
+    }
+    for (var i = 0; i < el.attributes.length; i++) {
+      var val = el.attributes[i].value || '';
+      var tm = val.match(/msg_conversation:\\(([^)]+)\\)/);
+      if (tm && tm[1]) return tm[1];
+      var hm2 = val.match(/thread\\/([A-Za-z0-9%_-]+)/);
+      if (hm2 && hm2[1] && hm2[1].indexOf('li-list-') !== 0) {
+        try { return decodeURIComponent(hm2[1]); } catch (e) { return hm2[1]; }
+      }
+    }
+    return null;
+  }
+
   const listSelector =
     '.msg-conversation-listitem, li[class*="conversation-listitem"], [data-control-name="conversation"]';
   const listItems = new Set();
@@ -62,13 +87,10 @@ export const LINKEDIN_MESSAGING_SCAN_JS = `(function() {
       el.querySelector('.msg-conversation-listitem__message-snippet') ||
       el.querySelector('p[class*="snippet"]') ||
       el.querySelector('.msg-conversation-card__message-snippet');
-    const linkEl = el.querySelector('a[href*="/messaging/thread/"]');
-
     const senderName = ((nameEl && nameEl.textContent) || '').replace(/\\s+/g, ' ').trim();
     const message = ((previewEl && previewEl.textContent) || '').replace(/\\s+/g, ' ').trim();
-    const href = (linkEl && linkEl.getAttribute('href')) || '';
-    const threadMatch = href.match(/thread\\/([^/?]+)/);
-    const threadId = threadMatch ? threadMatch[1] : 'li-list-' + idx + '-' + senderName.slice(0, 24);
+    let threadId = threadIdFromListItem(el);
+    if (!threadId) threadId = 'li-list-' + idx + '-' + senderName.slice(0, 24);
     idx += 1;
     pushHit(threadId, senderName, message, undefined);
   });

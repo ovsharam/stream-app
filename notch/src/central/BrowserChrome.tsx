@@ -10,6 +10,7 @@ type Props = {
   canGoForward?: boolean
   onBack?: () => void
   onForward?: () => void
+  onImportChrome?: () => void
   railCollapsed?: boolean
   onToggleRail?: () => void
   /** Pinned app or home browser — label rail toggle as Stream panel. */
@@ -25,6 +26,7 @@ export function BrowserChrome({
   canGoForward = false,
   onBack,
   onForward,
+  onImportChrome,
   railCollapsed,
   onToggleRail,
   workspaceMode = false
@@ -80,6 +82,17 @@ export function BrowserChrome({
         />
       </form>
       <div className="x-browser-chrome-actions">
+        {onImportChrome ? (
+          <button
+            type="button"
+            className="x-browser-chrome-btn"
+            title="Import cookies from Chrome"
+            aria-label="Import cookies from Chrome"
+            onClick={onImportChrome}
+          >
+            ⧉
+          </button>
+        ) : null}
         <button type="button" className="x-browser-chrome-btn" title="Open in browser" aria-label="Open in browser" onClick={onExternal}>
           ↗
         </button>

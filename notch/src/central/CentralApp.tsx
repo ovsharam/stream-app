@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ClusterSearchHit } from '@shared/cluster'
+import { isSyntheticLinkedInThreadId } from '@shared/linkedin-thread'
 import { FeedPost } from './FeedPost'
 import { HomeChatProvider } from './homeChatContext'
 import { WorkView } from './WorkView'
@@ -23,6 +24,11 @@ import { WorkspaceBrowser } from './WorkspaceBrowser'
 import { HomeWorkspaceRail } from './HomeWorkspaceRail'
 import { PinnedAppShell } from './PinnedAppShell'
 import { LinkedInBackgroundPerception } from './LinkedInBackgroundPerception'
+import { AppToastStack } from './AppToastStack'
+import { useAgentProposalNotifications } from './useAgentProposalNotifications'
+import { useCalendarToasts } from './useCalendarToasts'
+import { useRailDockCss } from './useRailDockCss'
+import { RailResizeHandle } from './RailResizeHandle'
 import { LinkedInPerceptionProvider } from './LinkedInPerceptionContext'
 import { normalizeBrowserUrl, workspaceTabFromInput } from './browserUrl'
 import { FeedSearchBar, filterFeedEvents } from './FeedSearchBar'
@@ -45,7 +51,12 @@ import {
   trackOperatorEvent
 } from '../lib/operatorTelemetry'
 import { clusterApi, integrationApi, openBrowserLink, inferWorkspaceMeta } from '../lib/api'
-import { isLinkedInBrowseHost, LINKEDIN_FEED_URL, shouldPersistWorkspaceUrl } from './embedBrowse'
+import {
+  isGoogleBlockedAuthUrl,
+  isLinkedInBrowseHost,
+  LINKEDIN_FEED_URL,
+  shouldPersistWorkspaceUrl
+} from './embedBrowse'
 import {
   migrateLegacyTabs,
   tabFromCalendarEvent,
@@ -90,21 +101,43 @@ function streamItemId(event: { id: string; meta?: Record<string, unknown> }): st
   return String(event.meta?.itemId ?? event.id.replace(/^ext-/, ''))
 }
 
+const PINNED_APP_HOME_URL: Record<string, string> = {
+  gmail: 'https://mail.google.com/',
+  youtube: 'https://www.youtube.com/',
+  gdocs: 'https://docs.google.com/',
+  calendar: 'https://calendar.google.com/',
+  google: 'https://www.google.com/'
+}
+
+function sanitizeBrowserTab(tab: WorkspaceTab): WorkspaceTab {
+  if (!isGoogleBlockedAuthUrl(tab.url)) return tab
+  const key = tab.pinId ?? tab.source
+  const url = (key && PINNED_APP_HOME_URL[key]) || 'https://mail.google.com/'
+  return { ...tab, url, summary: url }
+}
+
+function sanitizeBrowserTabs(tabs: WorkspaceTab[]): WorkspaceTab[] {
+  return tabs.map(sanitizeBrowserTab)
+}
+
 function sanitizePinnedSession(session: PinnedAppSession | null): PinnedAppSession | null {
   if (!session) return null
-  const linkedIn = session.pinId === 'linkedin' || session.tab.source === 'linkedin'
-  if (!linkedIn) return session
-  if (shouldPersistWorkspaceUrl(session.tab.url, session.tab)) return session
-  return {
-    pinId: session.pinId,
-    tab: tabFromUrl(LINKEDIN_FEED_URL, {
-      title: 'LinkedIn',
-      source: 'linkedin',
-      id: `nav-${session.pinId}`,
-      tabKind: 'pinned',
-      pinId: session.pinId
-    })
+  let tab = sanitizeBrowserTab(session.tab)
+  let next = tab === session.tab ? session : { ...session, tab }
+  const linkedIn = next.pinId === 'linkedin' || next.tab.source === 'linkedin'
+  if (linkedIn && !shouldPersistWorkspaceUrl(next.tab.url, next.tab)) {
+    next = {
+      pinId: next.pinId,
+      tab: tabFromUrl(LINKEDIN_FEED_URL, {
+        title: 'LinkedIn',
+        source: 'linkedin',
+        id: `nav-${next.pinId}`,
+        tabKind: 'pinned',
+        pinId: next.pinId
+      })
+    }
   }
+  return next
 }
 
 function loadWorkspaceState(): {
@@ -126,7 +159,7 @@ function loadWorkspaceState(): {
   try {
     const rawBrowser = localStorage.getItem('stream.central.browserTabs')
     if (rawBrowser) {
-      const browserTabs = JSON.parse(rawBrowser) as WorkspaceTab[]
+      const browserTabs = sanitizeBrowserTabs(JSON.parse(rawBrowser) as WorkspaceTab[])
       const activeBrowserTabId = localStorage.getItem('stream.central.activeBrowserTabId')
       const pinnedRaw = localStorage.getItem('stream.central.pinnedSession')
       const pinnedSession = sanitizePinnedSession(
@@ -146,7 +179,8 @@ function loadWorkspaceState(): {
     const legacyRaw = localStorage.getItem('stream.central.workspaceTabs')
     if (legacyRaw) {
       const legacyTabs = JSON.parse(legacyRaw) as WorkspaceTab[]
-      const { browserTabs, pinnedSession: rawPinned } = migrateLegacyTabs(legacyTabs)
+      const { browserTabs: rawBrowserTabs, pinnedSession: rawPinned } = migrateLegacyTabs(legacyTabs)
+      const browserTabs = sanitizeBrowserTabs(rawBrowserTabs)
       const pinnedSession = sanitizePinnedSession(rawPinned)
       const legacyActive = localStorage.getItem('stream.central.activeWorkspaceId')
       let activeBrowserTabId = browserTabs.at(-1)?.id ?? null
@@ -236,6 +270,10 @@ export function CentralApp() {
   const activeNavApp = activeNavAppId ? getNavApp(activeNavAppId, navApps) : null
   const linkedInPinned =
     isNavAppPinned('linkedin', navApps) || pinnedSession?.pinId === 'linkedin'
+
+  useAgentProposalNotifications()
+  useCalendarToasts()
+  useRailDockCss()
 
   const closeNavApp = useCallback(() => {
     setActiveNavAppId(null)
@@ -674,6 +712,21 @@ export function CentralApp() {
     setTabReloadKeys((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }))
   }, [])
 
+  const importFromChrome = useCallback(
+    async (reloadTabId?: string) => {
+      const result = await window.notchDesktop?.importChromeCookies?.()
+      if (!result?.ok) {
+        window.alert(result?.error ?? 'Could not import cookies from Chrome.')
+        return
+      }
+      window.alert(
+        `Imported ${result.imported} cookies from Chrome${result.skipped ? ` (${result.skipped} skipped)` : ''}. Reload tabs to apply.`
+      )
+      if (reloadTabId) reloadBrowserTab(reloadTabId)
+    },
+    [reloadBrowserTab]
+  )
+
   const selectHomeChat = useCallback(() => {
     withMediaLeave(() => {
       setWorkspaceView('home')
@@ -970,6 +1023,30 @@ export function CentralApp() {
   }, [openBrowserTab])
 
   useEffect(() => {
+    const onLinkedInThread = (e: Event) => {
+      const detail = (e as CustomEvent<{ threadId: string; senderName?: string }>).detail
+      const threadId = detail?.threadId?.trim()
+      if (!threadId) return
+      const url = isSyntheticLinkedInThreadId(threadId)
+        ? 'https://www.linkedin.com/messaging/'
+        : `https://www.linkedin.com/messaging/thread/${threadId}/`
+      window.dispatchEvent(
+        new CustomEvent('notch:open-workspace', {
+          detail: {
+            url,
+            title: 'LinkedIn',
+            source: 'linkedin',
+            pinId: 'linkedin',
+            tabKind: 'pinned'
+          }
+        })
+      )
+    }
+    window.addEventListener('notch:open-linkedin-thread', onLinkedInThread)
+    return () => window.removeEventListener('notch:open-linkedin-thread', onLinkedInThread)
+  }, [])
+
+  useEffect(() => {
     return window.notchDesktop?.onOpenUrl?.((url) => {
       const meta = inferWorkspaceMeta(url)
       openBrowserLink(url, { title: meta.title, source: meta.source })
@@ -1158,7 +1235,6 @@ export function CentralApp() {
           <BuildAgentsView
             events={events}
             onOpenIntegrations={() => setPage('integrations')}
-            onFocusMeeting={openMeetingInWork}
           />
         </main>
       ) : page === 'notes' ? (
@@ -1216,6 +1292,7 @@ export function CentralApp() {
                     canGoForward={homeBrowserNav.canGoForward}
                     onBack={homeBrowserNav.goBack}
                     onForward={homeBrowserNav.goForward}
+                    onImportChrome={() => void importFromChrome(activeBrowserTab.id)}
                     railCollapsed={workspaceRailCollapsed}
                     onToggleRail={toggleWorkspaceRail}
                     workspaceMode
@@ -1262,6 +1339,7 @@ export function CentralApp() {
                     })
                   }
                   onNewTab={() => newBrowserTab('https://www.google.com')}
+                  onImportChrome={() => void importFromChrome(pinnedSession.tab.id)}
                   railCollapsed={workspaceRailCollapsed}
                   onToggleRail={toggleWorkspaceRail}
                 />
@@ -1518,7 +1596,8 @@ export function CentralApp() {
               )}
             </aside>
           ) : showContextRail ? (
-            <aside className="x-rail x-col-rail x-rail-context">
+            <aside className="x-rail x-col-rail x-rail-context x-rail-dock">
+              <RailResizeHandle />
               <ContextRail
                 events={streamFiltered}
                 onOpenHome={goHome}
@@ -1596,6 +1675,8 @@ export function CentralApp() {
           onClose={closeNavApp}
         />
       ) : null}
+
+      <AppToastStack />
     </div>
     </LinkedInPerceptionProvider>
   )

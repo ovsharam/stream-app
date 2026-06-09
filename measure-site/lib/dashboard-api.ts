@@ -13,7 +13,7 @@ async function request<T>(path: string): Promise<T> {
 export const dashboardApi = {
   getSnapshot: async (since?: number) => {
     const q = since != null ? `?since=${since}` : ''
-    const data = await request<DataDashboardSnapshot>(`/dashboard/data${q}`)
+    const data = await request<DataDashboardSnapshot>(`/data${q}`)
     return normalizeDashboardSnapshot(data)
   }
 }

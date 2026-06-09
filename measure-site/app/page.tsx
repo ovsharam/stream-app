@@ -188,6 +188,7 @@ export default function MeasurePage() {
   }
 
   const { counts, moments, activity, intention = emptyIntentionBlock(), insights = emptyInsights() } = snapshot
+  const hasLoadedData = counts.streamItems > 0 || counts.operatorEvents > 0
   const { stats: intentionStats, episodes } = intention
   const { agents, traces, engagements, streamBySource, intentionMix, taskSessions, decisions } = insights
   const topEventTypes = Object.entries(counts.operatorEventsByType).slice(0, 6)
@@ -227,7 +228,7 @@ export default function MeasurePage() {
       </header>
 
       <main className="mx-auto max-w-6xl space-y-8 px-6 py-8">
-        {!apiConfigured && !apiStatus.checking ? (
+        {!apiConfigured && !apiStatus.checking && !hasLoadedData ? (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
             <strong className="font-medium">Waiting for live data.</strong> {statusMessage(apiStatus)}
             {apiStatus.apiUrl ? (
@@ -235,6 +236,11 @@ export default function MeasurePage() {
                 Target: <code className="rounded bg-black/30 px-1 py-0.5">{apiStatus.apiUrl}</code>
               </span>
             ) : null}
+          </div>
+        ) : !apiConfigured && !apiStatus.checking && hasLoadedData ? (
+          <div className="rounded-xl border border-zinc-700 bg-zinc-900/60 px-4 py-3 text-sm text-zinc-400">
+            Showing cached snapshot — live tunnel offline. Run <code className="text-zinc-300">npm run tunnel:api</code>{' '}
+            and keep Notch open for real-time updates.
           </div>
         ) : null}
         {error ? (

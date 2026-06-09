@@ -9,6 +9,7 @@ import {
   useLinkedInAgentPoll
 } from './useLinkedInAgentPoll'
 import { workspaceUrlsEquivalent, LINKEDIN_MESSAGING_URL, type EmbedBrowseKind } from './embedBrowse'
+import { useLinkedInComposePaste } from './useLinkedInComposePaste'
 import { useLinkedInPerceptionBackground } from './LinkedInPerceptionContext'
 
 type Props = {
@@ -86,6 +87,8 @@ export function EmbeddedWebview({
     enabled: Boolean(webviewEl && domReady && perceptionEnabled),
     backgroundMode: perceptionBackground
   })
+
+  useLinkedInComposePaste(webviewEl, domReady, embedBrowseKind)
 
   useEffect(() => {
     const webview = webviewEl as WebviewEl | null
@@ -213,7 +216,7 @@ export function EmbeddedWebview({
       {...(dataTabId ? { 'data-workspace-tab-id': dataTabId } : {})}
       {...(guestPreload ? { preload: guestPreload } : {})}
       allowpopups="true"
-      webpreferences="contextIsolation=yes,nativeWindowOpen=yes,javascript=yes"
+      webpreferences="contextIsolation=yes,nativeWindowOpen=yes,javascript=yes,enableBlinkFeatures=PasswordAutosave"
     />
   )
 }

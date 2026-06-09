@@ -1,13 +1,25 @@
 import 'dotenv/config'
-import { app, BrowserView, BrowserWindow, globalShortcut, screen, Tray, nativeImage, ipcMain, shell, dialog, session } from 'electron'
+import { app, BrowserView, BrowserWindow, globalShortcut, screen, Tray, nativeImage, ipcMain, shell, dialog, session, Notification } from 'electron'
+
+/** Avoid crash dialogs when stdout/stderr pipe closes (concurrently restarts, detached Terminal). */
+function ignoreBrokenPipe(stream: NodeJS.WriteStream): void {
+  stream.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED') return
+    throw err
+  })
+}
+ignoreBrokenPipe(process.stdout)
+ignoreBrokenPipe(process.stderr)
 import type { BrowserWindow as BW, Input, Session, WebContents } from 'electron'
 import type { NativeImage } from 'electron'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { spawn, type ChildProcess } from 'child_process'
-import { existsSync } from 'fs'
+import { existsSync, mkdirSync } from 'fs'
+import { homedir } from 'os'
 import { AudioTap, resolveWhisperRoot } from './services/AudioTap'
 import { CallSessionManager } from './services/CallSessionManager'
+import { importChromeCookiesToNotch } from './chromeProfileImport'
 
 const isDev = !app.isPackaged
 const GUEST_PRELOAD = join(__dirname, 'guest-preload.js')
@@ -483,6 +495,27 @@ function configureLinkedInBrowseSession(sess: Session): void {
   })
 }
 
+/** Cancel Google sign-in at the network layer — will-navigate alone is not reliable in webviews. */
+function configureGoogleAuthBlock(sess: Session, cookiePartition: string): void {
+  sess.webRequest.onBeforeRequest({ urls: GOOGLE_AUTH_WEBREQUEST_URLS }, (details, callback) => {
+    const rt = details.resourceType
+    if (rt !== 'mainFrame' && rt !== 'subFrame') {
+      callback({})
+      return
+    }
+    if (!googleAuthInterceptReady) {
+      callback({})
+      return
+    }
+    if (rt === 'subFrame') {
+      callback({ cancel: true })
+      return
+    }
+    callback({ cancel: true })
+    setImmediate(() => queueGoogleSignIn(cookiePartition, details.url))
+  })
+}
+
 function suspendNavBrowserView(): void {
   if (!navBrowserView || !centralWindow || centralWindow.isDestroyed()) return
   try {
@@ -613,35 +646,115 @@ function showNavBrowserView(args: {
   applyNavAppAppearance(navAppTheme)
 }
 
-const AUTH_BLOCKED_JS = `(function() {
-  const t = (document.title || '').toLowerCase();
-  const b = (document.body && document.body.innerText) || '';
-  return t.includes("couldn't sign you in") || b.includes('may not be secure');
-})();`
+const GOOGLE_BROWSE_PARTITION = 'persist:google-browse'
+const pendingGoogleAuthSync = new Set<string>()
 
-function wireAuthWindowBlockedFallback(win: BrowserWindow, oauthUrl: string, partition: string): void {
-  const check = () => {
-    if (win.isDestroyed()) return
-    void win.webContents
-      .executeJavaScript(AUTH_BLOCKED_JS, true)
-      .then((blocked) => {
-        if (!blocked || win.isDestroyed()) return
-        console.warn('[embedded] Google blocked in-app OAuth — opening system browser')
-        void shell.openExternal(oauthUrl)
-        win.close()
-        if (centralWindow && !centralWindow.isDestroyed()) {
-          centralWindow.webContents.send('embedded:auth-external-fallback', partition)
-        }
-      })
-      .catch(() => {
-        /* ignore */
-      })
+function isGoogleBrowsePartition(partition: string): boolean {
+  return partition === GOOGLE_BROWSE_PARTITION
+}
+
+function isGoogleAccountsUrl(url: string): boolean {
+  try {
+    return new URL(url).hostname === 'accounts.google.com'
+  } catch {
+    return false
   }
-  win.webContents.on('did-finish-load', check)
-  win.webContents.on('did-navigate-in-page', check)
+}
+
+/** Google login / OAuth hosts — must never load inside Electron webviews. */
+function isGoogleBlockedAuthUrl(url: string): boolean {
+  try {
+    const { hostname, pathname } = new URL(url)
+    if (hostname === 'accounts.google.com') return true
+    if (hostname === 'myaccount.google.com' && pathname.includes('signin')) return true
+    if (hostname.endsWith('google.com') && pathname.startsWith('/accounts/')) return true
+    return false
+  } catch {
+    return false
+  }
+}
+
+const GOOGLE_AUTH_WEBREQUEST_URLS = [
+  '*://accounts.google.com/*',
+  '*://myaccount.google.com/*',
+  '*://www.google.com/accounts/*',
+  '*://google.com/accounts/*'
+]
+
+const pendingGoogleAuthUrls = new Map<string, string>()
+let lastGoogleAuthNotifyAt = 0
+/** Defer network-level Google blocks until the main window is stable (avoids SIGSEGV on startup). */
+let googleAuthInterceptReady = false
+
+/** Block Google auth in webviews and show the sign-in gate — do not auto-open Chrome (SIGSEGV on macOS). */
+function queueGoogleSignIn(partition: string, url: string): void {
+  pendingGoogleAuthUrls.set(partition, url)
+  const now = Date.now()
+  if (now - lastGoogleAuthNotifyAt < 800) return
+  lastGoogleAuthNotifyAt = now
+  notifyEmbedSignInNeeded(partition)
+}
+
+/** User-initiated — open Google sign-in in system browser and sync cookies back. */
+function openGoogleAuthExternal(url: string, partition: string): void {
+  console.log('[embedded] Google sign-in — opening system browser (user action)')
+  pendingGoogleAuthUrls.set(partition, url)
+  void shell.openExternal(url)
+  scheduleGoogleAuthCookieSync(partition)
+  if (centralWindow && !centralWindow.isDestroyed()) {
+    centralWindow.webContents.send('embedded:auth-external-fallback', partition)
+  }
+}
+
+function reloadNavAppAfterAuth(partition: string): void {
+  if (
+    partition !== navBrowserViewPartition ||
+    !navBrowserView ||
+    navBrowserView.webContents.isDestroyed() ||
+    !navBrowserViewTargetUrl
+  ) {
+    return
+  }
+  void navBrowserView.webContents.loadURL(navBrowserViewTargetUrl)
+}
+
+function notifyAuthClosed(partition: string): void {
+  if (centralWindow && !centralWindow.isDestroyed()) {
+    centralWindow.webContents.send('embedded:auth-closed', partition)
+  }
+  reloadNavAppAfterAuth(partition)
+}
+
+function scheduleGoogleAuthCookieSync(partition: string): void {
+  pendingGoogleAuthSync.add(partition)
+  const win = centralWindow
+  if (!win || win.isDestroyed()) return
+
+  const attemptSync = () => {
+    if (!pendingGoogleAuthSync.has(partition)) return
+    void importChromeCookiesToNotch({ quiet: true }).then((result) => {
+      if (!pendingGoogleAuthSync.has(partition)) return
+      if (!result.ok || result.imported === 0) return
+      pendingGoogleAuthSync.delete(partition)
+      console.log(`[embedded] synced ${result.imported} Chrome cookies after Google sign-in`)
+      notifyAuthClosed(partition)
+    })
+  }
+
+  win.once('focus', attemptSync)
+  setTimeout(attemptSync, 5000)
+  setTimeout(attemptSync, 15000)
 }
 
 function openAuthWindow(args: { partition: string; url: string; title?: string }): void {
+  if (isGoogleBrowsePartition(args.partition)) {
+    const existing = authWindows.get(args.partition)
+    if (existing && !existing.isDestroyed()) existing.close()
+    const url = pendingGoogleAuthUrls.get(args.partition) ?? args.url
+    openGoogleAuthExternal(url, args.partition)
+    return
+  }
+
   const sess = session.fromPartition(args.partition)
   configureEmbeddedSession(sess)
 
@@ -652,31 +765,19 @@ function openAuthWindow(args: { partition: string; url: string; title?: string }
     return
   }
 
-  const isGoogle = args.partition === 'persist:google-browse'
   const win = new BrowserWindow({
-    ...popupWindowOptions(null, sess, isGoogle),
+    ...popupWindowOptions(null, sess, false),
     width: 960,
     height: 780,
     title: args.title ?? 'Sign in'
   })
   win.webContents.setUserAgent(CHROME_USER_AGENT)
   configureGuestWebContents(win.webContents)
-  if (isGoogle) wireAuthWindowBlockedFallback(win, args.url, args.partition)
   void win.loadURL(args.url)
   authWindows.set(args.partition, win)
   win.on('closed', () => {
     authWindows.delete(args.partition)
-    if (
-      args.partition === navBrowserViewPartition &&
-      navBrowserView &&
-      !navBrowserView.webContents.isDestroyed() &&
-      navBrowserViewTargetUrl
-    ) {
-      void navBrowserView.webContents.loadURL(navBrowserViewTargetUrl)
-    }
-    if (centralWindow && !centralWindow.isDestroyed()) {
-      centralWindow.webContents.send('embedded:auth-closed', args.partition)
-    }
+    notifyAuthClosed(args.partition)
   })
 }
 
@@ -755,11 +856,16 @@ function isLinkedInAuthUrl(url: string): boolean {
 }
 
 function isEmbedBrowsePartition(partition: string): boolean {
-  return partition === 'persist:google-browse' || partition === 'persist:linkedin-browse'
+  return partition === GOOGLE_BROWSE_PARTITION || partition === 'persist:linkedin-browse'
 }
 
 function partitionForSession(sess: Session): string | null {
-  for (const part of ['persist:google-browse', 'persist:linkedin-browse'] as const) {
+  for (const part of [
+    'persist:google-browse',
+    'persist:linkedin-browse',
+    'persist:notch-browser',
+    'persist:nav-app-youtube'
+  ] as const) {
     if (sess === session.fromPartition(part)) return part
   }
   return null
@@ -777,15 +883,39 @@ function notifyEmbedSignInNeeded(partition: string): void {
   }
 }
 
+function blockGoogleAuthNavigation(
+  contents: WebContents,
+  partition: string,
+  event: Electron.Event,
+  url: string
+): boolean {
+  if (!googleAuthInterceptReady || !isGoogleBlockedAuthUrl(url)) return false
+  event.preventDefault()
+  queueGoogleSignIn(partition, url)
+  return true
+}
+
+const wiredEmbedAuthNavigation = new WeakSet<WebContents>()
+
 function wireEmbedBrowseAuthNavigation(contents: WebContents, partition: string): void {
-  if (!isEmbedBrowsePartition(partition)) return
+  if (wiredEmbedAuthNavigation.has(contents)) return
+  wiredEmbedAuthNavigation.add(contents)
+  contents.setMaxListeners(Math.max(contents.getMaxListeners(), 24))
+
+  const googlePartition =
+    partition === GOOGLE_BROWSE_PARTITION ||
+    partition === 'persist:notch-browser' ||
+    partition === 'persist:nav-app-youtube'
 
   const intercept = (event: Electron.Event, url: string) => {
-    if (partition === 'persist:google-browse') {
+    if (googlePartition && blockGoogleAuthNavigation(contents, GOOGLE_BROWSE_PARTITION, event, url)) {
+      return
+    }
+    if (!isEmbedBrowsePartition(partition)) return
+    if (partition === GOOGLE_BROWSE_PARTITION) {
       if (!isNavAppAuthUrl(url)) return
       event.preventDefault()
-      notifyEmbedSignInNeeded(partition)
-      openAuthWindow({ partition, url, title: 'Sign in to Google' })
+      queueGoogleSignIn(partition, url)
       return
     }
     if (partition === 'persist:linkedin-browse' && isLinkedInAuthUrl(url)) {
@@ -797,25 +927,51 @@ function wireEmbedBrowseAuthNavigation(contents: WebContents, partition: string)
 
   contents.on('will-navigate', intercept)
   contents.on('will-redirect', intercept)
+
+  contents.on('did-start-navigation', (_event, url, _inPlace, isMainFrame) => {
+    if (!googleAuthInterceptReady || !isMainFrame || !isGoogleBlockedAuthUrl(url)) return
+    if (!googlePartition && partition !== GOOGLE_BROWSE_PARTITION) return
+    queueGoogleSignIn(GOOGLE_BROWSE_PARTITION, url)
+  })
 }
 
 function openNavAppAuthWindow(partition: string, url: string, title?: string): void {
   openAuthWindow({ partition, url, title: title ?? 'Sign in' })
 }
 
+const wiredNavAppWebContents = new WeakSet<WebContents>()
+
 function configureNavAppWebContents(contents: WebContents, partition: string): void {
+  if (wiredNavAppWebContents.has(contents)) return
+  wiredNavAppWebContents.add(contents)
+  contents.setMaxListeners(Math.max(contents.getMaxListeners(), 24))
   configureGuestWebContents(contents)
 
   contents.on('will-navigate', (event, url) => {
+    if (isGoogleBlockedAuthUrl(url)) {
+      event.preventDefault()
+      queueGoogleSignIn(GOOGLE_BROWSE_PARTITION, url)
+      return
+    }
     if (!isNavAppAuthUrl(url)) return
     event.preventDefault()
     openNavAppAuthWindow(partition, url, 'Sign in')
   })
 
   contents.on('will-redirect', (event, url) => {
+    if (isGoogleBlockedAuthUrl(url)) {
+      event.preventDefault()
+      queueGoogleSignIn(GOOGLE_BROWSE_PARTITION, url)
+      return
+    }
     if (!isNavAppAuthUrl(url)) return
     event.preventDefault()
     openNavAppAuthWindow(partition, url, 'Sign in')
+  })
+
+  contents.on('did-start-navigation', (_event, url, _inPlace, isMainFrame) => {
+    if (!googleAuthInterceptReady || !isMainFrame || !isGoogleBlockedAuthUrl(url)) return
+    queueGoogleSignIn(GOOGLE_BROWSE_PARTITION, url)
   })
 
   contents.on('did-fail-load', (_event, code, desc, url) => {
@@ -864,6 +1020,11 @@ function configureGuestWebContents(contents: WebContents): void {
       return { action: 'deny' as const }
     }
     if (isNavAppAuthUrl(url)) {
+      if (isGoogleBlockedAuthUrl(url)) {
+        const part = partitionForSession(contents.session)
+        queueGoogleSignIn(part && isGoogleBrowsePartition(part) ? part : GOOGLE_BROWSE_PARTITION, url)
+        return { action: 'deny' as const }
+      }
       return {
         action: 'allow' as const,
         overrideBrowserWindowOptions: popupWindowOptions(centralWindow, contents.session)
@@ -877,11 +1038,25 @@ function configureGuestWebContents(contents: WebContents): void {
 }
 
 function setupEmbeddedBrowsing(): void {
-  for (const part of ['persist:stream-central', 'persist:google-browse', 'persist:linkedin-browse', 'persist:nav-app-youtube', 'persist:nav-app-cursor']) {
+  for (const part of [
+    'persist:stream-central',
+    'persist:notch-browser',
+    'persist:google-browse',
+    'persist:linkedin-browse',
+    'persist:nav-app-youtube',
+    'persist:nav-app-cursor'
+  ]) {
     try {
       const sess = session.fromPartition(part)
       configureEmbeddedSession(sess)
       if (part === 'persist:linkedin-browse') configureLinkedInBrowseSession(sess)
+      if (
+        part === GOOGLE_BROWSE_PARTITION ||
+        part === 'persist:notch-browser' ||
+        part === 'persist:nav-app-youtube'
+      ) {
+        configureGoogleAuthBlock(sess, GOOGLE_BROWSE_PARTITION)
+      }
     } catch {
       /* partition may not exist yet */
     }
@@ -1048,8 +1223,28 @@ app.whenReady().then(async () => {
   }
 
   setupEmbeddedBrowsing()
+
   mobileWindow = createMobileWindow()
   if (!mobileOnly) centralWindow = createCentralWindow()
+
+  const enableGoogleAuthIntercept = () => {
+    googleAuthInterceptReady = true
+  }
+  if (centralWindow && !centralWindow.isDestroyed()) {
+    centralWindow.webContents.once('did-finish-load', () => {
+      setTimeout(enableGoogleAuthIntercept, 2000)
+      void (async () => {
+        const result = await importChromeCookiesToNotch({ quiet: true })
+        if (result.ok && result.imported > 0) {
+          console.log(`[notch] Chrome session: ${result.imported} cookies imported`)
+        } else if (result.error && !result.error.includes('not found')) {
+          console.warn('[notch] Chrome cookie import:', result.error)
+        }
+      })()
+    })
+  } else {
+    setTimeout(enableGoogleAuthIntercept, 3000)
+  }
 
   tray = new Tray(createTrayIcon())
   tray.setToolTip('Stream — ⌘⇧M mobile cluster')
@@ -1137,6 +1332,36 @@ app.whenReady().then(async () => {
     if (typeof url === 'string' && url.startsWith('http')) void shell.openExternal(url)
   })
   ipcMain.handle(
+    'desktop:showNotification',
+    (_e, args: { title?: string; body?: string; proposalId?: string }) => {
+      if (!args?.title) return { ok: false }
+      const notification = new Notification({
+        title: args.title,
+        body: args.body ?? ''
+      })
+      notification.on('click', () => {
+        if (centralWindow && !centralWindow.isDestroyed()) {
+          if (centralWindow.isMinimized()) centralWindow.restore()
+          centralWindow.show()
+          centralWindow.focus()
+          centralWindow.webContents.send('desktop:open-agent-proposal', args.proposalId ?? '')
+        }
+        mobileWindow?.webContents.send('agent:proposal-alert', {
+          proposalId: args.proposalId,
+          title: args.title,
+          body: args.body
+        })
+      })
+      notification.show()
+      mobileWindow?.webContents.send('agent:proposal-alert', {
+        proposalId: args.proposalId,
+        title: args.title,
+        body: args.body
+      })
+      return { ok: true }
+    }
+  )
+  ipcMain.handle(
     'navapp:show',
     (_e, args: { partition: string; url: string; bounds: NavAppBounds; layout?: 'full' | 'mini' }) => {
       if (!args?.partition || !args?.url || !args?.bounds) return { ok: false }
@@ -1166,7 +1391,51 @@ app.whenReady().then(async () => {
     openAuthWindow(args)
     return { ok: true }
   })
+  ipcMain.handle('browser:importChromeCookies', async () => importChromeCookiesToNotch())
   ipcMain.handle('embedded:guestPreloadPath', () => pathToFileURL(GUEST_PRELOAD).href)
+
+  ipcMain.handle('build:pickProjectFolder', async () => {
+    const win = centralWindow && !centralWindow.isDestroyed() ? centralWindow : BrowserWindow.getFocusedWindow()
+    const opts = {
+      properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[],
+      defaultPath: join(homedir(), 'Projects')
+    }
+    const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    if (result.canceled || !result.filePaths[0]) return null
+    return result.filePaths[0]
+  })
+
+  ipcMain.handle('build:createProjectFolder', async (_e, args: { name?: string; parent?: string }) => {
+    const parent = args?.parent?.trim() || join(homedir(), 'Projects')
+    const name = String(args?.name ?? '')
+      .trim()
+      .replace(/[^\w.-]+/g, '-')
+    if (!name) return null
+    const dir = join(parent, name)
+    mkdirSync(dir, { recursive: true })
+    return dir
+  })
+
+  ipcMain.handle('build:openInCursor', async (_e, projectPath: string) => {
+    const path = String(projectPath ?? '').trim()
+    if (!path) return { ok: false, error: 'No project path' }
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn('open', ['-a', 'Cursor', path], { stdio: 'ignore' })
+        child.once('error', reject)
+        child.once('exit', (code) => (code === 0 ? resolve() : reject(new Error(`exit ${code}`))))
+      })
+      return { ok: true }
+    } catch {
+      try {
+        const err = await shell.openPath(path)
+        if (err) return { ok: false, error: err }
+        return { ok: true }
+      } catch (e) {
+        return { ok: false, error: String(e) }
+      }
+    }
+  })
 
   console.log('[stream] central + mobile ready · mobile hidden until ⌘⇧M')
 })

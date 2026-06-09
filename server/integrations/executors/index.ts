@@ -242,8 +242,14 @@ async function runGemini(ctx: ActionRunContext): Promise<ActionRunResult> {
 
 async function runCursor(ctx: ActionRunContext): Promise<ActionRunResult> {
   if (!isCursorConnected()) return fail('cursor', 'Cursor not connected — add API key in Integrations')
-  const item = await askCursor(ctx.parsed.body, REVENUE_PROMPT, ctx.io)
-  return ok('cursor', item.body.slice(0, 140))
+  const forceLocal = ctx.parsed.target === 'local'
+  const item = await askCursor(ctx.parsed.body, REVENUE_PROMPT, ctx.io, { forceLocal })
+  const message = item.body.slice(0, 200)
+  const agentStatus = String(item.metadata?.agentStatus ?? '').toLowerCase()
+  if (!item.metadata?.agentId || agentStatus === 'error') {
+    return fail('cursor', message || 'Could not start Cursor agent — is Cursor installed and running?')
+  }
+  return ok('cursor', message)
 }
 
 async function runGithub(ctx: ActionRunContext): Promise<ActionRunResult> {

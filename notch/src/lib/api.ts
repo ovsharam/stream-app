@@ -31,6 +31,11 @@ async function json<T>(
     const parseBody = (): unknown => {
       if (!text.trim()) return null
       if (text.trimStart().startsWith('<!DOCTYPE') || text.trimStart().startsWith('<html')) {
+        if (res.status === 413) {
+          throw new Error(
+            `Prompt too large for ${path} (${res.status}). Shorten the build brief and try again.`
+          )
+        }
         throw new Error(
           `Stream API returned HTML (${res.status}) for ${path}. Restart with npm run dev:notch so the server picks up new routes.`
         )
@@ -408,11 +413,44 @@ export const integrationApi = {
       method: 'POST',
       body: JSON.stringify({ apiKey })
     }),
-  connectCursor: (apiKey: string, repo?: string) =>
-    json<{ ok: boolean }>('/auth/cursor', {
+  connectCursor: (
+    apiKey: string,
+    opts?: { repo?: string; mode?: 'local' | 'cloud'; activeLocalProjectId?: string }
+  ) =>
+    json<{ ok: boolean; accountEmail?: string; accountName?: string }>('/auth/cursor', {
       method: 'POST',
-      body: JSON.stringify({ apiKey, repo })
+      body: JSON.stringify({ apiKey, ...opts })
     }),
+  cursorBuildStatus: () => json<import('@shared/cursor-build').CursorBuildStatus>('/integrations/cursor/status'),
+  cursorSetSettings: (body: {
+    mode?: 'local' | 'cloud'
+    activeLocalProjectId?: string
+    repo?: string
+  }) =>
+    json<{ ok: boolean; ready: boolean }>('/integrations/cursor/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(body)
+    }),
+  cursorAddProject: (path: string, name?: string) =>
+    json<{ ok: boolean; project: import('@shared/cursor-build').CursorLocalProject; ready: boolean }>(
+      '/integrations/cursor/projects',
+      { method: 'POST', body: JSON.stringify({ path, name }) }
+    ),
+  cursorCreateProject: (name: string, parent?: string) =>
+    json<{ ok: boolean; project: import('@shared/cursor-build').CursorLocalProject; ready: boolean }>(
+      '/integrations/cursor/projects',
+      { method: 'POST', body: JSON.stringify({ create: true, name, parent }) }
+    ),
+  cursorRemoveProject: (id: string) =>
+    json<{ ok: boolean; ready: boolean }>(`/integrations/cursor/projects/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    }),
+  cursorProjectAgents: (id: string) =>
+    json<{ agents: Array<{ agentId: string; name: string; status?: string; summary?: string }> }>(
+      `/integrations/cursor/projects/${encodeURIComponent(id)}/agents`
+    ),
+  cursorReconcileBuilds: () =>
+    json<{ updated: number }>('/integrations/cursor/reconcile', { method: 'POST' }),
   connectGithub: (pat: string, defaultRepo?: string) =>
     json<{ ok: boolean; count: number }>('/auth/github', {
       method: 'POST',
@@ -484,6 +522,19 @@ export const agentApi = {
     json<{ proposal: import('@shared/agent-proposal').AgentProposal }>(
       `/agent/proposals/${encodeURIComponent(id)}/refresh`,
       { method: 'POST', body: '{}' }
+    ),
+  updateDraft: (id: string, linkedinReply: string) =>
+    json<{ proposal: import('@shared/agent-proposal').AgentProposal }>(
+      `/agent/proposals/${encodeURIComponent(id)}/draft`,
+      { method: 'PATCH', body: JSON.stringify({ linkedinReply }) }
+    ),
+  snoozeProposal: (
+    id: string,
+    body: import('@shared/agent-proposal').SnoozeAgentProposalInput = {}
+  ) =>
+    json<{ proposal: import('@shared/agent-proposal').AgentProposal }>(
+      `/agent/proposals/${encodeURIComponent(id)}/snooze`,
+      { method: 'POST', body: JSON.stringify(body) }
     )
 }
 
@@ -628,6 +679,21 @@ declare global {
       onNavAppRendererReady?: (cb: () => void) => () => void
       onOpenUrl?: (cb: (url: string) => void) => () => void
       getGuestPreloadPath?: () => Promise<string>
+      importChromeCookies?: () => Promise<{
+        ok: boolean
+        imported: number
+        skipped: number
+        error?: string
+      }>
+      pickProjectFolder?: () => Promise<string | null>
+      createProjectFolder?: (args: { name: string; parent?: string }) => Promise<string | null>
+      openProjectInCursor?: (projectPath: string) => Promise<{ ok: boolean; error?: string }>
+      showNotification?: (args: {
+        title: string
+        body: string
+        proposalId?: string
+      }) => Promise<{ ok: boolean }>
+      onOpenAgentProposal?: (cb: (proposalId: string) => void) => () => void
     }
   }
 }

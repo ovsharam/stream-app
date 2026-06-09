@@ -59,7 +59,11 @@ export function WorkspaceView({ tab, active, reloadNonce = 0, miniPlayerTarget =
   }, [embedBrowseKind, tab])
 
   const signInLabel =
-    embedBrowseKind === 'linkedin' ? 'Sign in to LinkedIn' : 'Sign in to Google'
+    embedBrowseKind === 'linkedin'
+      ? 'Sign in to LinkedIn'
+      : embedAuthState === 'blocked'
+        ? 'Open Chrome again'
+        : 'Sign in to Google'
 
   const bannerCopy =
     embedBrowseKind === 'linkedin'
@@ -67,8 +71,8 @@ export function WorkspaceView({ tab, active, reloadNonce = 0, miniPlayerTarget =
         ? 'LinkedIn may block embedded sign-in. Open the sign-in window once to save your session in Notch.'
         : 'Sign in to LinkedIn in Notch to use messages and notifications in-app.'
       : embedAuthState === 'blocked'
-        ? 'Google blocked sign-in in this window. Try again or open in Chrome.'
-        : 'Sign in once in Notch to save your Google session — YouTube preferences and other Google sites will remember you after restart.'
+        ? 'Google blocks in-app sign-in. Click below to open Chrome, sign in, then return to Notch — cookies sync automatically.'
+        : 'Sign in once to save your Google session in Notch — opens in Chrome because Google blocks in-app sign-in.'
 
   const onLocationChange = useCallback(
     (url: string) => {
@@ -96,7 +100,11 @@ export function WorkspaceView({ tab, active, reloadNonce = 0, miniPlayerTarget =
           ) : (
             <div className="x-workspace-signin-card">
               <p className="x-workspace-signin-title">
-                {embedBrowseKind === 'linkedin' ? 'Sign in to LinkedIn' : 'Sign in to Google'}
+                {embedBrowseKind === 'linkedin'
+                  ? 'Sign in to LinkedIn'
+                  : embedAuthState === 'blocked'
+                    ? 'Sign in via Chrome'
+                    : 'Sign in to Google'}
               </p>
               <p className="x-workspace-signin-copy">{bannerCopy}</p>
               <div className="x-workspace-signin-actions">

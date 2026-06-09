@@ -68,7 +68,20 @@ import {
   importLocalClaudeCredentials
 } from './sources/claudeOAuth'
 import { connectGemini, isGeminiConnected } from './sources/gemini'
-import { connectCursor, isCursorConnected } from './sources/cursor'
+import {
+  connectCursor,
+  createCursorLocalProjectDir,
+  getCursorBuildStatus,
+  reconcileCursorBuilds,
+  isCursorConnected,
+  isCursorReadyForBuild,
+  listCursorProjectAgents,
+  removeCursorLocalProject,
+  setCursorActiveProject,
+  setCursorBuildMode,
+  setCursorCloudRepo,
+  upsertCursorLocalProject
+} from './sources/cursor'
 import { connectGithub, isGithubConnected, syncGithub } from './sources/github'
 import { isGdocsConnected, syncGdocs, getLastGdocsError, gdocsNeedsApiEnable, gdocsApiEnableUrls, gdocsApiEnableUrlsForProject } from './sources/gdocs'
 import { googleOAuthProjectNumber } from './sources/googleOAuth'
@@ -316,7 +329,10 @@ export function createRouter(io?: SocketServer): Router {
           },
       googleApi: demo ? undefined : googleStatus,
       onboardingComplete:
-        demo || (getNested<boolean>(['preferences', 'onboardingComplete']) ?? false)
+        demo || (getNested<boolean>(['preferences', 'onboardingComplete']) ?? false),
+      cursorBuild: demo
+        ? { hasApiKey: true, ready: true, mode: 'local' as const, localProjects: [] }
+        : await getCursorBuildStatus()
     })
     } catch (err) {
       console.error('[connections] status failed:', err)
@@ -668,14 +684,109 @@ export function createRouter(io?: SocketServer): Router {
     res.json({ ok: true })
   })
 
-  router.post('/auth/cursor', (req, res) => {
-    const { apiKey, repo } = req.body as { apiKey?: string; repo?: string }
+  router.post('/auth/cursor', async (req, res) => {
+    const { apiKey, repo, mode, activeLocalProjectId } = req.body as {
+      apiKey?: string
+      repo?: string
+      mode?: 'local' | 'cloud'
+      activeLocalProjectId?: string
+    }
     if (!apiKey) {
       res.status(400).json({ error: 'API key required' })
       return
     }
-    connectCursor(apiKey, repo)
-    res.json({ ok: true })
+    try {
+      const result = await connectCursor({
+        apiKey,
+        repo,
+        mode,
+        activeLocalProjectId
+      })
+      if (!result.ok) {
+        res.status(401).json({ error: 'Invalid Cursor API key' })
+        return
+      }
+      res.json(result)
+    } catch (err) {
+      res.status(500).json({ error: String(err) })
+    }
+  })
+
+  router.get('/integrations/cursor/status', async (_req, res) => {
+    try {
+      res.json(await getCursorBuildStatus())
+    } catch (err) {
+      res.status(500).json({ error: String(err) })
+    }
+  })
+
+  router.patch('/integrations/cursor/settings', (req, res) => {
+    const { mode, activeLocalProjectId, repo } = req.body as {
+      mode?: 'local' | 'cloud'
+      activeLocalProjectId?: string
+      repo?: string
+    }
+    if (mode) setCursorBuildMode(mode)
+    if (activeLocalProjectId) {
+      if (!setCursorActiveProject(activeLocalProjectId)) {
+        res.status(400).json({ error: 'Unknown project' })
+        return
+      }
+    }
+    if (repo) setCursorCloudRepo(repo)
+    res.json({ ok: true, ready: isCursorReadyForBuild() })
+  })
+
+  router.post('/integrations/cursor/projects', (req, res) => {
+    const { path, name, create, parent } = req.body as {
+      path?: string
+      name?: string
+      create?: boolean
+      parent?: string
+    }
+    if (create) {
+      const created = createCursorLocalProjectDir(String(name ?? ''), parent)
+      if (!created) {
+        res.status(400).json({ error: 'Valid project name required' })
+        return
+      }
+      const project = upsertCursorLocalProject(created)
+      res.json({ ok: true, project, ready: isCursorReadyForBuild() })
+      return
+    }
+    if (!path?.trim()) {
+      res.status(400).json({ error: 'path required' })
+      return
+    }
+    const project = upsertCursorLocalProject({ path: path.trim(), name })
+    res.json({ ok: true, project, ready: isCursorReadyForBuild() })
+  })
+
+  router.delete('/integrations/cursor/projects/:id', (req, res) => {
+    const ok = removeCursorLocalProject(req.params.id)
+    if (!ok) {
+      res.status(404).json({ error: 'Project not found' })
+      return
+    }
+    res.json({ ok: true, ready: isCursorReadyForBuild() })
+  })
+
+  router.get('/integrations/cursor/projects/:id/agents', async (req, res) => {
+    try {
+      const agents = await listCursorProjectAgents(req.params.id)
+      res.json({ agents })
+    } catch (err) {
+      res.status(500).json({ error: String(err) })
+    }
+  })
+
+  router.post('/integrations/cursor/reconcile', async (_req, res) => {
+    try {
+      const result = await reconcileCursorBuilds(io)
+      res.json(result)
+    } catch (err) {
+      res.status(500).json({ error: String(err) })
+    }
   })
 
   router.post('/auth/github', async (req, res) => {
@@ -889,6 +1000,7 @@ export function createRouter(io?: SocketServer): Router {
     }
     const { getGoogleApiStatus } = await import('./sources/googleRateLimit')
     const googleStatus = getGoogleApiStatus()
+    const googleBlocked = googleStatus.blocked
     const results = await Promise.allSettled([
       syncSlack(io),
       syncX(io),
@@ -898,23 +1010,28 @@ export function createRouter(io?: SocketServer): Router {
       syncGong(io),
       syncClaude(io),
       syncPerplexity(io),
-      syncCalcom(io)
+      syncCalcom(io),
+      ...(googleBlocked ? [] : [syncGmail(io), syncGdocs(io)])
     ])
+    const gmailResult = googleBlocked ? null : results[9]
+    const gdocsResult = googleBlocked ? null : results[10]
     res.json({
-      gmail: 0,
+      gmail:
+        gmailResult?.status === 'fulfilled' ? gmailResult.value.length : 0,
       slack: results[0].status === 'fulfilled' ? results[0].value.length : 0,
       x: results[1].status === 'fulfilled' ? results[1].value.length : 0,
       monday: results[2].status === 'fulfilled' ? results[2].value.length : 0,
       discord: results[3].status === 'fulfilled' ? results[3].value.length : 0,
       calendar: 0,
       github: results[4].status === 'fulfilled' ? results[4].value.length : 0,
-      gdocs: 0,
+      gdocs:
+        gdocsResult?.status === 'fulfilled' ? gdocsResult.value.length : 0,
       gong: results[5].status === 'fulfilled' ? results[5].value.length : 0,
       claude: results[6].status === 'fulfilled' ? results[6].value.length : 0,
       perplexity: results[7].status === 'fulfilled' ? results[7].value.length : 0,
       calcom: results[8].status === 'fulfilled' ? results[8].value.length : 0,
       contacts: 0,
-      googleManualOnly: true,
+      googleManualOnly: googleBlocked,
       googleBlocked: googleStatus.blocked,
       googleBlockedUntil: googleStatus.blockedUntil,
       kbIngested: ingestRecentStream(80)
@@ -1731,6 +1848,31 @@ export function createRouter(io?: SocketServer): Router {
     const { refreshAgentProposal } = require('./agent/service') as typeof import('./agent/service')
     try {
       const proposal = await refreshAgentProposal(req.params.id, io)
+      res.json({ proposal })
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  router.patch('/agent/proposals/:id/draft', (req, res) => {
+    const { updateAgentProposalDraft } = require('./agent/service') as typeof import('./agent/service')
+    try {
+      const linkedinReply = String(req.body?.linkedinReply ?? '')
+      if (!linkedinReply.trim()) {
+        res.status(400).json({ error: 'linkedinReply required' })
+        return
+      }
+      const proposal = updateAgentProposalDraft(req.params.id, linkedinReply, io)
+      res.json({ proposal })
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  router.post('/agent/proposals/:id/snooze', (req, res) => {
+    const { snoozeAgentProposal } = require('./agent/service') as typeof import('./agent/service')
+    try {
+      const proposal = snoozeAgentProposal(req.params.id, req.body ?? {}, io)
       res.json({ proposal })
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : String(err) })

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, type MouseEvent } from 'react'
 import type { CentralStreamEvent } from '@shared/cluster'
 import { parseMeetingActionsMeta } from '@shared/meeting-actions'
-import { parseAgentBriefMeta } from '@shared/agent-proposal'
+import { parseAgentProposalFeedMeta } from '@shared/agent-proposal-ui'
 import { openBrowserLink, openMeeting } from '../lib/api'
 import { trackOperatorEvent } from '../lib/operatorTelemetry'
 import { feedEventBrowseUrl } from './workspace'
@@ -348,8 +348,8 @@ function SourceCardBody({ event }: { event: CentralStreamEvent }) {
     case 'x':
       return <XCard event={event} />
     case 'linkedin':
-      if (parseAgentBriefMeta(event.meta)) {
-        return event.body ? <p className="x-post-body x-post-linkedin-msg">&ldquo;{event.body}&rdquo;</p> : null
+      if (parseAgentProposalFeedMeta(event.meta, event)) {
+        return null
       }
       return <GenericCard event={event} />
     case 'notch':
@@ -392,7 +392,7 @@ function isActionable(event: CentralStreamEvent): boolean {
       event.promptPreview ||
       event.kind === 'build_prompt' ||
       event.kind === 'action' ||
-      parseAgentBriefMeta(event.meta) ||
+      parseAgentProposalFeedMeta(event.meta, event) ||
       event.highlight
   )
 }
@@ -571,7 +571,7 @@ export function FeedPost({
   const isMondayThread = event.source === 'monday' && event.meta?.grouped === 'true'
   const isGmailThread = event.source === 'gmail'
   const isThreadable = isMondayThread || isGmailThread
-  const isAgentLinkedIn = Boolean(parseAgentBriefMeta(event.meta))
+  const isAgentLinkedIn = Boolean(parseAgentProposalFeedMeta(event.meta, event))
   const handle =
     isMondayThread
       ? 'Monday'
@@ -759,7 +759,7 @@ export function FeedPost({
           </div>
         )}
 
-        {parseAgentBriefMeta(event.meta) ? (
+        {parseAgentProposalFeedMeta(event.meta, event) ? (
           <AgentProposalFeedCard event={event} onRefresh={onRefresh} />
         ) : null}
 

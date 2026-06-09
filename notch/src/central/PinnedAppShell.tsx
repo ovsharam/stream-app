@@ -9,6 +9,7 @@ type Props = {
   onReload: () => void
   onExternal: () => void
   onNewTab: () => void
+  onImportChrome?: () => void
   railCollapsed?: boolean
   onToggleRail?: () => void
 }
@@ -20,6 +21,7 @@ export function PinnedAppShell({
   onReload,
   onExternal,
   onNewTab,
+  onImportChrome,
   railCollapsed,
   onToggleRail
 }: Props) {
@@ -45,6 +47,7 @@ export function PinnedAppShell({
         canGoForward={canGoForward}
         onBack={goBack}
         onForward={goForward}
+        onImportChrome={onImportChrome}
         railCollapsed={railCollapsed}
         onToggleRail={onToggleRail}
         workspaceMode

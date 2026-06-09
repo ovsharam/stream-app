@@ -39,6 +39,31 @@ const LINKEDIN_SCAN_FN = `(function scanLinkedInMessagingHits() {
     hits.push({ threadId: threadId, senderName: senderName, message: message, senderProfileUrl: senderProfileUrl || undefined });
   }
 
+  function threadIdFromListItem(el) {
+    var link = el.querySelector('a[href*="/messaging/thread/"]');
+    if (!link) link = el.closest('a[href*="/messaging/thread/"]');
+    if (link) {
+      var hm = (link.getAttribute('href') || '').match(/thread\\/([^/?]+)/);
+      if (hm && hm[1] && hm[1].indexOf('li-list-') !== 0) return hm[1];
+    }
+    var urnAttrs = ['data-conversation-urn', 'data-urn', 'data-event-urn'];
+    for (var u = 0; u < urnAttrs.length; u++) {
+      var urn = el.getAttribute(urnAttrs[u]) || '';
+      var um = urn.match(/msg_conversation:\\(([^)]+)\\)/);
+      if (um && um[1]) return um[1];
+    }
+    for (var i = 0; i < el.attributes.length; i++) {
+      var val = el.attributes[i].value || '';
+      var tm = val.match(/msg_conversation:\\(([^)]+)\\)/);
+      if (tm && tm[1]) return tm[1];
+      var hm2 = val.match(/thread\\/([A-Za-z0-9%_-]+)/);
+      if (hm2 && hm2[1] && hm2[1].indexOf('li-list-') !== 0) {
+        try { return decodeURIComponent(hm2[1]); } catch (e) { return hm2[1]; }
+      }
+    }
+    return null;
+  }
+
   var listItems = document.querySelectorAll(
     '.msg-conversation-listitem, li[class*="conversation-listitem"], [data-control-name="conversation"]'
   );
@@ -58,13 +83,10 @@ const LINKEDIN_SCAN_FN = `(function scanLinkedInMessagingHits() {
       el.querySelector('.msg-conversation-listitem__message-snippet') ||
       el.querySelector('p[class*="snippet"]') ||
       el.querySelector('.msg-conversation-card__message-snippet');
-    var linkEl = el.querySelector('a[href*="/messaging/thread/"]');
-
     var senderName = ((nameEl && nameEl.textContent) || '').replace(/\\s+/g, ' ').trim();
     var message = ((previewEl && previewEl.textContent) || '').replace(/\\s+/g, ' ').trim();
-    var href = (linkEl && linkEl.getAttribute('href')) || '';
-    var threadMatch = href.match(/thread\\/([^/?]+)/);
-    var threadId = threadMatch ? threadMatch[1] : 'li-list-' + idx + '-' + senderName.slice(0, 24);
+    var threadId = threadIdFromListItem(el);
+    if (!threadId) threadId = 'li-list-' + idx + '-' + senderName.slice(0, 24);
     pushHit(threadId, senderName, message, undefined);
   });
 

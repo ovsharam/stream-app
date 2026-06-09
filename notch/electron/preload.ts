@@ -38,6 +38,14 @@ contextBridge.exposeInMainWorld('notch', {
   whisper: {
     setup: () => ipcRenderer.invoke('whisper:setup')
   },
+  onAgentProposalAlert: (
+    cb: (payload: { proposalId?: string; title?: string; body?: string }) => void
+  ) => {
+    const handler = (_: unknown, payload: { proposalId?: string; title?: string; body?: string }) =>
+      cb(payload)
+    ipcRenderer.on('agent:proposal-alert', handler)
+    return () => ipcRenderer.removeListener('agent:proposal-alert', handler)
+  },
   meeting: {
     start: (args?: { title?: string; dealHint?: string }) => ipcRenderer.invoke('meeting:start', args),
     end: () => ipcRenderer.invoke('meeting:end'),
@@ -110,7 +118,26 @@ contextBridge.exposeInMainWorld('notchDesktop', {
     ipcRenderer.on('embedded:open-url', handler)
     return () => ipcRenderer.removeListener('embedded:open-url', handler)
   },
-  getGuestPreloadPath: () => ipcRenderer.invoke('embedded:guestPreloadPath') as Promise<string>
+  getGuestPreloadPath: () => ipcRenderer.invoke('embedded:guestPreloadPath') as Promise<string>,
+  importChromeCookies: () =>
+    ipcRenderer.invoke('browser:importChromeCookies') as Promise<{
+      ok: boolean
+      imported: number
+      skipped: number
+      error?: string
+    }>,
+  pickProjectFolder: () => ipcRenderer.invoke('build:pickProjectFolder') as Promise<string | null>,
+  createProjectFolder: (args: { name: string; parent?: string }) =>
+    ipcRenderer.invoke('build:createProjectFolder', args) as Promise<string | null>,
+  openProjectInCursor: (projectPath: string) =>
+    ipcRenderer.invoke('build:openInCursor', projectPath) as Promise<{ ok: boolean; error?: string }>,
+  showNotification: (args: { title: string; body: string; proposalId?: string }) =>
+    ipcRenderer.invoke('desktop:showNotification', args) as Promise<{ ok: boolean }>,
+  onOpenAgentProposal: (cb: (proposalId: string) => void) => {
+    const handler = (_: unknown, proposalId: string) => cb(proposalId)
+    ipcRenderer.on('desktop:open-agent-proposal', handler)
+    return () => ipcRenderer.removeListener('desktop:open-agent-proposal', handler)
+  }
 })
 
 declare global {
@@ -121,6 +148,9 @@ declare global {
       onMode: (cb: (mode: DropletPhase) => void) => () => void
       onFocusSearch: (cb: () => void) => () => void
       onSimRefresh: (cb: () => void) => () => void
+      onAgentProposalAlert?: (
+        cb: (payload: { proposalId?: string; title?: string; body?: string }) => void
+      ) => () => void
       audio?: {
         start: () => Promise<{ running: boolean; whisperReady: boolean; error?: string }>
         stop: () => Promise<{ running: boolean; whisperReady: boolean; error?: string }>
@@ -182,6 +212,21 @@ declare global {
       onNavAppRendererReady?: (cb: () => void) => () => void
       onOpenUrl?: (cb: (url: string) => void) => () => void
       getGuestPreloadPath?: () => Promise<string>
+      importChromeCookies?: () => Promise<{
+        ok: boolean
+        imported: number
+        skipped: number
+        error?: string
+      }>
+      pickProjectFolder?: () => Promise<string | null>
+      createProjectFolder?: (args: { name: string; parent?: string }) => Promise<string | null>
+      openProjectInCursor?: (projectPath: string) => Promise<{ ok: boolean }>
+      showNotification?: (args: {
+        title: string
+        body: string
+        proposalId?: string
+      }) => Promise<{ ok: boolean }>
+      onOpenAgentProposal?: (cb: (proposalId: string) => void) => () => void
     }
   }
 }

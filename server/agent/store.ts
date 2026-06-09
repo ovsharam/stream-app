@@ -121,6 +121,12 @@ function migrateAgentDb(database: Database.Database): void {
   if (!names.has('dedupe_key')) {
     database.exec('ALTER TABLE agent_proposals ADD COLUMN dedupe_key TEXT')
   }
+  if (!names.has('detected_at')) {
+    database.exec('ALTER TABLE agent_proposals ADD COLUMN detected_at INTEGER')
+  }
+  if (!names.has('snoozed_until')) {
+    database.exec('ALTER TABLE agent_proposals ADD COLUMN snoozed_until INTEGER')
+  }
   database.exec('CREATE INDEX IF NOT EXISTS idx_agent_proposals_dedupe ON agent_proposals(dedupe_key)')
   backfillProposalDedupeKeys(database)
   cleanupDuplicatePendingProposals(database)
@@ -202,6 +208,17 @@ export function initAgentStore(): void {
   getDb()
 }
 
+export function wakeExpiredSnoozedProposals(now = Date.now()): number {
+  const result = getDb()
+    .prepare(
+      `UPDATE agent_proposals
+       SET snoozed_until = NULL, updated_at = @now
+       WHERE status = 'pending' AND snoozed_until IS NOT NULL AND snoozed_until <= @now`
+    )
+    .run({ now })
+  return Number(result.changes ?? 0)
+}
+
 type Row = Record<string, unknown>
 
 function rowToProposal(row: Row): AgentProposal {
@@ -234,7 +251,9 @@ function rowToProposal(row: Row): AgentProposal {
     actionProposals: row.action_proposals_json
       ? (JSON.parse(String(row.action_proposals_json)) as AgentActionProposal[])
       : undefined,
-    dedupeKey: row.dedupe_key ? String(row.dedupe_key) : undefined
+    dedupeKey: row.dedupe_key ? String(row.dedupe_key) : undefined,
+    detectedAt: row.detected_at != null ? Number(row.detected_at) : undefined,
+    snoozedUntil: row.snoozed_until != null ? Number(row.snoozed_until) : undefined
   }
 }
 
@@ -254,11 +273,11 @@ export function insertProposal(proposal: AgentProposal): void {
        (id, source, thread_id, sender_name, sender_profile_url, raw_message, intent, confidence,
         linkedin_reply_draft, booking_task_json, invitee_resolution_json, status,
         created_at, updated_at, approved_at, executed_at, execution_log_json,
-        brief_json, thread_messages_json, action_proposals_json, dedupe_key)
+        brief_json, thread_messages_json, action_proposals_json, dedupe_key, detected_at, snoozed_until)
        VALUES (@id, @source, @thread_id, @sender_name, @sender_profile_url, @raw_message, @intent, @confidence,
         @linkedin_reply_draft, @booking_task_json, @invitee_resolution_json, @status,
         @created_at, @updated_at, @approved_at, @executed_at, @execution_log_json,
-        @brief_json, @thread_messages_json, @action_proposals_json, @dedupe_key)`
+        @brief_json, @thread_messages_json, @action_proposals_json, @dedupe_key, @detected_at, @snoozed_until)`
     )
     .run({
       id: proposal.id,
@@ -285,7 +304,9 @@ export function insertProposal(proposal: AgentProposal): void {
       action_proposals_json: proposal.actionProposals?.length
         ? JSON.stringify(proposal.actionProposals)
         : null,
-      dedupe_key: dedupeKey
+      dedupe_key: dedupeKey,
+      detected_at: proposal.detectedAt ?? proposal.createdAt,
+      snoozed_until: proposal.snoozedUntil ?? null
     })
   queueAgentProposalSync(proposal)
 }
@@ -304,7 +325,8 @@ export function updateProposal(proposal: AgentProposal): void {
         execution_log_json = @execution_log_json,
         brief_json = @brief_json,
         thread_messages_json = @thread_messages_json,
-        action_proposals_json = @action_proposals_json
+        action_proposals_json = @action_proposals_json,
+        snoozed_until = @snoozed_until
        WHERE id = @id`
     )
     .run({
@@ -323,7 +345,8 @@ export function updateProposal(proposal: AgentProposal): void {
         : null,
       action_proposals_json: proposal.actionProposals?.length
         ? JSON.stringify(proposal.actionProposals)
-        : null
+        : null,
+      snoozed_until: proposal.snoozedUntil ?? null
     })
   queueAgentProposalSync(proposal)
 }
@@ -337,12 +360,17 @@ export function listProposals(input: {
   status?: AgentProposalStatus
   limit?: number
 } = {}): AgentProposal[] {
+  wakeExpiredSnoozedProposals()
   const limit = Math.min(Math.max(input.limit ?? 50, 1), 200)
+  const now = Date.now()
   const clauses: string[] = []
-  const params: Record<string, unknown> = { limit }
+  const params: Record<string, unknown> = { limit, now }
   if (input.status) {
     clauses.push('status = @status')
     params.status = input.status
+    if (input.status === 'pending') {
+      clauses.push('(snoozed_until IS NULL OR snoozed_until <= @now)')
+    }
   }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
   const rows = getDb()
@@ -363,12 +391,16 @@ export function findProposalByDedupeKey(dedupeKey: string): AgentProposal | null
 }
 
 export function countUniquePendingProposals(): number {
+  const now = Date.now()
+  wakeExpiredSnoozedProposals(now)
   const row = getDb()
     .prepare(
       `SELECT COUNT(DISTINCT COALESCE(NULLIF(dedupe_key, ''), id)) AS n
-       FROM agent_proposals WHERE status = 'pending'`
+       FROM agent_proposals
+       WHERE status = 'pending'
+         AND (snoozed_until IS NULL OR snoozed_until <= @now)`
     )
-    .get() as { n: number }
+    .get({ now }) as { n: number }
   return Number(row?.n ?? 0)
 }
 

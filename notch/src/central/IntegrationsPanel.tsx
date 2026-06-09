@@ -679,10 +679,10 @@ export function IntegrationsPanel({
       const result = await integrationApi.syncAll()
       const googleNote =
         result.googleBlocked && result.googleBlockedUntil
-          ? ` Google rate limit active until ${new Date(result.googleBlockedUntil).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} — sync Gmail manually after that.`
-          : ' Sync Gmail, Contacts, and Calendar separately in Apps → Gmail.'
+          ? ` Google rate limit active until ${new Date(result.googleBlockedUntil).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} — Gmail/Docs skipped.`
+          : ''
       setStatus(
-        `Synced — GitHub ${result.github ?? 0}, Docs ${result.gdocs ?? 0}, Gong ${result.gong ?? 0}, X ${result.x ?? 0}, Monday ${result.monday ?? 0}.${googleNote}`
+        `Synced — Gmail ${result.gmail ?? 0}, GitHub ${result.github ?? 0}, Docs ${result.gdocs ?? 0}, Gong ${result.gong ?? 0}, X ${result.x ?? 0}, Monday ${result.monday ?? 0}.${googleNote}`
       )
       await refreshConnections()
       await loadGmailAccounts()
@@ -1911,8 +1911,8 @@ export function IntegrationsPanel({
             <div>
               <h3>Cursor</h3>
               <p>
-                Agent runs use the Cursor Cloud API — connect here, then launch builds from the{' '}
-                <strong>Build</strong> page or <code>@cursor ask:</code> in Feed.
+                Sign in with your Cursor API key — then run <strong>local</strong> builds on your Mac or{' '}
+                <strong>cloud</strong> builds on GitHub from the <strong>Build</strong> page.
               </p>
             </div>
           </div>
@@ -1938,7 +1938,7 @@ export function IntegrationsPanel({
                 className="x-int-input"
                 value={cursorRepo}
                 onChange={(e) => setCursorRepo(e.target.value)}
-                placeholder="Default repo URL or owner/name (optional)"
+                placeholder="Cloud repo URL or owner/name (optional — for cloud mode)"
               />
               <button
                 type="button"
@@ -1946,12 +1946,16 @@ export function IntegrationsPanel({
                 disabled={!cursorKey.trim()}
                 onClick={async () => {
                   try {
-                    await integrationApi.connectCursor(
-                      cursorKey.trim(),
-                      cursorRepo.trim() || undefined
-                    )
+                    const result = await integrationApi.connectCursor(cursorKey.trim(), {
+                      repo: cursorRepo.trim() || undefined,
+                      mode: 'local'
+                    })
                     setCursorKey('')
-                    setStatus('Cursor connected.')
+                    setStatus(
+                      result.accountEmail
+                        ? `Cursor connected as ${result.accountEmail}.`
+                        : 'Cursor connected.'
+                    )
                     await refreshConnections()
                   } catch (err) {
                     setStatus(`Cursor connect failed: ${String(err)}`)
@@ -1962,7 +1966,7 @@ export function IntegrationsPanel({
               </button>
             </div>
             <p className="x-int-muted">
-              <code>@cursor ask: …</code>
+              Local: <code>@cursor local ask: …</code> · Cloud: <code>@cursor ask: …</code>
             </p>
           </div>
         </div>

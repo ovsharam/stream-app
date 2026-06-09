@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import type { CentralStreamEvent } from '@shared/cluster'
 import type { ComposeMentionTarget } from '@shared/compose'
 import { parseMeetingActionsMeta } from '@shared/meeting-actions'
-import { parseAgentBriefMeta } from '@shared/agent-proposal'
+import { parseAgentProposalFeedMeta } from '@shared/agent-proposal-ui'
 import { ComposeInput } from './ComposeInput'
 import { FeedPost } from './FeedPost'
 
@@ -39,7 +39,7 @@ function needsAction(event: CentralStreamEvent): boolean {
   if (event.joinable || event.promptPreview || event.kind === 'build_prompt' || event.kind === 'action') {
     return true
   }
-  if (parseAgentBriefMeta(event.meta)) return true
+  if (parseAgentProposalFeedMeta(event.meta, event)) return true
   if (event.source === 'meeting' && parseMeetingActionsMeta(event.meta)?.proposedActions.length) {
     return true
   }

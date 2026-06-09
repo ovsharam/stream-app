@@ -7,7 +7,12 @@ import {
   type MobileObjective
 } from '../lib/mobile-settings'
 import { getUserRole, setUserRole, type UserRole } from '../lib/user-role'
-import { RailWidgetsConfigList } from './RailWidgetsConfig'
+import { RailDockSettings } from './RailDockSettings'
+import {
+  AGENT_REMIND_LATER_OPTIONS,
+  loadAgentActionSettings,
+  saveAgentActionSettings
+} from '@shared/agent-action-settings'
 
 export function useMobileSettings() {
   const [settings, setSettingsState] = useState<MobileClusterSettings>(loadMobileSettings)
@@ -35,6 +40,13 @@ export function useMobileSettings() {
 export function SettingsPanel() {
   const { settings, setSettings } = useMobileSettings()
   const [role, setRole] = useState<UserRole>(getUserRole)
+  const [agentSettings, setAgentSettings] = useState(loadAgentActionSettings)
+
+  useEffect(() => {
+    const refresh = () => setAgentSettings(loadAgentActionSettings())
+    window.addEventListener('notch:agent-action-settings', refresh)
+    return () => window.removeEventListener('notch:agent-action-settings', refresh)
+  }, [])
 
   return (
     <div className="x-settings-page">
@@ -118,13 +130,40 @@ export function SettingsPanel() {
         </div>
       </section>
 
-      <section className="x-settings-section">
-        <h2>Sideblade widgets</h2>
+      <section className="x-settings-section x-settings-dock">
+        <h2>Dock station</h2>
         <p className="x-settings-desc">
-          Add, remove, and reorder Context, Calendar, Chat, and News on the right rail — like iOS
-          home screen widgets.
+          Customize the side panel — width, tabs, presets, and defaults while you browse ESPN, run
+          agents, and join meetings.
         </p>
-        <RailWidgetsConfigList />
+        <RailDockSettings />
+      </section>
+
+      <section className="x-settings-section">
+        <h2>Agent actions</h2>
+        <p className="x-settings-desc">
+          Default timing for Remind later on inbox drafts. Your exact reply is saved when you snooze.
+        </p>
+        <label className="x-settings-row">
+          <span>
+            Remind later
+            <small>Applies to all agent inbox items</small>
+          </span>
+          <select
+            value={agentSettings.remindLaterMs}
+            onChange={(e) => {
+              const next = saveAgentActionSettings({ remindLaterMs: Number(e.target.value) })
+              setAgentSettings(next)
+            }}
+            className="x-settings-select"
+          >
+            {AGENT_REMIND_LATER_OPTIONS.map((opt) => (
+              <option key={opt.ms} value={opt.ms}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </section>
 
       <section className="x-settings-section">

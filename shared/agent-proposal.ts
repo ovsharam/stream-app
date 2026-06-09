@@ -51,6 +51,7 @@ export type AgentInteractionStage =
   | 'context_built'
   | 'user_approved'
   | 'user_rejected'
+  | 'user_snoozed'
   | 'booking_executed'
   | 'booking_failed'
   | 'linkedin_reply_ready'
@@ -111,6 +112,8 @@ export type AgentProposal = {
   status: AgentProposalStatus
   createdAt: number
   updatedAt: number
+  /** When the inbound message was first detected (ms). */
+  detectedAt?: number
   approvedAt?: number
   executedAt?: number
   executionLog?: {
@@ -122,6 +125,8 @@ export type AgentProposal = {
   actionProposals?: AgentActionProposal[]
   /** Stable dedupe key (thread/sender + message prefix). */
   dedupeKey?: string
+  /** Hide from inbox until this timestamp (Remind later). */
+  snoozedUntil?: number
 }
 
 export type LinkedInIngestInput = {
@@ -137,6 +142,15 @@ export type ApproveAgentProposalInput = {
   linkedinReply?: string
   bookingTask?: Partial<BookingTaskPayload>
   skipBooking?: boolean
+}
+
+export type SnoozeAgentProposalInput = {
+  /** Persist edited draft when snoozing. */
+  linkedinReply?: string
+  /** Absolute timestamp (ms) to resurface. */
+  snoozedUntil?: number
+  /** Delay from now (ms) — used if snoozedUntil omitted. */
+  remindInMs?: number
 }
 
 function parseJsonRecord<T>(raw: unknown): T | null {

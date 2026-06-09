@@ -24,9 +24,17 @@ import { initOperatorTelemetryStore } from './telemetry/store'
 import { initAgentStore } from './agent/store'
 import { bindDashboardSocket } from './dashboard/broadcast'
 import { initIntentionEpisodes } from './intention/service'
+import { syncGoogleSourcesIfDue } from './googleBackgroundSync'
 
 config({ path: join(process.cwd(), '.env.local') })
 config()
+
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED') return
+    throw err
+  })
+}
 
 async function main(): Promise<void> {
   const PORT = parseInt(process.env.PORT ?? '3131', 10)
@@ -102,7 +110,8 @@ async function main(): Promise<void> {
       syncGong(io),
       syncClaude(io),
       syncPerplexity(io),
-      syncCalcom(io)
+      syncCalcom(io),
+      syncGoogleSourcesIfDue(io)
     ])
     try {
       ingestRecentStream(200)
@@ -110,6 +119,16 @@ async function main(): Promise<void> {
       console.warn('[kb] ingest skipped:', e instanceof Error ? e.message : e)
     }
   }
+
+  httpServer.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(
+        `[server] Port :${PORT} already in use — run: npm run stop:notch  (or quit the other Notch dev stack)`
+      )
+      process.exit(1)
+    }
+    throw err
+  })
 
   httpServer.listen(PORT, () => {
     console.log(`[server] STREAM API ready on :${PORT}`)

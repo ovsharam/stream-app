@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CentralStreamEvent } from '@shared/cluster'
-import { clusterApi } from '../lib/api'
+import { clusterApi, integrationApi } from '../lib/api'
 import { connectStreamSocket } from '../lib/streamSocket'
 import { getUserRole } from '../lib/user-role'
 
@@ -79,6 +79,10 @@ export function useCentralStream() {
       const nextLive = incoming.some(isLiveEvent)
       liveRef.current = nextLive
       setLive(nextLive)
+
+      void integrationApi.cursorReconcileBuilds().then((result) => {
+        if (result.updated > 0) window.dispatchEvent(new Event('notch:stream-push'))
+      })
     } catch {
       /* keep stale data on error */
     } finally {

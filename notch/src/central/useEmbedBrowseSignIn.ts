@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { EmbedBrowseKind } from './embedBrowse'
-import { EMBED_BROWSE_PARTITIONS, isEmbedAuthPopupUrl } from './embedBrowse'
+import { EMBED_BROWSE_PARTITIONS, isEmbedAuthPopupUrl, isGoogleBlockedAuthUrl } from './embedBrowse'
 
 export type EmbedBrowseAuthState = 'ok' | 'signin' | 'blocked'
 
@@ -32,8 +32,16 @@ const AUTH_DETECT_JS = `(function() {
   return 'ok';
 })();`
 
+function safeWebviewUrl(el: WebviewEl): string {
+  try {
+    return el.getURL?.() ?? ''
+  } catch {
+    return ''
+  }
+}
+
 async function detectEmbedAuthState(el: WebviewEl): Promise<EmbedBrowseAuthState> {
-  const current = el.getURL?.() ?? ''
+  const current = safeWebviewUrl(el)
   if (
     current.includes('accounts.google.com') ||
     current.includes('linkedin.com/login') ||
@@ -90,12 +98,22 @@ export function useEmbedBrowseSignIn(
       const url = event?.url
       if (!url || !isEmbedAuthPopupUrl(url)) return
       event?.preventDefault?.()
+      if (opts.kind === 'google' && isGoogleBlockedAuthUrl(url)) {
+        onAuthStateRef.current?.('blocked')
+        return
+      }
       onAuthStateRef.current?.('signin')
       void window.notchDesktop?.openAuthWindow?.({
         partition,
         url,
         title: opts.kind === 'linkedin' ? 'Sign in to LinkedIn' : 'Sign in to Google'
       })
+    }
+
+    const onStartNavigation = (event?: WebviewNavigateEvent) => {
+      const url = event?.url
+      if (!url || !isGoogleBlockedAuthUrl(url)) return
+      onAuthStateRef.current?.('blocked')
     }
 
     const onFailLoad = (event?: Event & { errorCode?: number }) => {
@@ -110,6 +128,7 @@ export function useEmbedBrowseSignIn(
     webview.addEventListener('did-fail-load', onFailLoad)
     webview.addEventListener('will-navigate', interceptAuthNavigation)
     webview.addEventListener('will-redirect', interceptAuthNavigation)
+    webview.addEventListener('did-start-navigation', onStartNavigation)
     let authReloadPending = false
     const offAuth = window.notchDesktop?.onAuthClosed?.((closedPartition) => {
       if (closedPartition !== partition || authReloadPending) return
@@ -122,7 +141,7 @@ export function useEmbedBrowseSignIn(
     })
     const offEmbedSignIn = window.notchDesktop?.onEmbedSignInNeeded?.((neededPartition) => {
       if (neededPartition !== partition) return
-      onAuthStateRef.current?.('signin')
+      onAuthStateRef.current?.(opts.kind === 'google' ? 'blocked' : 'signin')
     })
     const offAuthFallback = window.notchDesktop?.onAuthExternalFallback?.((fallbackPartition) => {
       if (fallbackPartition !== partition) return
@@ -138,6 +157,7 @@ export function useEmbedBrowseSignIn(
       webview.removeEventListener('did-fail-load', onFailLoad)
       webview.removeEventListener('will-navigate', interceptAuthNavigation)
       webview.removeEventListener('will-redirect', interceptAuthNavigation)
+      webview.removeEventListener('did-start-navigation', onStartNavigation)
       offAuth?.()
       offEmbedSignIn?.()
       offAuthFallback?.()

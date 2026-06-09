@@ -5,6 +5,7 @@ import {
   useRailWidgets,
   type RailWidgetId
 } from './railWidgetsStore'
+import { RailDockSettings } from './RailDockSettings'
 
 function WidgetRow({
   label,
@@ -81,9 +82,6 @@ export function RailWidgetsConfigList() {
 
   return (
     <div className="x-rail-widget-config">
-      <p className="x-rail-widget-config-desc">
-        Pick which tabs appear on the sideblade and drag order with the arrows.
-      </p>
       <div className="x-rail-widget-group">
         <ul className="x-rail-widget-list">
           {sorted.map((widget, index) => {
@@ -129,19 +127,22 @@ export function RailWidgetsConfigSheet({
   return (
     <div className="x-rail-widget-sheet-backdrop" onClick={onClose} role="presentation">
       <div
-        className="x-rail-widget-sheet"
+        className="x-rail-widget-sheet x-rail-dock-sheet"
         role="dialog"
         aria-modal="true"
         aria-labelledby="x-rail-widget-sheet-title"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="x-rail-widget-sheet-head">
-          <h2 id="x-rail-widget-sheet-title">Sideblade</h2>
+          <div>
+            <h2 id="x-rail-widget-sheet-title">Dock station</h2>
+            <p className="x-rail-dock-sheet-sub">Your command rail — tabs, width, and layout.</p>
+          </div>
           <button type="button" className="x-rail-widget-sheet-done" onClick={onClose}>
             Done
           </button>
         </header>
-        <RailWidgetsConfigList />
+        <RailDockSettings compact />
       </div>
     </div>
   )

@@ -1,5 +1,20 @@
 import { useMemo, useSyncExternalStore } from 'react'
-import type { RunningAgent } from './homeAgents'
+import type { CentralStreamEvent } from '@shared/cluster'
+import { buildRunningAgents, type RunningAgent } from './homeAgents'
+
+const TERMINAL_AGENT_STATUS = new Set([
+  'done',
+  'completed',
+  'finished',
+  'failed',
+  'cancelled',
+  'error',
+  'success',
+  'stale',
+  'unknown'
+])
+
+const CURSOR_STORE_MAX_MS = 45 * 60 * 1000
 
 export type RunningAgentEntry = {
   id: string
@@ -178,6 +193,7 @@ export type PanelAgent = {
   title: string
   status: string
   meetingId?: string
+  startedAt?: number
 }
 
 export function mergeRunningAgents(
@@ -191,16 +207,19 @@ export function mergeRunningAgents(
       id: agent.id,
       title: agent.title,
       status: agent.status ?? 'Running',
-      meetingId: agent.meetingId
+      meetingId: agent.meetingId,
+      startedAt: agent.startedAt
     })
   }
 
   for (const agent of storeAgents) {
+    const prev = byId.get(agent.id)
     byId.set(agent.id, {
       id: agent.id,
       title: agent.title,
       status: agent.status,
-      meetingId: agent.meetingId
+      meetingId: agent.meetingId,
+      startedAt: prev?.startedAt ?? agent.startedAt
     })
   }
 
@@ -215,6 +234,37 @@ export function useRunningAgentsPanel() {
 export function useMergedRunningAgents(streamAgents: RunningAgent[]) {
   const { agents: storeAgents } = useRunningAgentsPanel()
   return useMemo(() => mergeRunningAgents(storeAgents, streamAgents), [storeAgents, streamAgents])
+}
+
+/** Drop stale Cursor entries — stream is source of truth for builds. */
+export function reconcileRunningAgentsWithStream(events: CentralStreamEvent[]) {
+  const streamRunning = buildRunningAgents({ events })
+  const streamTitles = new Set(streamRunning.map((a) => a.title.toLowerCase()))
+
+  for (const agent of [...agents]) {
+    if (agent.cancelled) continue
+
+    if (agent.title.startsWith('Cursor ·')) {
+      const ageMs = Date.now() - agent.startedAt
+      if (ageMs > CURSOR_STORE_MAX_MS || !streamTitles.has(agent.title.toLowerCase())) {
+        completeAgent(agent.id, { dispatch: false })
+        continue
+      }
+    }
+
+    if (streamTitles.has(agent.title.toLowerCase())) continue
+
+    const cursorDone = events.some((event) => {
+      const isCursor = event.source === 'cursor' || event.meta?.source === 'cursor'
+      if (!isCursor) return false
+      const status = String(event.meta?.agentStatus ?? '').toLowerCase()
+      return TERMINAL_AGENT_STATUS.has(status)
+    })
+
+    if (cursorDone) {
+      completeAgent(agent.id, { dispatch: false })
+    }
+  }
 }
 
 function bindExternalAgentEvents() {
@@ -250,5 +300,11 @@ function bindExternalAgentEvents() {
 }
 
 bindExternalAgentEvents()
+
+for (const agent of [...agents]) {
+  if (agent.title.startsWith('Cursor ·') && Date.now() - agent.startedAt > CURSOR_STORE_MAX_MS) {
+    agents = agents.filter((a) => a.id !== agent.id)
+  }
+}
 
 rebuildSnapshot()

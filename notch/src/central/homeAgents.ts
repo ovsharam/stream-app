@@ -1,5 +1,6 @@
 import type { CentralStreamEvent } from '@shared/cluster'
 import { sanitizeDisplayText } from '@shared/displayText'
+import { eventStartedAt } from './agentDuration'
 import { sourceLabel } from './portalBrief'
 
 export const HOME_AGENT_VISIBLE = 4
@@ -10,6 +11,7 @@ export type RunningAgent = {
   status?: string
   /** Post-call deck — open meeting for approval */
   meetingId?: string
+  startedAt?: number
 }
 
 const AGENT_SOURCES = new Set([
@@ -23,18 +25,50 @@ const AGENT_SOURCES = new Set([
   'build'
 ])
 
-const TERMINAL_STATUS = new Set(['done', 'completed', 'finished', 'failed', 'cancelled', 'error', 'success'])
+const TERMINAL_STATUS = new Set([
+  'done',
+  'completed',
+  'finished',
+  'failed',
+  'cancelled',
+  'error',
+  'success',
+  'stale',
+  'unknown'
+])
+
+/** Cursor local builds shouldn't show as active indefinitely without live proof. */
+const CURSOR_BUILD_MAX_ACTIVE_MS = 45 * 60 * 1000
+
+function agentEventSource(event: CentralStreamEvent): string {
+  const metaSource = String(event.meta?.source ?? '').toLowerCase()
+  if (event.source === 'insight' && AGENT_SOURCES.has(metaSource)) return metaSource
+  return event.source
+}
+
+function isCursorBuildEvent(event: CentralStreamEvent): boolean {
+  const source = agentEventSource(event)
+  return source === 'cursor' || event.kind === 'build_prompt'
+}
 
 function isRunningEvent(event: CentralStreamEvent): boolean {
   const status = String(event.meta?.agentStatus ?? '').toLowerCase()
   if (status && TERMINAL_STATUS.has(status)) return false
+
+  if (isCursorBuildEvent(event)) {
+    const ageMs = Date.now() - eventStartedAt(event)
+    if (ageMs > CURSOR_BUILD_MAX_ACTIVE_MS) return false
+  }
+
   if (
     status &&
     ['running', 'queued', 'in_progress', 'pending', 'processing', 'active', 'working'].includes(status)
   ) {
     return true
   }
-  if (event.kind === 'build_prompt') return true
+  if (event.kind === 'build_prompt') {
+    return Date.now() - eventStartedAt(event) <= CURSOR_BUILD_MAX_ACTIVE_MS
+  }
   if (event.meta?.agentId && !TERMINAL_STATUS.has(status)) return true
   return false
 }
@@ -66,7 +100,7 @@ function taskStatus(event: CentralStreamEvent): string {
 }
 
 function taskTitle(event: CentralStreamEvent): string {
-  const agent = sourceLabel(event.source)
+  const agent = sourceLabel(agentEventSource(event))
   const headline = sanitizeDisplayText(event.title, 72)
   if (headline && headline.toLowerCase() !== agent.toLowerCase()) {
     return `${agent} · ${headline}`
@@ -91,13 +125,15 @@ export function buildRunningAgents(input: {
 
   for (const event of input.events) {
     if (event.source === 'meeting') continue
-    if (!AGENT_SOURCES.has(event.source) && event.kind !== 'build_prompt') continue
+    const source = agentEventSource(event)
+    if (!AGENT_SOURCES.has(source) && event.kind !== 'build_prompt') continue
     if (!isRunningEvent(event)) continue
 
     rows.push({
       id: event.id,
       title: taskTitle(event),
-      status: taskStatus(event)
+      status: taskStatus(event),
+      startedAt: eventStartedAt(event)
     })
   }
 

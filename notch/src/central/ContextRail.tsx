@@ -17,6 +17,7 @@ import {
   type RailContext,
   type RailWidgetId
 } from './railWidgetsStore'
+import { resolveRailDefaultTab, setRailLastTab, useRailDock } from './railDockStore'
 
 type RailTab = RailWidgetId
 type IntentionFilter = 'all' | 'plan' | 'explore' | 'execute'
@@ -803,14 +804,22 @@ export function ContextRail({
   onRefreshBrowserPageContext?: () => void | Promise<void>
 }) {
   const widgets = useRailWidgets()
+  const dock = useRailDock()
   const visibleWidgets = useMemo(
     () => getVisibleWidgets(widgets, railContext),
     [widgets, railContext]
   )
   const visibleIds = useMemo(() => new Set(visibleWidgets.map((w) => w.id)), [visibleWidgets])
   const defaultTab = useMemo((): RailTab => {
-    if (railContext.workspaceMode && visibleIds.has('feed')) return 'feed'
-    return visibleWidgets[0]?.id ?? 'context'
+    const fallback =
+      railContext.workspaceMode && visibleIds.has('feed')
+        ? 'feed'
+        : (visibleWidgets[0]?.id ?? 'context')
+    return resolveRailDefaultTab({
+      workspaceMode: Boolean(railContext.workspaceMode),
+      visibleIds,
+      fallback
+    })
   }, [railContext.workspaceMode, visibleIds, visibleWidgets])
   const [activeTab, setActiveTab] = useState<RailTab>(defaultTab)
   const [configOpen, setConfigOpen] = useState(false)
@@ -824,10 +833,23 @@ export function ContextRail({
     }
   }, [activeTab, defaultTab, visibleIds, visibleWidgets])
 
+  const selectTab = (tab: RailTab) => {
+    setActiveTab(tab)
+    setRailLastTab(tab)
+  }
+
   useEffect(() => {
     if (activeTab !== 'chat' || !browserTabId || !onRefreshBrowserPageContext) return
     void onRefreshBrowserPageContext()
   }, [activeTab, browserTabId, onRefreshBrowserPageContext])
+
+  useEffect(() => {
+    const onOpenInbox = () => {
+      if (visibleIds.has('agent')) selectTab('agent')
+    }
+    window.addEventListener('notch:open-agent-inbox', onOpenInbox)
+    return () => window.removeEventListener('notch:open-agent-inbox', onOpenInbox)
+  }, [visibleIds])
 
   return (
     <>
@@ -838,8 +860,8 @@ export function ContextRail({
             <button
               type="button"
               className="x-rail-config-btn"
-              aria-label="Configure sideblade widgets"
-              title="Configure widgets"
+              aria-label="Configure dock station"
+              title="Dock station settings"
               onClick={() => setConfigOpen(true)}
             >
               <IconSettings className="x-rail-config-icon" />
@@ -854,8 +876,8 @@ export function ContextRail({
         </>
       ) : (
         <>
-          <div className="x-rail-tabs-bar">
-            <div className="x-rail-tabs" role="tablist" aria-label="Right rail">
+          <div className={`x-rail-tabs-bar${dock.compactTabs ? ' x-rail-tabs-bar-compact' : ''}`}>
+            <div className="x-rail-tabs" role="tablist" aria-label="Dock station">
               {visibleWidgets.map((widget) => (
                 <button
                   key={widget.id}
@@ -863,7 +885,7 @@ export function ContextRail({
                   role="tab"
                   aria-selected={activeTab === widget.id}
                   className={`x-rail-tab ${activeTab === widget.id ? 'x-rail-tab-active' : ''}`}
-                  onClick={() => setActiveTab(widget.id)}
+                  onClick={() => selectTab(widget.id)}
                 >
                   {widgetLabel(widget.id)}
                   {widget.id === 'agent' && agentPendingCount > 0 ? (
@@ -877,8 +899,8 @@ export function ContextRail({
             <button
               type="button"
               className="x-rail-config-btn"
-              aria-label="Configure sideblade widgets"
-              title="Configure widgets"
+              aria-label="Configure dock station"
+              title="Dock station settings"
               onClick={() => setConfigOpen(true)}
             >
               <IconSettings className="x-rail-config-icon" />

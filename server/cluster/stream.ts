@@ -222,14 +222,19 @@ function externalEvents(now: number): CentralStreamEvent[] {
       if (bookingUid) seenCalcomBookings.add(bookingUid)
     }
 
+    const cursorAgentId = item.source === 'cursor' ? item.metadata?.agentId : undefined
+    const cursorAgentStatus = cursorAgentId ? String(item.metadata?.agentStatus ?? '') : ''
+    const isCursorBuild = Boolean(cursorAgentId)
+
     nonMondayEvents.push({
       id: `ext-${item.id}`,
       ts: item.timestamp.getTime() || now - idx * 1000,
-      source: mapExternalSource(item.source as ExternalSource),
-      kind: 'integration' as const,
+      source: isCursorBuild ? 'cursor' : mapExternalSource(item.source as ExternalSource),
+      kind: isCursorBuild ? 'build_prompt' : 'integration',
       title: item.title || `${item.sender.name} · ${item.source.toUpperCase()}`,
       body: item.body,
-      highlight: `${item.source.toUpperCase()} sync`,
+      highlight: isCursorBuild ? 'Cursor build' : `${item.source.toUpperCase()} sync`,
+      ...(isCursorBuild ? { promptPreview: item.title } : {}),
       meta: {
         sender: item.sender.name,
         source: item.source,
@@ -237,6 +242,18 @@ function externalEvents(now: number): CentralStreamEvent[] {
           item.source === 'monday' && item.metadata?.itemId
             ? String(item.metadata.itemId)
             : item.id,
+        ...(cursorAgentId ? { agentId: String(cursorAgentId) } : {}),
+        ...(cursorAgentStatus ? { agentStatus: cursorAgentStatus } : {}),
+        ...(item.metadata?.runId ? { runId: String(item.metadata.runId) } : {}),
+        ...(item.metadata?.runtime ? { runtime: String(item.metadata.runtime) } : {}),
+        ...(item.metadata?.projectPath ? { projectPath: String(item.metadata.projectPath) } : {}),
+        ...(item.metadata?.projectName ? { projectName: String(item.metadata.projectName) } : {}),
+        ...(item.metadata?.startedAt ? { startedAt: String(item.metadata.startedAt) } : {}),
+        ...(item.metadata?.completedAt ? { completedAt: String(item.metadata.completedAt) } : {}),
+        ...(item.metadata?.durationMs != null
+          ? { durationMs: String(item.metadata.durationMs) }
+          : {}),
+        ...(item.metadata?.currentStep ? { currentStep: String(item.metadata.currentStep) } : {}),
         ...(item.metadata?.threadId ? { threadId: String(item.metadata.threadId) } : {}),
         ...(item.metadata?.accountId ? { accountId: String(item.metadata.accountId) } : {}),
         ...(item.metadata?.accountEmail

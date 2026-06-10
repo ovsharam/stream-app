@@ -16283,11 +16283,6 @@ button.x-home-running-row:hover {
   white-space: pre-wrap;
 }
 
-@media (max-width: 900px) {
-  .x-dojo-layout {
-    grid-template-columns: 1fr;
-  }
-
 .x-build-workspace-rail {
   flex-shrink: 0;
 }

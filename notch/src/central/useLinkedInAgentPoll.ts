@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { AgentThreadMessage } from '@shared/agent-proposal'
+import { isLinkedInOutboundPreview, resolveLinkedInInboundMessage } from '@shared/linkedin-ingest'
 import { linkedInIngestSeenKey } from '@shared/agent-dedupe'
 import { agentApi } from '../lib/api'
 import { LINKEDIN_MESSAGING_URL } from './embedBrowse'
@@ -75,9 +76,8 @@ export const LINKEDIN_MESSAGING_SCAN_JS = `(function() {
     const unreadBadge = el.querySelector(
       '[class*="unread-count"], [class*="unread"], .notification-badge, span[class*="badge"]'
     );
-    const boldName = el.querySelector('.msg-conversation-listitem__participant-names strong, h3 strong');
     const ariaUnread = (el.getAttribute('aria-label') || '').toLowerCase().includes('unread');
-    if (!unreadBadge && !boldName && !ariaUnread) return;
+    if (!unreadBadge && !ariaUnread) return;
 
     const nameEl =
       el.querySelector('.msg-conversation-listitem__participant-names') ||
@@ -89,6 +89,10 @@ export const LINKEDIN_MESSAGING_SCAN_JS = `(function() {
       el.querySelector('.msg-conversation-card__message-snippet');
     const senderName = ((nameEl && nameEl.textContent) || '').replace(/\\s+/g, ' ').trim();
     const message = ((previewEl && previewEl.textContent) || '').replace(/\\s+/g, ' ').trim();
+    if (!message) return;
+    if (/^you\\s*:/i.test(message) || /^you sent\\b/i.test(message)) return;
+    if (el.querySelector('[class*="listitem--you"], [class*="outgoing"], [class*="sent-by-self"]')) return;
+
     let threadId = threadIdFromListItem(el);
     if (!threadId) threadId = 'li-list-' + idx + '-' + senderName.slice(0, 24);
     idx += 1;
@@ -103,11 +107,8 @@ export const LINKEDIN_MESSAGING_SCAN_JS = `(function() {
     );
     let lastInbound = null;
     events.forEach(function(ev) {
-      const fromSelf =
-        ev.classList.contains('msg-s-event-listitem--other') === false &&
-        (ev.querySelector('.msg-s-message-group--self, [class*="message-group--self"]') != null ||
-          ev.closest('[class*="message-group--self"]') != null);
-      if (fromSelf) return;
+      const fromOther = ev.classList.contains('msg-s-event-listitem--other');
+      if (!fromOther) return;
       const bodyEl =
         ev.querySelector('.msg-s-event-listitem__body') ||
         ev.querySelector('.msg-s-message-group__content') ||
@@ -146,10 +147,7 @@ export const LINKEDIN_THREAD_READ_JS = `(function() {
   );
 
   events.forEach(function(ev) {
-    const fromSelf =
-      ev.classList.contains('msg-s-event-listitem--other') === false &&
-      (ev.querySelector('.msg-s-message-group--self, [class*="message-group--self"]') != null ||
-        ev.closest('[class*="message-group--self"]') != null);
+    const fromOther = ev.classList.contains('msg-s-event-listitem--other');
     const bodyEl =
       ev.querySelector('.msg-s-event-listitem__body') ||
       ev.querySelector('.msg-s-message-group__content') ||
@@ -157,8 +155,8 @@ export const LINKEDIN_THREAD_READ_JS = `(function() {
     const text = ((bodyEl && bodyEl.textContent) || '').replace(/\\s+/g, ' ').trim();
     if (!text) return;
     threadMessages.push({
-      sender: fromSelf ? 'self' : 'other',
-      senderName: fromSelf ? undefined : senderName,
+      sender: fromOther ? 'other' : 'self',
+      senderName: fromOther ? senderName : undefined,
       text: text
     });
   });
@@ -209,14 +207,8 @@ export async function handleIngest(
 ): Promise<number> {
   let ingested = 0
   for (const hit of hits) {
-    const key = linkedInIngestSeenKey({
-      threadId: hit.threadId,
-      senderName: normalizeLinkedInSenderName(hit.senderName),
-      message: hit.message
-    })
-    if (seenRef.has(key)) continue
-
     let threadMessages: AgentThreadMessage[] | undefined
+    let message = hit.message
     const url = webview?.getURL?.() ?? ''
     if (webview?.executeJavaScript && url.includes(`/messaging/thread/${hit.threadId}`)) {
       try {
@@ -225,17 +217,56 @@ export async function handleIngest(
           | null
         if (threadData?.threadMessages?.length) {
           threadMessages = threadData.threadMessages
+          if (threadData.message?.trim()) {
+            message = threadData.message.trim()
+          }
         }
       } catch {
         /* thread read optional */
       }
     }
 
+    if (isLinkedInOutboundPreview(message)) {
+      seenRef.add(
+        linkedInIngestSeenKey({
+          threadId: hit.threadId,
+          senderName: normalizeLinkedInSenderName(hit.senderName),
+          message: hit.message
+        })
+      )
+      continue
+    }
+
+    const resolved = resolveLinkedInInboundMessage({
+      threadId: hit.threadId,
+      senderName: normalizeLinkedInSenderName(hit.senderName),
+      message,
+      senderProfileUrl: hit.senderProfileUrl,
+      threadMessages
+    })
+    if (!resolved) {
+      seenRef.add(
+        linkedInIngestSeenKey({
+          threadId: hit.threadId,
+          senderName: normalizeLinkedInSenderName(hit.senderName),
+          message: hit.message
+        })
+      )
+      continue
+    }
+
+    const key = linkedInIngestSeenKey({
+      threadId: hit.threadId,
+      senderName: normalizeLinkedInSenderName(hit.senderName),
+      message: resolved.message
+    })
+    if (seenRef.has(key)) continue
+
     try {
       const { duplicate } = await agentApi.ingestLinkedIn({
         threadId: hit.threadId,
         senderName: normalizeLinkedInSenderName(hit.senderName),
-        message: hit.message,
+        message: resolved.message,
         senderProfileUrl: hit.senderProfileUrl,
         threadMessages,
         detectedAt: Date.now()

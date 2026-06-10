@@ -1,5 +1,9 @@
 import { v4 as uuidv4 } from 'uuid'
 import type { StreamItem, StreamSource } from '../shared/types'
+import {
+  isGmailCalendarInviteSubject,
+  parseGmailCalendarInviteFromSubject
+} from '../shared/gmail-calendar-invite'
 
 const PREVIEW_MAX = 280
 
@@ -48,6 +52,29 @@ export function normalizeGmailThread(thread: {
   const bodyFull = thread.body ? stripHtml(thread.body) : stripHtml(thread.snippet ?? '')
   const body = truncate(bodyFull)
 
+  const subject = thread.subject?.trim() ?? ''
+  const inviteMeta =
+    subject && isGmailCalendarInviteSubject(subject)
+      ? (() => {
+          const parsed = parseGmailCalendarInviteFromSubject(subject)
+          return {
+            calendarInvite: true,
+            subject,
+            ...(parsed.eventTitle ? { eventTitle: parsed.eventTitle } : {}),
+            ...(parsed.whenLabel ? { whenLabel: parsed.whenLabel } : {}),
+            ...(parsed.timezone ? { timezone: parsed.timezone } : {}),
+            ...(parsed.recipientEmail ? { recipientEmail: parsed.recipientEmail } : {}),
+            ...(parsed.startAt != null ? { startAt: parsed.startAt } : {}),
+            ...(parsed.inviteKind ? { inviteKind: parsed.inviteKind } : {}),
+            ...(parsed.monthAbbr ? { monthAbbr: parsed.monthAbbr } : {}),
+            ...(parsed.dayNumber != null ? { dayNumber: parsed.dayNumber } : {}),
+            ...(parsed.weekday ? { weekday: parsed.weekday } : {})
+          }
+        })()
+      : subject
+        ? { subject }
+        : {}
+
   return {
     id: `gmail-${thread.id}`,
     source: 'gmail',
@@ -61,7 +88,7 @@ export function normalizeGmailThread(thread: {
     bodyFull,
     isUnread: thread.labelIds?.includes('UNREAD') ?? true,
     isStarred: thread.labelIds?.includes('STARRED') ?? false,
-    metadata: { threadId: thread.id, ...thread.metadata }
+    metadata: { threadId: thread.id, ...thread.metadata, ...inviteMeta }
   }
 }
 

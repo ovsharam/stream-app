@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AssistResult, CentralStreamEvent, ClusterSearchHit } from '@shared/cluster'
 import { sanitizeDisplayText } from '../lib/displayText'
-import { clusterApi } from '../lib/api'
+import { clusterApi, integrationApi } from '../lib/api'
 import { AssistMessageBody } from './AssistMessageBody'
 import { buildRunningAgents } from './homeAgents'
 import type { HomeChatMessage } from './homeChatStore'
@@ -240,10 +240,20 @@ export function HomeChat({
     day: 'numeric'
   })
 
+  const handleStopAll = () => {
+    stopAll()
+    void integrationApi
+      .buildCancelAll()
+      .then(() => {
+        window.dispatchEvent(new Event('notch:stream-push'))
+      })
+      .catch(() => undefined)
+  }
+
   const agentsPanel = showAgentsPanel ? (
     <RunningAgentsPanel
       agents={mergedAgents}
-      onStopAll={stopAll}
+      onStopAll={handleStopAll}
       onDismiss={dismissRunningAgentsPanel}
       onFocusMeeting={onFocusMeeting}
     />

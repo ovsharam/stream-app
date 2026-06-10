@@ -283,9 +283,12 @@ export async function askCursor(
       streamItemId: item.id,
       io
     })
-    const answer = agent?.agentId
-      ? `Cursor local agent started (${agent.agentId}) in ${localProject.name}. Open the project in Cursor to watch changes.`
-      : `Could not start local Cursor agent in ${localProject.path}. Is Cursor installed?`
+    const launchError =
+      agent && 'error' in agent ? String(agent.error) : undefined
+    const answer = agent && 'agentId' in agent
+      ? `Cursor local agent started (${agent.agentId}) in ${localProject.name}. Watch live output in Cursor.`
+      : launchError ??
+        `Could not start local Cursor agent in ${localProject.path}. Is Cursor installed?`
 
     const updated = {
       ...item,
@@ -293,9 +296,10 @@ export async function askCursor(
       bodyFull: answer,
       metadata: {
         ...item.metadata,
-        agentId: agent?.agentId,
-        runId: agent?.runId,
-        agentStatus: agent?.agentId ? (agent.status ?? 'running') : 'error'
+        agentId: agent && 'agentId' in agent ? agent.agentId : undefined,
+        runId: agent && 'agentId' in agent ? agent.runId : undefined,
+        agentStatus:
+          agent && 'agentId' in agent ? (agent.status ?? 'running') : 'error'
       }
     }
     upsertItem(updated)
@@ -307,8 +311,8 @@ export async function askCursor(
   const answer = cloud?.id
     ? `Cursor cloud agent started (${cloud.id}). Track progress in Cursor Cloud.`
     : config.mode === 'cloud'
-      ? `Cursor cloud agent failed. Check API key and repo in Apps → Cursor.\n\nPrompt: ${query}`
-      : `Add a local project in Build, or set a cloud repo in Apps → Cursor.\n\nPrompt: ${query}`
+      ? 'Cursor cloud agent failed. Check API key and repo in Apps → Cursor.'
+      : 'Add a local project in Build, or set a cloud repo in Apps → Cursor.'
 
   const item = normalizeAiAssist({
     source: 'cursor',

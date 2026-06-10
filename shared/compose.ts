@@ -189,6 +189,18 @@ export function parseComposeCommand(raw: string): ComposeCommand | null {
     }
   }
 
+  const mondayCreateNatural = rest.match(
+    /^(?:create\s+(?:a\s+)?(?:new\s+)?(?:todo|task|item)|(?:new\s+)?(?:todo|task|item))\s+(.+)$/is
+  )
+  if (provider === 'monday' && mondayCreateNatural) {
+    return {
+      provider,
+      intent: 'create',
+      body: mondayCreateNatural[1].trim(),
+      raw: text
+    }
+  }
+
   const gmailSend = rest.match(/^send\s+([\w.+-]+@[\w.-]+)\s*:\s*(.+)$/is)
   if (provider === 'gmail' && gmailSend) {
     return {

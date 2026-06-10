@@ -222,6 +222,9 @@ async function runPerplexity(ctx: ActionRunContext): Promise<ActionRunResult> {
 const REVENUE_PROMPT =
   'You are a concise GTM copilot for an AE/FDE team. Be direct, actionable, and brief.'
 
+const CURSOR_BUILD_PROMPT =
+  'You are a senior software engineer working in the active project. Implement the request with focused code changes, verify when reasonable, and summarize what you changed.'
+
 async function runClaude(ctx: ActionRunContext): Promise<ActionRunResult> {
   if (!isClaudeConnected()) return fail('claude', 'Claude not connected — add API key in Integrations')
   try {
@@ -243,7 +246,7 @@ async function runGemini(ctx: ActionRunContext): Promise<ActionRunResult> {
 async function runCursor(ctx: ActionRunContext): Promise<ActionRunResult> {
   if (!isCursorConnected()) return fail('cursor', 'Cursor not connected — add API key in Integrations')
   const forceLocal = ctx.parsed.target === 'local'
-  const item = await askCursor(ctx.parsed.body, REVENUE_PROMPT, ctx.io, { forceLocal })
+  const item = await askCursor(ctx.parsed.body, CURSOR_BUILD_PROMPT, ctx.io, { forceLocal })
   const message = item.body.slice(0, 200)
   const agentStatus = String(item.metadata?.agentStatus ?? '').toLowerCase()
   if (!item.metadata?.agentId || agentStatus === 'error') {

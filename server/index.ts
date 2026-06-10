@@ -47,6 +47,10 @@ async function main(): Promise<void> {
   initAgentStore()
   initIntentionEpisodes()
 
+  const { startPipelineAutoSync } =
+    require('./pipeline/framework') as typeof import('./pipeline/framework')
+  startPipelineAutoSync()
+
   if (process.env.GEMINI_API_KEY?.trim()) {
     console.log('[server] GEMINI_API_KEY loaded — auto-connects per session')
   }

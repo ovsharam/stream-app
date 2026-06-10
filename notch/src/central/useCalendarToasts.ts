@@ -12,13 +12,15 @@ const THRESHOLD_TITLES: Record<MeetingThreshold, string> = {
   '15m': 'In 15 minutes'
 }
 
+/** Persisted in localStorage — survives Notch restarts for the calendar day. */
 function sessionKey(eventId: string, threshold: MeetingThreshold): string {
-  return `notch.toast.meeting.${eventId}.${threshold}`
+  const day = new Date().toISOString().slice(0, 10)
+  return `notch.toast.meeting.${day}.${eventId}.${threshold}`
 }
 
 function wasFired(eventId: string, threshold: MeetingThreshold): boolean {
   try {
-    return sessionStorage.getItem(sessionKey(eventId, threshold)) === '1'
+    return localStorage.getItem(sessionKey(eventId, threshold)) === '1'
   } catch {
     return false
   }
@@ -26,7 +28,7 @@ function wasFired(eventId: string, threshold: MeetingThreshold): boolean {
 
 function markFired(eventId: string, threshold: MeetingThreshold): void {
   try {
-    sessionStorage.setItem(sessionKey(eventId, threshold), '1')
+    localStorage.setItem(sessionKey(eventId, threshold), '1')
   } catch {
     /* ignore */
   }
@@ -90,10 +92,12 @@ function pushMeetingToast(evt: CalendarRailEvent, threshold: MeetingThreshold): 
         ? evt.startsAt
         : Date.now() + 3 * 60_000
 
+  const title = evt.title.length > 56 ? `${evt.title.slice(0, 53)}…` : evt.title
+
   pushAppToast({
     kind: 'meeting',
     title: THRESHOLD_TITLES[threshold],
-    subtitle: `${evt.title} · ${evt.timeLabel}`,
+    subtitle: `${title} — ${evt.timeLabel}`,
     urgency,
     dedupeKey: `meeting-${evt.id}-${threshold}`,
     expiresAt,

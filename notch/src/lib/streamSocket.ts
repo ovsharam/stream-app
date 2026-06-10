@@ -50,6 +50,10 @@ export function connectStreamSocket(): () => void {
       dispatchStreamPush()
     })
 
+    socket.on('build:log', () => {
+      dispatchStreamPush()
+    })
+
     socket.on('stream:update', () => {
       dispatchStreamPush()
     })

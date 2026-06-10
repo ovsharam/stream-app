@@ -1,8 +1,28 @@
+import { spawn } from 'child_process'
 import { existsSync } from 'fs'
 import type { Server as SocketServer } from 'socket.io'
 import { getRecentItems, upsertItem } from '../db'
 
 type LaunchResult = { agentId: string; status: string; runId?: string }
+type LaunchFailure = { error: string }
+
+function launchError(err: unknown): string {
+  if (err && typeof err === 'object' && 'message' in err) {
+    const message = String((err as { message?: string }).message ?? '').trim()
+    if (message) return message
+  }
+  return err instanceof Error ? err.message : String(err)
+}
+
+/** Local SDK agents need the Cursor desktop app attached to the project folder. */
+async function ensureCursorAppOpen(cwd: string): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const child = spawn('open', ['-a', 'Cursor', cwd], { stdio: 'ignore' })
+    const done = () => setTimeout(resolve, 1400)
+    child.once('exit', done)
+    child.once('error', done)
+  })
+}
 
 async function loadSdk() {
   return import('@cursor/sdk')
@@ -187,10 +207,13 @@ export async function launchLocalCursorAgent(input: {
   agentId?: string
   streamItemId?: string
   io?: SocketServer
-}): Promise<LaunchResult | null> {
-  if (!existsSync(input.cwd)) return null
+}): Promise<LaunchResult | LaunchFailure | null> {
+  if (!existsSync(input.cwd)) {
+    return { error: `Project folder not found: ${input.cwd}` }
+  }
 
   try {
+    await ensureCursorAppOpen(input.cwd)
     const { Agent } = await loadSdk()
     const agent = input.agentId
       ? await Agent.resume(input.agentId, {
@@ -244,7 +267,13 @@ export async function launchLocalCursorAgent(input: {
 
     return { agentId, runId, status: 'running' }
   } catch (err) {
+    const message = launchError(err)
     console.warn('[cursor] launchLocalCursorAgent:', err)
-    return null
+    return {
+      error:
+        message.includes('rate') || message.includes('limit')
+          ? 'Cursor usage limit reached — upgrade or wait for your limit to reset.'
+          : message || 'Could not start local Cursor agent — is Cursor installed?'
+    }
   }
 }

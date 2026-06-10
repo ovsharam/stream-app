@@ -8,7 +8,7 @@ import { PostCallTaskDeck, PostCallProgress } from './PostCallTaskDeck'
 import { meetingEventByItemId } from './meetingFocus'
 import { ContextRail } from './ContextRail'
 import { IntegrationsPanel } from './IntegrationsPanel'
-import { BuildAgentsView } from './BuildAgentsView'
+import { BuildDojo } from './BuildDojo'
 import { NotesView } from './NotesView'
 import { NavBladeToggle, persistNavOpen, readNavOpen } from './NavBladeToggle'
 import { SideNav, type NavTarget, type Page } from './SideNav'
@@ -1232,7 +1232,7 @@ export function CentralApp() {
         </main>
       ) : page === 'build' ? (
         <main className="x-main x-main-utility">
-          <BuildAgentsView
+          <BuildDojo
             events={events}
             onOpenIntegrations={() => setPage('integrations')}
           />
@@ -1601,6 +1601,7 @@ export function CentralApp() {
               <ContextRail
                 events={streamFiltered}
                 onOpenHome={goHome}
+                onOpenBuildDojo={openAgentsFeed}
                 railContext={{ page, area, tab, workspaceMode: browserMode }}
                 browserTabId={browserContextTabId}
                 browserPageContext={browserPageContext}

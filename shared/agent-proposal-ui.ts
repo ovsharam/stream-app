@@ -2,8 +2,10 @@ import type {
   AgentBrief,
   AgentIntent,
   AgentProposal,
-  AgentProposalStatus
+  AgentProposalStatus,
+  AgentThreadMessage
 } from './agent-proposal'
+import { lastInboundThreadMessage, looksLikeOutboundToContact } from './linkedin-ingest'
 
 export type ProposalUrgency = 'high' | 'normal' | 'low'
 
@@ -15,6 +17,7 @@ export type AgentProposalFeedCardData = {
   senderName: string
   rawMessage: string
   threadId?: string
+  threadMessages?: AgentThreadMessage[]
   channel?: string
   intent?: AgentIntent
   detectedAt: number
@@ -156,6 +159,30 @@ export function proposalLeadLine(input: {
   return `${cleanLinkedInSenderName(input.senderName)} reached out on LinkedIn.`
 }
 
+export function proposalInboundMessage(input: {
+  rawMessage: string
+  senderName: string
+  threadMessages?: AgentThreadMessage[]
+}): { text: string; fromThem: boolean } {
+  const inbound = lastInboundThreadMessage(input.threadMessages)
+  if (inbound?.text.trim()) {
+    return {
+      text: cleanLinkedInMessage(inbound.text, input.senderName),
+      fromThem: true
+    }
+  }
+  if (looksLikeOutboundToContact(input.rawMessage, input.senderName)) {
+    return {
+      text: cleanLinkedInMessage(input.rawMessage, input.senderName),
+      fromThem: false
+    }
+  }
+  return {
+    text: cleanLinkedInMessage(input.rawMessage, input.senderName),
+    fromThem: true
+  }
+}
+
 /** One-line summary for compact inbox cards. */
 export function summarizeProposalText(text: string, maxLen = 120): string {
   const t = text.replace(/\s+/g, ' ').trim()
@@ -172,8 +199,14 @@ export function summarizeTheirMessage(input: {
   rawMessage: string
   senderName: string
   brief?: AgentBrief
+  threadMessages?: AgentThreadMessage[]
 }): string {
-  return summarizeProposalText(proposalLeadLine(input), 140)
+  const { text, fromThem } = proposalInboundMessage(input)
+  if (!fromThem) {
+    const name = cleanLinkedInSenderName(input.senderName)
+    return `You messaged ${name} — no reply needed until they respond.`
+  }
+  return summarizeProposalText(proposalLeadLine({ ...input, rawMessage: text }), 140)
 }
 
 export function summarizeReplyDraft(draft: string): string {
@@ -185,6 +218,7 @@ export function summarizeInboundMessage(input: {
   rawMessage: string
   senderName: string
   brief?: AgentBrief
+  threadMessages?: AgentThreadMessage[]
 }): string {
   return summarizeTheirMessage(input)
 }
@@ -236,6 +270,7 @@ export function agentProposalToCardData(proposal: AgentProposal): AgentProposalF
     senderName: proposal.senderName,
     rawMessage: proposal.rawMessage,
     threadId: proposal.threadId,
+    threadMessages: proposal.threadMessages,
     channel: 'LinkedIn',
     intent: proposal.intent,
     detectedAt: proposal.detectedAt ?? proposal.createdAt,

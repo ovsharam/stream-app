@@ -6,11 +6,11 @@ import {
 } from '@shared/agent-action-settings'
 import {
   agentProposalToCardData,
-  cleanLinkedInMessage,
   cleanLinkedInSenderName,
   formatProposalAge,
   summarizeInboundMessage,
   summarizeReplyDraft,
+  proposalInboundMessage,
   type AgentProposalFeedCardData
 } from '@shared/agent-proposal-ui'
 import { IconLinkedin } from './Icons'
@@ -85,11 +85,22 @@ export function AgentProposalActionCard({
   const busy = isBusy(data.proposalId)
   const ageTs = data.detectedAt ?? eventTs ?? data.createdAt
   const sender = cleanLinkedInSenderName(data.senderName)
-  const themSummary = summarizeInboundMessage(data)
+  const inbound = proposalInboundMessage({
+    rawMessage: data.rawMessage,
+    senderName: data.senderName,
+    threadMessages: data.threadMessages
+  })
+  const themSummary = summarizeInboundMessage({
+    rawMessage: data.rawMessage,
+    senderName: data.senderName,
+    brief: data.brief,
+    threadMessages: data.threadMessages
+  })
   const youSummary = summarizeReplyDraft(draft)
-  const fullMessage = cleanLinkedInMessage(data.rawMessage, data.senderName)
+  const fullMessage = inbound.text
+  const outboundMisread = !inbound.fromThem
   const terminal = resolved ?? (data.status && data.status !== 'pending' ? mapStatus(data.status) : null)
-  const showActions = !terminal
+  const showActions = !terminal && !outboundMisread
 
   const queueSaveDraft = (text: string) => {
     if (saveTimer.current) window.clearTimeout(saveTimer.current)
@@ -174,14 +185,27 @@ export function AgentProposalActionCard({
       </div>
 
       <div className="x-li-draft-thread">
-        <div className="x-li-draft-bubble x-li-draft-bubble-in">
+        <div
+          className={`x-li-draft-bubble ${outboundMisread ? 'x-li-draft-bubble-out' : 'x-li-draft-bubble-in'}`}
+        >
+          {outboundMisread ? (
+            <span className="x-li-draft-bubble-tag">Your message</span>
+          ) : null}
           <p>{themSummary}</p>
         </div>
-        <div className="x-li-draft-bubble x-li-draft-bubble-out">
-          <span className="x-li-draft-bubble-tag">Your draft</span>
-          <p>{youSummary}</p>
-        </div>
+        {!outboundMisread ? (
+          <div className="x-li-draft-bubble x-li-draft-bubble-out">
+            <span className="x-li-draft-bubble-tag">Your draft</span>
+            <p>{youSummary}</p>
+          </div>
+        ) : null}
       </div>
+
+      {outboundMisread && !terminal ? (
+        <p className="x-li-draft-warn">
+          This is a message you sent — not one you received. Clear it or wait for {sender} to reply.
+        </p>
+      ) : null}
 
       {showActions ? (
         <div className="x-li-draft-actions">
@@ -211,6 +235,12 @@ export function AgentProposalActionCard({
             </button>
           </div>
         </div>
+      ) : outboundMisread && !terminal ? (
+        <div className="x-li-draft-actions">
+          <button type="button" className="x-li-draft-link" disabled={busy} onClick={handleClear}>
+            Clear
+          </button>
+        </div>
       ) : null}
 
       {!terminal ? (
@@ -235,29 +265,33 @@ export function AgentProposalActionCard({
       {expanded && !terminal ? (
         <div className="x-li-draft-editor">
           <div className="x-li-draft-editor-section">
-            <span className="x-li-draft-editor-label">Their message</span>
+            <span className="x-li-draft-editor-label">
+              {outboundMisread ? 'Your message' : 'Their message'}
+            </span>
             <p className="x-li-draft-editor-body">{fullMessage}</p>
           </div>
-          <div className="x-li-draft-editor-section">
-            <div className="x-li-draft-editor-head">
-              <span className="x-li-draft-editor-label">Reply</span>
-              <button
-                type="button"
-                className="x-li-draft-regen"
-                disabled={busy || regenerating}
-                onClick={handleRegenerate}
-              >
-                {regenerating ? 'Regenerating…' : 'Regenerate'}
-              </button>
+          {!outboundMisread ? (
+            <div className="x-li-draft-editor-section">
+              <div className="x-li-draft-editor-head">
+                <span className="x-li-draft-editor-label">Reply</span>
+                <button
+                  type="button"
+                  className="x-li-draft-regen"
+                  disabled={busy || regenerating}
+                  onClick={handleRegenerate}
+                >
+                  {regenerating ? 'Regenerating…' : 'Regenerate'}
+                </button>
+              </div>
+              <textarea
+                className="x-li-draft-textarea"
+                value={draft}
+                rows={5}
+                onChange={(e) => handleDraftChange(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+              />
             </div>
-            <textarea
-              className="x-li-draft-textarea"
-              value={draft}
-              rows={5}
-              onChange={(e) => handleDraftChange(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
+          ) : null}
         </div>
       ) : null}
 

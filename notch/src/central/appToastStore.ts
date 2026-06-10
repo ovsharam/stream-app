@@ -15,7 +15,8 @@ export type AppToast = {
   actions?: AppToastAction[]
 }
 
-const MAX_TOASTS = 4
+/** In-memory only — not persisted. Meeting dedupe keys live in localStorage (useCalendarToasts). */
+const MAX_TOASTS = 3
 const listeners = new Set<() => void>()
 const expiryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 

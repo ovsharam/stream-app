@@ -49,11 +49,9 @@ export async function isGdocsConnected(): Promise<boolean> {
 }
 
 async function docsClient(accountId?: string) {
-  const accounts = await feedEnabledAccounts()
+  const accounts = await feedEnabledAccountsAnySession()
   const account =
-    (accountId ? accounts.find((a) => a.id === accountId) : undefined) ??
-    accounts[0] ??
-    (await feedEnabledAccountsAnySession())[0]
+    (accountId ? accounts.find((a) => a.id === accountId) : undefined) ?? accounts[0]
   if (!account) throw new Error('Connect Gmail with Docs scope first')
   const auth = authClientForTokens(account.tokens)
   return {

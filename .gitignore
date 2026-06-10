@@ -12,3 +12,5 @@ notch/dist-electron
 notch/dist-renderer
 ambient/dist
 *.tsbuildinfo
+config/cloudflared.yml
+config/stream-tunnel.env

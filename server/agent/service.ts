@@ -7,6 +7,7 @@ import type {
 } from '../../shared/agent-proposal'
 import { proposalDedupeKey } from '../../shared/agent-dedupe'
 import { cleanLinkedInSenderName } from '../../shared/agent-proposal-ui'
+import { resolveLinkedInInboundMessage } from '../../shared/linkedin-ingest'
 import { classifyLinkedInMessage, messageLooksActionable } from './classifier'
 import { enrichRescheduleBooking } from './bookingContext'
 import { buildAgentBrief, threadAsText } from './brief'
@@ -140,8 +141,17 @@ export async function ingestLinkedInMessage(
   io?: SocketServer
 ): Promise<{ proposal: AgentProposal; duplicate?: boolean }> {
   const threadId = input.threadId.trim()
-  const message = input.message.trim()
-  if (!threadId || !message || !input.senderName.trim()) {
+  if (!threadId || !input.senderName.trim()) {
+    throw new Error('threadId, senderName, and message are required')
+  }
+
+  const inbound = resolveLinkedInInboundMessage(input)
+  if (!inbound) {
+    throw new Error('Latest message is outbound — no reply needed')
+  }
+
+  const message = inbound.message
+  if (!message) {
     throw new Error('threadId, senderName, and message are required')
   }
 
@@ -171,7 +181,7 @@ export async function ingestLinkedInMessage(
     detectedAt: input.detectedAt ?? now
   })
 
-  const draft = await draftLinkedInProposal(input, proposalId)
+  const draft = await draftLinkedInProposal({ ...input, message }, proposalId)
 
   const proposal: AgentProposal = {
     id: proposalId,

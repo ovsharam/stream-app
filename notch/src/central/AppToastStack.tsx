@@ -14,37 +14,26 @@ function ToastCard({ toast }: { toast: AppToast }) {
       : toast.kind === 'agent'
         ? 'x-toast-agent'
         : 'x-toast-info'
-  const urgentClass = toast.urgency === 'high' ? 'x-toast-urgent' : ''
-
-  const onBodyClick = () => {
-    if (primary) primary.onClick()
-  }
+  const urgentClass = toast.urgency === 'high' ? ' x-toast-urgent' : ''
 
   return (
     <div
-      className={`x-toast x-toast-enter ${kindClass} ${urgentClass}`}
+      className={`x-toast x-toast-enter${urgentClass} ${kindClass}`}
       role="status"
       aria-live="polite"
     >
-      <button
-        type="button"
-        className="x-toast-body"
-        onClick={onBodyClick}
-        disabled={!primary}
-      >
+      <div className="x-toast-row">
         <span className="x-toast-badge">{KIND_LABELS[toast.kind]}</span>
-        <span className="x-toast-copy">
-          <span className="x-toast-title">{toast.title}</span>
-          <span className="x-toast-subtitle">{toast.subtitle}</span>
-        </span>
-      </button>
-      {toast.actions && toast.actions.length > 0 ? (
-        <div className="x-toast-actions">
-          {toast.actions.map((action) => (
+        <div className="x-toast-copy">
+          <p className="x-toast-title">{toast.title}</p>
+          {toast.subtitle ? <p className="x-toast-subtitle">{toast.subtitle}</p> : null}
+        </div>
+        <div className="x-toast-row-actions">
+          {toast.actions?.map((action) => (
             <button
               key={action.label}
               type="button"
-              className={action.primary ? 'x-toast-action x-toast-action-primary' : 'x-toast-action'}
+              className={action.primary ? 'x-toast-pill x-toast-pill-primary' : 'x-toast-pill'}
               onClick={(e) => {
                 e.stopPropagation()
                 action.onClick()
@@ -53,16 +42,21 @@ function ToastCard({ toast }: { toast: AppToast }) {
               {action.label}
             </button>
           ))}
+          {primary && !toast.actions?.length ? (
+            <button type="button" className="x-toast-pill x-toast-pill-primary" onClick={primary.onClick}>
+              Open
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="x-toast-dismiss"
+            aria-label="Dismiss"
+            onClick={() => dismissAppToast(toast.id)}
+          >
+            ×
+          </button>
         </div>
-      ) : null}
-      <button
-        type="button"
-        className="x-toast-dismiss"
-        aria-label="Dismiss"
-        onClick={() => dismissAppToast(toast.id)}
-      >
-        ✕
-      </button>
+      </div>
     </div>
   )
 }

@@ -7,6 +7,7 @@ import { trackOperatorEvent } from '../lib/operatorTelemetry'
 import { feedEventBrowseUrl } from './workspace'
 import { getFeedVote, setFeedVote } from './feedFeedbackStore'
 import { AgentProposalFeedCard } from './AgentProposalFeedCard'
+import { GmailCalendarInviteCard, isCalendarInviteEvent } from './GmailCalendarInviteCard'
 import { IconGmail, IconLinkedin, IconMonday, IconReply, IconRepost, IconShare, IconViews } from './Icons'
 
 const AVATAR: Record<string, { bg: string; color: string; label: string }> = {
@@ -42,6 +43,91 @@ function metaStr(meta: Record<string, unknown> | undefined, key: string): string
   const v = meta?.[key]
   if (v == null || v === '') return undefined
   return String(v)
+}
+
+const PROMPT_COLLAPSE_CHARS = 160
+
+function isCursorFeedEvent(event: CentralStreamEvent): boolean {
+  return (
+    event.source === 'cursor' ||
+    event.source === 'claude' ||
+    event.kind === 'build_prompt' ||
+    (event.source === 'insight' && (event.meta?.source === 'cursor' || event.meta?.source === 'claude'))
+  )
+}
+
+function splitCursorFeedContent(event: CentralStreamEvent): { status?: string; prompt?: string } {
+  const promptFromMeta = event.promptPreview || metaStr(event.meta, 'query')
+  let body = event.body?.trim() ?? ''
+  const title = event.title?.trim() ?? ''
+
+  const marker = body.search(/\n+Prompt:\s*/i)
+  if (marker >= 0) {
+    const status = body.slice(0, marker).trim()
+    const embedded = body.slice(marker).replace(/^\n+Prompt:\s*/i, '').trim()
+    return { status, prompt: embedded || promptFromMeta || title }
+  }
+
+  if (promptFromMeta && promptFromMeta !== body) {
+    return { status: body || undefined, prompt: promptFromMeta }
+  }
+
+  if (title.length > PROMPT_COLLAPSE_CHARS && body && body !== title) {
+    return { status: body, prompt: title }
+  }
+
+  if (title.length > PROMPT_COLLAPSE_CHARS && (!body || body === title)) {
+    return { prompt: title }
+  }
+
+  return { status: body || title || undefined }
+}
+
+function CursorFeedCard({ event }: { event: CentralStreamEvent }) {
+  const { status, prompt } = splitCursorFeedContent(event)
+
+  return (
+    <>
+      {event.highlight ? <span className="x-card-highlight">{event.highlight}</span> : null}
+      {status ? <p className="x-post-body">{status}</p> : null}
+      {prompt ? <CollapsiblePrompt text={prompt} /> : null}
+    </>
+  )
+}
+
+function CollapsiblePrompt({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  const long = text.length > PROMPT_COLLAPSE_CHARS
+
+  if (!long) {
+    return (
+      <div className="x-prompt">
+        <span className="x-prompt-label">Agent prompt</span>
+        <code>{text}</code>
+      </div>
+    )
+  }
+
+  return (
+    <div className={`x-prompt${open ? ' x-prompt-open' : ' x-prompt-collapsed'}`}>
+      <button
+        type="button"
+        className="x-prompt-toggle"
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((v) => !v)
+        }}
+      >
+        <span className="x-prompt-label">Agent prompt</span>
+        <span className="x-prompt-hint">{open ? 'Collapse' : `Expand · ${text.length} chars`}</span>
+      </button>
+      {open ? (
+        <code>{text}</code>
+      ) : (
+        <p className="x-prompt-teaser">{text.slice(0, PROMPT_COLLAPSE_CHARS)}…</p>
+      )}
+    </div>
+  )
 }
 
 function metaJson<T>(meta: Record<string, unknown> | undefined, key: string): T | undefined {
@@ -184,6 +270,10 @@ function EngagementHints({ metrics }: { metrics?: MetricsMeta }) {
 }
 
 function GmailCard({ event }: { event: CentralStreamEvent }) {
+  if (isCalendarInviteEvent(event)) {
+    return <GmailCalendarInviteCard event={event} />
+  }
+
   const subject = metaStr(event.meta, 'subject') ?? event.title
   const attachments = metaJson<AttachmentMeta[]>(event.meta, 'attachments') ?? []
 
@@ -333,6 +423,10 @@ function GenericCard({ event }: { event: CentralStreamEvent }) {
 }
 
 function SourceCardBody({ event }: { event: CentralStreamEvent }) {
+  if (isCursorFeedEvent(event)) {
+    return <CursorFeedCard event={event} />
+  }
+
   switch (event.source) {
     case 'gmail':
       return <GmailCard event={event} />
@@ -572,8 +666,13 @@ export function FeedPost({
   const isGmailThread = event.source === 'gmail'
   const isThreadable = isMondayThread || isGmailThread
   const isAgentLinkedIn = Boolean(parseAgentProposalFeedMeta(event.meta, event))
+  const isCursorFeed = isCursorFeedEvent(event)
   const handle =
-    isMondayThread
+    isCursorFeed
+      ? event.meta?.executor === 'claude-code' || event.source === 'claude'
+        ? 'Claude Code'
+        : 'Cursor'
+      : isMondayThread
       ? 'Monday'
       : event.source === 'linkedin'
         ? metaStr(event.meta, 'senderName') || event.title.trim() || 'LinkedIn'
@@ -639,7 +738,8 @@ export function FeedPost({
     event.kind === 'transcript_live' ||
     ['gmail', 'github', 'gdocs', 'x', 'slack', 'discord', 'meeting', 'linkedin'].includes(event.source) ||
     isMondayThread ||
-    isAgentLinkedIn
+    isAgentLinkedIn ||
+    isCursorFeed
   const hasBrowseTarget = Boolean(feedEventBrowseUrl(event))
 
   const inlineActions: { label: string; onClick: (e: MouseEvent) => void }[] = []
@@ -752,12 +852,7 @@ export function FeedPost({
           </div>
         )}
 
-        {event.promptPreview && (
-          <div className="x-prompt">
-            <span className="x-prompt-label">Agent prompt</span>
-            <code>{event.promptPreview}</code>
-          </div>
-        )}
+        {event.promptPreview && !isCursorFeed ? <CollapsiblePrompt text={event.promptPreview} /> : null}
 
         {parseAgentProposalFeedMeta(event.meta, event) ? (
           <AgentProposalFeedCard event={event} onRefresh={onRefresh} />

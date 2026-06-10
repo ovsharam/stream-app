@@ -1,12 +1,22 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { AgentProposal } from '@shared/agent-proposal'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { CentralStreamEvent } from '@shared/cluster'
 import { agentApi } from '../lib/api'
-import { AgentProposalActionCard } from './AgentProposalActionCard'
-import { IconLinkedin } from './Icons'
+import {
+  buildDraftInboxItems,
+  buildStatusInboxItems,
+  mergeAgentInboxItems
+} from './agentInboxItems'
+import { AgentInboxDraftRow, AgentInboxStatusRow } from './AgentInboxRows'
 
-export function AgentInboxPanel() {
-  const [proposals, setProposals] = useState<AgentProposal[]>([])
+type Props = {
+  events?: CentralStreamEvent[]
+  onOpenBuildDojo?: () => void
+}
+
+export function AgentInboxPanel({ events = [], onOpenBuildDojo }: Props) {
+  const [proposals, setProposals] = useState<Awaited<ReturnType<typeof agentApi.listProposals>>['proposals']>([])
   const [error, setError] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -25,36 +35,50 @@ export function AgentInboxPanel() {
     return () => window.removeEventListener('notch:agent-proposal', onProposal)
   }, [load])
 
+  const items = useMemo(
+    () =>
+      mergeAgentInboxItems(buildStatusInboxItems(events), buildDraftInboxItems(proposals)),
+    [events, proposals]
+  )
+
+  useEffect(() => {
+    if (expandedId && !items.some((item) => item.id === expandedId)) {
+      setExpandedId(null)
+    }
+  }, [expandedId, items])
+
   return (
-    <div className="x-rail-tab-body x-agent-inbox x-li-inbox">
-      <header className="x-li-inbox-head">
-        <div className="x-li-inbox-brand">
-          <span className="x-li-inbox-icon-wrap" aria-hidden>
-            <IconLinkedin className="x-li-inbox-icon" />
+    <div className="x-rail-tab-body x-agent-inbox">
+      <header className="x-agent-inbox-head">
+        <h2 className="x-agent-inbox-head-title">Agent</h2>
+        {items.length > 0 ? (
+          <span className="x-agent-inbox-count">
+            {items.length} item{items.length === 1 ? '' : 's'}
           </span>
-          <div>
-            <h2 className="x-li-inbox-title">LinkedIn</h2>
-            <p className="x-li-inbox-sub">
-              {proposals.length
-                ? `${proposals.length} draft${proposals.length === 1 ? '' : 's'} ready`
-                : 'Messages with agent drafts'}
-            </p>
-          </div>
-        </div>
+        ) : null}
       </header>
 
-      {error ? <p className="x-cal-empty">{error}</p> : null}
-      {proposals.length === 0 ? (
-        <p className="x-li-inbox-empty">
-          No LinkedIn drafts right now. New messages appear here with a reply ready to send.
-        </p>
+      {error ? <p className="x-agent-inbox-error">{error}</p> : null}
+
+      {items.length === 0 ? (
+        <p className="x-agent-inbox-empty">No drafts or active builds.</p>
       ) : (
-        <ul className="x-li-inbox-list">
-          {proposals.map((p) => (
-            <li key={p.id}>
-              <AgentProposalActionCard surface="inbox" proposal={p} onActionComplete={load} />
-            </li>
-          ))}
+        <ul className="x-agent-inbox-list">
+          {items.map((item) =>
+            item.kind === 'status' ? (
+              <li key={item.id} className="x-agent-inbox-entry">
+                <AgentInboxStatusRow item={item} onOpenBuildDojo={onOpenBuildDojo} />
+              </li>
+            ) : (
+              <AgentInboxDraftRow
+                key={item.id}
+                item={item}
+                expanded={expandedId === item.id}
+                onToggleExpand={() => setExpandedId((id) => (id === item.id ? null : item.id))}
+                onComplete={load}
+              />
+            )
+          )}
         </ul>
       )}
     </div>

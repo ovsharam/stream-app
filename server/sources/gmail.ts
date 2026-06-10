@@ -7,6 +7,7 @@ import { getOAuth2Client, GOOGLE_SCOPES, authClientForTokens, GOOGLE_REQUEST_OPT
 import {
   upsertGmailAccount,
   feedEnabledAccounts,
+  feedEnabledAccountsAnySession,
   hasGmailAccounts,
   accountSlug,
   purgeLegacyGmailToken,
@@ -156,7 +157,7 @@ export async function syncGmail(io?: SocketServer): Promise<StreamItem[]> {
     return []
   }
 
-  const accounts = await feedEnabledAccounts()
+  const accounts = await feedEnabledAccountsAnySession()
   if (accounts.length === 0) return []
 
   const allItems: StreamItem[] = []
@@ -298,7 +299,7 @@ export function isGmailConfigured(): boolean {
 }
 
 export async function isGmailConnected(): Promise<boolean> {
-  return hasGmailAccounts()
+  return (await feedEnabledAccountsAnySession()).length > 0
 }
 
 function encodeEmailBody(body: string): string {
@@ -306,7 +307,7 @@ function encodeEmailBody(body: string): string {
 }
 
 async function gmailClientForAccount(accountId?: string) {
-  const accounts = await feedEnabledAccounts()
+  const accounts = await feedEnabledAccountsAnySession()
   const account =
     (accountId ? accounts.find((a) => a.id === accountId) : null) ?? accounts[0]
   if (!account) throw new Error('No Gmail account available')

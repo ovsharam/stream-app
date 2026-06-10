@@ -222,19 +222,49 @@ function externalEvents(now: number): CentralStreamEvent[] {
       if (bookingUid) seenCalcomBookings.add(bookingUid)
     }
 
-    const cursorAgentId = item.source === 'cursor' ? item.metadata?.agentId : undefined
+    const isCursorItem = item.source === 'cursor'
+    const isClaudeCodeItem =
+      item.source === 'claude' && item.metadata?.executor === 'claude-code'
+    const cursorAgentId = isCursorItem ? item.metadata?.agentId : undefined
     const cursorAgentStatus = cursorAgentId ? String(item.metadata?.agentStatus ?? '') : ''
+    const claudeAgentStatus = isClaudeCodeItem ? String(item.metadata?.agentStatus ?? '') : ''
     const isCursorBuild = Boolean(cursorAgentId)
+    const isClaudeCodeBuild = isClaudeCodeItem
+    const isAgentBuild = isCursorBuild || isClaudeCodeBuild
+    const buildPrompt = isCursorItem || isClaudeCodeItem
+      ? String(item.metadata?.query ?? item.title ?? '').trim()
+      : ''
+    let buildBody = item.body
+    if (isCursorItem || isClaudeCodeItem) {
+      const marker = buildBody.search(/\n+Prompt:\s*/i)
+      if (marker >= 0) buildBody = buildBody.slice(0, marker).trim()
+    }
 
     nonMondayEvents.push({
       id: `ext-${item.id}`,
       ts: item.timestamp.getTime() || now - idx * 1000,
-      source: isCursorBuild ? 'cursor' : mapExternalSource(item.source as ExternalSource),
-      kind: isCursorBuild ? 'build_prompt' : 'integration',
-      title: item.title || `${item.sender.name} · ${item.source.toUpperCase()}`,
-      body: item.body,
-      highlight: isCursorBuild ? 'Cursor build' : `${item.source.toUpperCase()} sync`,
-      ...(isCursorBuild ? { promptPreview: item.title } : {}),
+      source: isAgentBuild
+        ? isClaudeCodeBuild
+          ? 'claude'
+          : 'cursor'
+        : mapExternalSource(item.source as ExternalSource),
+      kind: isAgentBuild ? 'build_prompt' : 'integration',
+      title: isClaudeCodeItem
+        ? 'Claude Code build'
+        : isCursorItem
+          ? 'Cursor build'
+          : item.title || `${item.sender.name} · ${item.source.toUpperCase()}`,
+      body: buildBody,
+      highlight: isClaudeCodeBuild
+        ? 'Claude Code build'
+        : isCursorBuild
+          ? 'Cursor build'
+          : isCursorItem
+            ? 'Cursor'
+            : isClaudeCodeItem
+              ? 'Claude Code'
+              : `${item.source.toUpperCase()} sync`,
+      ...(buildPrompt ? { promptPreview: buildPrompt } : {}),
       meta: {
         sender: item.sender.name,
         source: item.source,
@@ -244,6 +274,8 @@ function externalEvents(now: number): CentralStreamEvent[] {
             : item.id,
         ...(cursorAgentId ? { agentId: String(cursorAgentId) } : {}),
         ...(cursorAgentStatus ? { agentStatus: cursorAgentStatus } : {}),
+        ...(claudeAgentStatus ? { agentStatus: claudeAgentStatus } : {}),
+        ...(item.metadata?.executor ? { executor: String(item.metadata.executor) } : {}),
         ...(item.metadata?.runId ? { runId: String(item.metadata.runId) } : {}),
         ...(item.metadata?.runtime ? { runtime: String(item.metadata.runtime) } : {}),
         ...(item.metadata?.projectPath ? { projectPath: String(item.metadata.projectPath) } : {}),
@@ -254,6 +286,14 @@ function externalEvents(now: number): CentralStreamEvent[] {
           ? { durationMs: String(item.metadata.durationMs) }
           : {}),
         ...(item.metadata?.currentStep ? { currentStep: String(item.metadata.currentStep) } : {}),
+        ...(item.metadata?.buildLog
+          ? { buildLog: JSON.stringify(item.metadata.buildLog) }
+          : {}),
+        ...(item.bodyFull && isClaudeCodeBuild
+          ? { buildSummary: String(item.bodyFull) }
+          : {}),
+        ...(item.metadata?.deployUrl ? { deployUrl: String(item.metadata.deployUrl) } : {}),
+        ...(buildPrompt ? { query: buildPrompt } : {}),
         ...(item.metadata?.threadId ? { threadId: String(item.metadata.threadId) } : {}),
         ...(item.metadata?.accountId ? { accountId: String(item.metadata.accountId) } : {}),
         ...(item.metadata?.accountEmail
@@ -301,6 +341,26 @@ function externalEvents(now: number): CentralStreamEvent[] {
         ...(item.metadata?.channel ? { channel: String(item.metadata.channel) } : {}),
         ...(item.metadata?.channelName ? { channelName: String(item.metadata.channelName) } : {}),
         ...(item.metadata?.subject ? { subject: String(item.metadata.subject) } : {}),
+        ...(item.metadata?.calendarInvite ? { calendarInvite: 'true' } : {}),
+        ...(item.metadata?.eventTitle ? { eventTitle: String(item.metadata.eventTitle) } : {}),
+        ...(item.metadata?.whenLabel ? { whenLabel: String(item.metadata.whenLabel) } : {}),
+        ...(item.metadata?.where ? { where: String(item.metadata.where) } : {}),
+        ...(item.metadata?.who ? { who: String(item.metadata.who) } : {}),
+        ...(item.metadata?.timezone ? { timezone: String(item.metadata.timezone) } : {}),
+        ...(item.metadata?.startAt != null ? { startAt: String(item.metadata.startAt) } : {}),
+        ...(item.metadata?.monthAbbr ? { monthAbbr: String(item.metadata.monthAbbr) } : {}),
+        ...(item.metadata?.dayNumber != null ? { dayNumber: String(item.metadata.dayNumber) } : {}),
+        ...(item.metadata?.weekday ? { weekday: String(item.metadata.weekday) } : {}),
+        ...(item.metadata?.inviteKind ? { inviteKind: String(item.metadata.inviteKind) } : {}),
+        ...(item.metadata?.calendarUrl ? { calendarUrl: String(item.metadata.calendarUrl) } : {}),
+        ...(item.metadata?.rsvpUrls
+          ? {
+              rsvpUrls:
+                typeof item.metadata.rsvpUrls === 'string'
+                  ? item.metadata.rsvpUrls
+                  : JSON.stringify(item.metadata.rsvpUrls)
+            }
+          : {}),
         ...(item.metadata?.durationSec
           ? { durationSec: String(item.metadata.durationSec) }
           : {}),

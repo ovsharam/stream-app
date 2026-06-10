@@ -19,14 +19,21 @@ function isLiveEvent(e: CentralStreamEvent): boolean {
 }
 
 function eventsEqual(a: CentralStreamEvent, b: CentralStreamEvent): boolean {
-  return (
-    a.id === b.id &&
-    a.ts === b.ts &&
-    a.kind === b.kind &&
-    a.title === b.title &&
-    a.body === b.body &&
-    a.source === b.source
-  )
+  if (
+    a.id !== b.id ||
+    a.ts !== b.ts ||
+    a.kind !== b.kind ||
+    a.title !== b.title ||
+    a.body !== b.body ||
+    a.source !== b.source
+  ) {
+    return false
+  }
+  const buildMetaKeys = ['agentStatus', 'currentStep', 'buildLog', 'durationMs', 'completedAt'] as const
+  for (const key of buildMetaKeys) {
+    if (String(a.meta?.[key] ?? '') !== String(b.meta?.[key] ?? '')) return false
+  }
+  return true
 }
 
 function mergeEvents(

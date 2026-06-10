@@ -15,6 +15,7 @@ import {
   googleApiNeedsEnable,
   googleApiEnableUrl
 } from './sources/gmail'
+import { getGmailCalendarInvite } from './sources/gmailCalendarInvite'
 import {
   getSlackAuthUrl,
   handleSlackCallback,
@@ -82,6 +83,7 @@ import {
   setCursorCloudRepo,
   upsertCursorLocalProject
 } from './sources/cursor'
+import { cancelAllActiveBuilds, cancelBuildRun, getBuildAgentsStatus, runBuildAgent } from './sources/buildRun'
 import { connectGithub, isGithubConnected, syncGithub } from './sources/github'
 import { isGdocsConnected, syncGdocs, getLastGdocsError, gdocsNeedsApiEnable, gdocsApiEnableUrls, gdocsApiEnableUrlsForProject } from './sources/gdocs'
 import { googleOAuthProjectNumber } from './sources/googleOAuth'
@@ -382,10 +384,17 @@ export function createRouter(io?: SocketServer): Router {
     try {
       await runWithSession(sessionId, async () => {
         await handleGmailCallback(code, sessionId)
+        const items = await syncGmail(io)
+        try {
+          await syncGmailContacts(sessionId)
+        } catch (err) {
+          console.warn('[contacts] sync after gmail connect failed:', err)
+        }
+        console.log(`[gmail] auto-sync after connect: ${items.length} thread(s)`)
       })
       res.send(
         successHtml(
-          'Gmail connected — close this tab and return to Notch. Use Sync now in Apps when ready (wait if Google rate-limited you).'
+          'Gmail connected — your inbox is syncing now. Close this tab and return to Notch.'
         )
       )
     } catch (err) {
@@ -783,6 +792,63 @@ export function createRouter(io?: SocketServer): Router {
   router.post('/integrations/cursor/reconcile', async (_req, res) => {
     try {
       const result = await reconcileCursorBuilds(io)
+      res.json(result)
+    } catch (err) {
+      res.status(500).json({ error: String(err) })
+    }
+  })
+
+  router.get('/build/status', async (_req, res) => {
+    try {
+      res.json(await getBuildAgentsStatus())
+    } catch (err) {
+      res.status(500).json({ error: String(err) })
+    }
+  })
+
+  router.post('/build/cancel-all', async (_req, res) => {
+    try {
+      const result = await cancelAllActiveBuilds(io)
+      res.json({ ok: true, ...result })
+    } catch (err) {
+      res.status(500).json({ error: String(err) })
+    }
+  })
+
+  router.post('/build/cancel', async (req, res) => {
+    const itemId = String(req.body.itemId ?? '').trim()
+    if (!itemId) {
+      res.status(400).json({ error: 'itemId required' })
+      return
+    }
+    try {
+      res.json(await cancelBuildRun(itemId, io))
+    } catch (err) {
+      res.status(500).json({ error: String(err) })
+    }
+  })
+
+  router.post('/build/run', async (req, res) => {
+    const { executor, prompt, projectId } = req.body as {
+      executor?: import('../shared/build-executor').BuildExecutor
+      prompt?: string
+      projectId?: string
+    }
+    const picked =
+      executor === 'cursor-cloud' || executor === 'cursor-local' || executor === 'claude-code'
+        ? executor
+        : 'claude-code'
+    try {
+      const result = await runBuildAgent({
+        executor: picked,
+        prompt: String(prompt ?? ''),
+        projectId: projectId ? String(projectId) : undefined,
+        io
+      })
+      if (!result.ok) {
+        res.status(400).json(result)
+        return
+      }
       res.json(result)
     } catch (err) {
       res.status(500).json({ error: String(err) })
@@ -1239,6 +1305,36 @@ export function createRouter(io?: SocketServer): Router {
     const accountId = req.params.accountId
     const accounts = (await removeGmailAccount(accountId)).map(toPublicAccount)
     res.json({ ok: true, accounts })
+  })
+
+  router.get('/cluster/gmail/calendar-invite', async (req, res) => {
+    const threadId = String(req.query.threadId ?? '')
+    const accountId = String(req.query.accountId ?? '')
+    const streamItemId = String(req.query.streamItemId ?? '')
+    if (!threadId && !streamItemId) {
+      res.status(400).json({ error: 'threadId or streamItemId required' })
+      return
+    }
+    try {
+      const connected = await isGmailConnected()
+      if (!connected) {
+        res.status(503).json({ error: 'Gmail not connected' })
+        return
+      }
+      const invite = await getGmailCalendarInvite({
+        threadId: threadId || undefined,
+        accountId: accountId || undefined,
+        streamItemId: streamItemId || undefined
+      })
+      if (!invite) {
+        res.status(404).json({ error: 'Calendar invite not found' })
+        return
+      }
+      res.json(invite)
+    } catch (err) {
+      console.error('[gmail] calendar-invite failed:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
   })
 
   router.get('/cluster/monday/account', async (_req, res) => {
@@ -1761,6 +1857,26 @@ export function createRouter(io?: SocketServer): Router {
     const { getTrainingSummary } = require('./fde/trainingStore') as typeof import('./fde/trainingStore')
     const dataset = buildFdeTrainingDataset()
     res.json({ ...dataset, corpus: getTrainingSummary() })
+  })
+
+  router.get('/pipeline/health', async (_req, res) => {
+    try {
+      const { getPipelineHealth } =
+        require('./pipeline/framework') as typeof import('./pipeline/framework')
+      res.json(await getPipelineHealth())
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  router.post('/pipeline/sync', async (_req, res) => {
+    try {
+      const { runPipelineSync } =
+        require('./pipeline/framework') as typeof import('./pipeline/framework')
+      res.json(await runPipelineSync())
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
   })
 
   router.post('/training/sync', async (_req, res) => {

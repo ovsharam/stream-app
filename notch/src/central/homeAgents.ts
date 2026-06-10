@@ -46,9 +46,18 @@ function agentEventSource(event: CentralStreamEvent): string {
   return event.source
 }
 
-function isCursorBuildEvent(event: CentralStreamEvent): boolean {
+function isBuildAgentEvent(event: CentralStreamEvent): boolean {
   const source = agentEventSource(event)
-  return source === 'cursor' || event.kind === 'build_prompt'
+  return (
+    source === 'cursor' ||
+    source === 'claude' ||
+    event.kind === 'build_prompt' ||
+    event.meta?.executor === 'claude-code'
+  )
+}
+
+function isCursorBuildEvent(event: CentralStreamEvent): boolean {
+  return isBuildAgentEvent(event)
 }
 
 function isRunningEvent(event: CentralStreamEvent): boolean {
@@ -111,6 +120,25 @@ function taskTitle(event: CentralStreamEvent): string {
   )
   if (preview) return `${agent} · ${preview}`
   return agent
+}
+
+function isClaudeCodeBuildEvent(event: CentralStreamEvent): boolean {
+  const executor = String(event.meta?.executor ?? '').toLowerCase()
+  return executor === 'claude-code' || (event.source === 'claude' && event.kind === 'build_prompt')
+}
+
+export function activeClaudeCodeBuild(events: CentralStreamEvent[]): RunningAgent | null {
+  for (const event of events) {
+    if (!isClaudeCodeBuildEvent(event)) continue
+    if (!isRunningEvent(event)) continue
+    return {
+      id: event.id,
+      title: taskTitle(event),
+      status: taskStatus(event),
+      startedAt: eventStartedAt(event)
+    }
+  }
+  return null
 }
 
 export function buildRunningAgents(input: {

@@ -4,7 +4,7 @@ import { syncGdocs } from './sources/gdocs'
 import { googleApiBlockedMessage } from './sources/googleRateLimit'
 
 /** Gmail poll interval — conservative to avoid Google user-rate limits. */
-const GMAIL_INTERVAL_MS = 3 * 60_000
+const GMAIL_INTERVAL_MS = 2 * 60_000
 /** Docs poll interval — less frequent than inbox. */
 const GDOCS_INTERVAL_MS = 5 * 60_000
 
@@ -25,7 +25,10 @@ export async function syncGoogleSourcesIfDue(io?: SocketServer): Promise<void> {
   try {
     if (runGmail) {
       lastGmailSyncAt = Date.now()
-      await syncGmail(io)
+      const items = await syncGmail(io)
+      if (items.length > 0) {
+        console.log(`[gmail] background sync: ${items.length} thread(s)`)
+      }
     }
     if (runGdocs) {
       lastGdocsSyncAt = Date.now()

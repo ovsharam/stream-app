@@ -32,41 +32,47 @@ npm run dev:notch:live
 
 Confirm `http://localhost:3131/api/dashboard/data` returns JSON.
 
-### 2. Expose :3131 with Cloudflare Tunnel
+### 2. Permanent tunnel (`api.appliedscope.com`) — recommended
 
-**Quick test** (random URL, not for production):
-
-```bash
-cloudflared tunnel --url http://localhost:3131
-```
-
-**Production** (`api.appliedscope.com`):
+One-time setup (browser login for Cloudflare):
 
 ```bash
-cloudflared tunnel login
-cloudflared tunnel create stream-api
-cloudflared tunnel route dns stream-api api.appliedscope.com
+npm run setup:stream-tunnel
+npm run sync:measure-vercel
 ```
 
-Create `~/.cloudflared/config.yml`:
-
-```yaml
-tunnel: <TUNNEL_ID>
-credentials-file: /Users/<you>/.cloudflared/<TUNNEL_ID>.json
-
-ingress:
-  - hostname: api.appliedscope.com
-    service: http://localhost:3131
-  - service: http_status:404
-```
-
-Run the tunnel:
+Daily dev — Notch + permanent tunnel together:
 
 ```bash
-cloudflared tunnel run stream-api
+npm run dev:notch:live:stream
 ```
 
-Verify: `curl https://api.appliedscope.com/api/dashboard/data` (returns 401 if `MEASURE_API_SECRET` is set — that's OK).
+Or two terminals:
+
+```bash
+npm run dev:notch:live
+npm run tunnel:api:prod
+```
+
+Keep tunnel alive across reboots (macOS):
+
+```bash
+npm run install:stream-tunnel-agent
+```
+
+Verify connectivity:
+
+```bash
+npm run verify:stream-tunnel
+```
+
+`https://api.appliedscope.com/api/dashboard/data` should return **401** without auth or **200** with `MEASURE_API_SECRET` — both mean the tunnel works.
+
+**Ephemeral quick tunnel** (random URL, expires when the process stops — do not use for production Vercel):
+
+```bash
+npm run tunnel:api
+```
 
 ### 3. Vercel env (`appliedscope` project)
 

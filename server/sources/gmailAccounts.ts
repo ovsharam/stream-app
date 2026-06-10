@@ -218,9 +218,7 @@ export async function feedEnabledAccounts(sessionId?: string): Promise<GmailAcco
 }
 
 /** Desktop fallback when API calls omit session cookies (e.g. Electron main process). */
-export async function feedEnabledAccountsAnySession(): Promise<GmailAccountRecord[]> {
-  const current = await feedEnabledAccounts()
-  if (current.length > 0) return current
+function scanStoredGmailAccounts(filter: (a: GmailAccountRecord) => boolean): GmailAccountRecord[] {
   if (process.env.VERCEL) return []
 
   try {
@@ -240,8 +238,8 @@ export async function feedEnabledAccountsAnySession(): Promise<GmailAccountRecor
 
     for (const row of rows) {
       const parsed = JSON.parse(row.token_json) as { accounts?: GmailAccountRecord[] }
-      const enabled = (parsed.accounts ?? []).filter((a) => a.feedEnabled)
-      if (enabled.length > 0) return enabled
+      const hit = (parsed.accounts ?? []).filter(filter)
+      if (hit.length > 0) return hit
     }
 
     const legacy = getDb()
@@ -254,16 +252,15 @@ export async function feedEnabledAccountsAnySession(): Promise<GmailAccountRecor
           emailFromIdToken(tokens.id_token) ??
           (typeof tokens.email === 'string' ? tokens.email : null)
         if (!email) continue
-        return [
-          {
-            id: accountIdForEmail(email),
-            email,
-            tokens,
-            feedEnabled: true,
-            calendarEnabled: true,
-            addedAt: Date.now()
-          }
-        ]
+        const account: GmailAccountRecord = {
+          id: accountIdForEmail(email),
+          email,
+          tokens,
+          feedEnabled: true,
+          calendarEnabled: true,
+          addedAt: Date.now()
+        }
+        if (filter(account)) return [account]
       } catch {
         continue
       }
@@ -272,6 +269,27 @@ export async function feedEnabledAccountsAnySession(): Promise<GmailAccountRecor
     /* sqlite unavailable in memory mode */
   }
   return []
+}
+
+/** Resolve Gmail accounts for background sync (no HTTP session on the stack). */
+export async function feedEnabledAccountsAnySession(): Promise<GmailAccountRecord[]> {
+  try {
+    const current = await feedEnabledAccounts()
+    if (current.length > 0) return current
+  } catch {
+    /* background / timer — fall through to stored tokens */
+  }
+  return scanStoredGmailAccounts((a) => a.feedEnabled)
+}
+
+export async function calendarEnabledAccountsAnySession(): Promise<GmailAccountRecord[]> {
+  try {
+    const current = await calendarEnabledAccounts()
+    if (current.length > 0) return current
+  } catch {
+    /* background — fall through */
+  }
+  return scanStoredGmailAccounts((a) => a.calendarEnabled)
 }
 
 export async function calendarEnabledAccounts(sessionId?: string): Promise<GmailAccountRecord[]> {

@@ -56,8 +56,8 @@ const PRIMARY_NAV: NavTarget[] = [
   },
   {
     id: 'build',
-    label: 'Build',
-    hint: 'Cursor agents & prompts',
+    label: 'Build Dojo',
+    hint: 'Agent builds & chat',
     page: 'build'
   }
 ]

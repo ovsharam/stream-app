@@ -183,6 +183,18 @@ export const clusterApi = {
       `/cluster/gmail/accounts/${encodeURIComponent(accountId)}`,
       { method: 'DELETE' }
     ),
+  gmailCalendarInvite: (params: { threadId?: string; accountId?: string; streamItemId?: string }) => {
+    const q = new URLSearchParams()
+    if (params.threadId) q.set('threadId', params.threadId)
+    if (params.accountId) q.set('accountId', params.accountId)
+    if (params.streamItemId) q.set('streamItemId', params.streamItemId)
+    return json<import('@shared/gmail-calendar-invite').GmailCalendarInvite & {
+      threadId: string
+      accountId: string
+      subject: string
+      gmailUrl: string
+    }>(`/cluster/gmail/calendar-invite?${q.toString()}`)
+  },
   mondayAccount: () =>
     json<{ account: import('@shared/cluster').MondayAccount | null; error?: string }>(
       '/cluster/monday/account'
@@ -451,6 +463,24 @@ export const integrationApi = {
     ),
   cursorReconcileBuilds: () =>
     json<{ updated: number }>('/integrations/cursor/reconcile', { method: 'POST' }),
+  buildAgentsStatus: () => json<import('@shared/build-executor').BuildAgentsStatus>('/build/status'),
+  buildRun: (body: {
+    executor: import('@shared/build-executor').BuildExecutor
+    prompt: string
+    projectId?: string
+  }) =>
+    json<import('@shared/build-executor').BuildRunResult>('/build/run', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      timeoutMs: 120_000
+    }),
+  buildCancelAll: () =>
+    json<{ ok: boolean; cancelled: number }>('/build/cancel-all', { method: 'POST' }),
+  buildCancel: (itemId: string) =>
+    json<{ ok: boolean }>('/build/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ itemId })
+    }),
   connectGithub: (pat: string, defaultRepo?: string) =>
     json<{ ok: boolean; count: number }>('/auth/github', {
       method: 'POST',

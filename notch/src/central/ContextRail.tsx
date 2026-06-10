@@ -787,6 +787,7 @@ type ComposeRailProps = {
 export function ContextRail({
   events = [],
   onOpenHome,
+  onOpenBuildDojo,
   railContext = {},
   feedRail,
   composeRail,
@@ -796,6 +797,7 @@ export function ContextRail({
 }: {
   events?: CentralStreamEvent[]
   onOpenHome?: () => void
+  onOpenBuildDojo?: () => void
   railContext?: RailContext
   feedRail?: FeedRailHandlers
   composeRail?: ComposeRailProps
@@ -947,7 +949,9 @@ export function ContextRail({
                 pplxHint={calendar.pplxHint}
               />
             )}
-            {activeTab === 'agent' ? <AgentInboxPanel /> : null}
+            {activeTab === 'agent' ? (
+              <AgentInboxPanel events={events} onOpenBuildDojo={onOpenBuildDojo} />
+            ) : null}
           </div>
         </>
       )}

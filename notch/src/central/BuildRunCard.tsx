@@ -33,34 +33,78 @@ export function buildTimingLabel(event: CentralStreamEvent, now: number): string
 
   if (tone !== 'running') {
     const parts: string[] = []
-    if (completedAt > 0) parts.push(`Completed ${formatTimeAgo(completedAt, now)}`)
-    if (durationMs > 0) parts.push(`ran ${formatDurationMs(durationMs)}`)
-    return parts.join(' · ') || 'Completed'
+    if (completedAt > 0) parts.push(formatTimeAgo(completedAt, now))
+    if (durationMs > 0) parts.push(formatDurationMs(durationMs))
+    return parts.join(' · ') || 'Done'
   }
 
-  return `Working ${formatElapsedMs(now - eventStartedAt(event))}`
+  return formatElapsedMs(now - eventStartedAt(event))
+}
+
+function executorLabel(event: CentralStreamEvent): string {
+  if (event.meta?.executor === 'claude-code' || event.source === 'claude') return 'Claude Code'
+  if (event.meta?.runtime === 'cloud') return 'Cursor cloud'
+  return 'Cursor'
+}
+
+function buildTitle(event: CentralStreamEvent): string {
+  const query = event.meta?.query ? String(event.meta.query) : ''
+  if (query) return sanitizeDisplayText(query, 80)
+  const title = event.title?.trim()
+  if (title && !/^cursor build$/i.test(title) && !/^claude code build$/i.test(title)) {
+    return sanitizeDisplayText(title, 80)
+  }
+  return 'Build run'
 }
 
 type Props = {
   event: CentralStreamEvent
   now: number
-  variant?: 'active' | 'compact'
+  variant?: 'active' | 'compact' | 'history'
   stepOverride?: string
   onOpenInCursor?: () => void
 }
 
 export function BuildRunCard({ event, now, variant = 'compact', stepOverride, onOpenInCursor }: Props) {
   const tone = buildStatusTone(event)
-  const prompt = sanitizeDisplayText(event.title || 'Cursor build', variant === 'active' ? 100 : 72)
+  const title = buildTitle(event)
+  const executor = executorLabel(event)
   const streamStep = event.meta?.currentStep ? sanitizeDisplayText(String(event.meta.currentStep), 220) : null
   const polledStep = stepOverride ? sanitizeDisplayText(stepOverride, 220) : null
   const liveStep = streamStep || polledStep
   const preview =
     tone === 'running'
-      ? liveStep || 'Waiting for Cursor — open the project to watch live output.'
-      : sanitizeDisplayText(event.body, variant === 'active' ? 200 : 140)
+      ? liveStep || 'Working…'
+      : sanitizeDisplayText(event.body, variant === 'active' ? 200 : 120)
   const project = event.meta?.projectName ? String(event.meta.projectName) : null
-  const agentId = event.meta?.agentId ? String(event.meta.agentId) : null
+  const timing = buildTimingLabel(event, now)
+
+  if (variant === 'history') {
+    return (
+      <article className={`x-build-row x-build-row-${tone}`}>
+        <span className={`x-build-row-dot x-build-row-dot-${tone}`} aria-hidden />
+        <div className="x-build-row-main">
+          <div className="x-build-row-top">
+            <span className="x-build-row-executor">{executor}</span>
+            <span className="x-build-row-title" title={title}>
+              {title}
+            </span>
+          </div>
+          {tone === 'error' && preview ? (
+            <p className="x-build-row-sub">{preview}</p>
+          ) : project ? (
+            <p className="x-build-row-sub">{project}</p>
+          ) : null}
+        </div>
+        <span className="x-build-row-time">{timing}</span>
+        {onOpenInCursor && tone !== 'error' ? (
+          <button type="button" className="x-build-row-action" onClick={onOpenInCursor}>
+            Open
+          </button>
+        ) : null}
+      </article>
+    )
+  }
 
   return (
     <article
@@ -69,36 +113,34 @@ export function BuildRunCard({ event, now, variant = 'compact', stepOverride, on
       <div className="x-build-card-head">
         <div className="x-build-card-headline">
           {tone === 'running' ? <span className="x-build-card-pulse" aria-hidden /> : null}
-          <h3 className="x-build-card-title" title={tone === 'running' ? liveStep ?? prompt : event.title}>
-            {tone === 'running' ? preview : prompt}
-          </h3>
+          <div className="x-build-card-copy">
+            <span className="x-build-card-executor">{executor}</span>
+            <h3 className="x-build-card-title" title={title}>
+              {tone === 'running' ? preview : title}
+            </h3>
+          </div>
         </div>
-        <span className={`x-build-card-badge x-build-card-badge-${tone}`}>
-          {tone === 'running' ? buildTimingLabel(event, now) : eventStatusLabel(event)}
-        </span>
+        <span className={`x-build-card-badge x-build-card-badge-${tone}`}>{timing}</span>
       </div>
 
-      {tone !== 'running' ? (
-        <p className="x-build-card-timing">{buildTimingLabel(event, now)}</p>
-      ) : (
-        <p className="x-build-card-prompt" title={event.title}>
-          {prompt}
+      {tone === 'running' ? (
+        <p className="x-build-card-prompt" title={title}>
+          {title}
         </p>
-      )}
+      ) : preview && preview !== title ? (
+        <p className="x-build-card-preview">{preview}</p>
+      ) : null}
 
-      {tone === 'running' ? null : <p className="x-build-card-preview">{preview}</p>}
-
-      <div className="x-build-card-foot">
-        <div className="x-build-card-meta">
-          {project ? <span>{project}</span> : null}
-          {agentId ? <code>{agentId}</code> : null}
+      {(project || onOpenInCursor) && (
+        <div className="x-build-card-foot">
+          <div className="x-build-card-meta">{project ? <span>{project}</span> : null}</div>
+          {onOpenInCursor ? (
+            <button type="button" className="x-build-row-action" onClick={onOpenInCursor}>
+              Open in Cursor
+            </button>
+          ) : null}
         </div>
-        {onOpenInCursor ? (
-          <button type="button" className="x-int-btn x-int-btn-ghost x-build-card-open" onClick={onOpenInCursor}>
-            Open in Cursor
-          </button>
-        ) : null}
-      </div>
+      )}
     </article>
   )
 }

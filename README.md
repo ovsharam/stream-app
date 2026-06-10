@@ -162,6 +162,17 @@ Docker is **optional** — only for local FalkorDB graph memory; see [Docker —
 
 Open Measure: [http://localhost:3000/measure](http://localhost:3000/measure)
 
+**Production Measure** (`appliedscope.com`) reads your Mac via a permanent Cloudflare Tunnel:
+
+```bash
+npm run setup:stream-tunnel    # once — api.appliedscope.com → :3131
+npm run sync:measure-vercel      # point Vercel at the stable URL
+npm run dev:notch:live:stream    # Notch + tunnel together
+npm run install:stream-tunnel-agent   # optional: tunnel at login (macOS)
+```
+
+See [measure-site/README.md](measure-site/README.md) for details.
+
 For FDE onboarding (real Gmail, Monday, MCP): [docs/FDE_HANDOFF.md](docs/FDE_HANDOFF.md).
 
 For macOS release builds: [docs/NOTCH_RELEASE.md](docs/NOTCH_RELEASE.md).

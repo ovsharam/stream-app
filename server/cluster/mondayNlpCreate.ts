@@ -24,8 +24,19 @@ export type MondayNlpCreateResult = {
   usedGemini: boolean
 }
 
+const MONDAY_CREATE_PREFIX =
+  /^(?:create\s*:\s*|create\s+(?:a\s+)?(?:new\s+)?(?:todo|task|item)\s+|(?:new\s+)?(?:todo|task|item)\s+)/i
+
 function stripMondayLead(text: string): string {
-  return text.replace(/^:\s*/, '').trim()
+  return text.replace(/^:\s*/, '').replace(MONDAY_CREATE_PREFIX, '').trim()
+}
+
+function looksLikeGroupHint(hint: string): boolean {
+  if (hint.length > 60) return false
+  if (/\bbecause\b/i.test(hint)) return false
+  if (hint.split(/[,;]/).length > 2) return false
+  if (/\band\b/i.test(hint) && hint.length > 40) return false
+  return true
 }
 
 function parseJsonFromModel(raw: string): MondayNlpCreatePlan | null {
@@ -87,39 +98,45 @@ function resolveBoard(
   return bestScore >= 0.4 ? best : null
 }
 
+function defaultGroup(board: MondayBoardCatalogEntry): { id: string; title: string } | null {
+  const groups = board.groups
+  if (groups.length === 0) return null
+  return groups.find((g) => /new ideas|new features|backlog|to do|todo/i.test(g.title)) ?? groups[0]
+}
+
 function resolveGroup(
   board: MondayBoardCatalogEntry,
   groupHint?: string
 ): { id: string; title: string } | null {
-  const groups = board.groups
-  if (groups.length === 0) return null
-  if (!groupHint?.trim()) {
-    return groups.find((g) => /new ideas|new features|backlog|to do|todo/i.test(g.title)) ?? groups[0]
-  }
+  if (board.groups.length === 0) return null
+  if (!groupHint?.trim()) return defaultGroup(board)
 
   let best: { id: string; title: string } | null = null
   let bestScore = 0
-  for (const group of groups) {
+  for (const group of board.groups) {
     const s = scoreMatch(groupHint, group.title)
     if (s > bestScore) {
       bestScore = s
       best = group
     }
   }
-  return bestScore >= 0.35 ? best : null
+  return bestScore >= 0.35 ? best : defaultGroup(board)
 }
 
 function heuristicPlan(request: string): MondayNlpCreatePlan {
   const text = stripMondayLead(request)
 
   const addTo = text.match(
-    /^(?:add\s+(?:this\s+)?(?:to|in)\s+(?:the\s+)?(?:section\s+)?(?:called\s+)?)?(.+?)(?:\s+section|\s+column|\s+group)?\s*(?:[:\-–—]\s*|\.\s+)(.+)$/is
+    /^(?:add\s+(?:this\s+)?(?:to|in)\s+(?:the\s+)?(?:section\s+)?(?:called\s+)?(.+?)(?:\s+section|\s+column|\s+group)?\s*(?:[:\-–—]\s*|\.\s+)(.+)|(?:in\s+)?(.+?)\s+(?:section|column|group)\s*(?:[:\-–—]\s*|\.\s+)(.+))$/is
   )
   if (addTo) {
-    const groupHint = addTo[1].trim()
-    const body = addTo[2].trim()
+    const groupHint = (addTo[1] ?? addTo[3]).trim()
+    const body = (addTo[2] ?? addTo[4]).trim()
     // Datetimes in meeting titles (e.g. "5/30/2026, 10:37 PM — follow-up") are not group names.
-    if (!/^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(groupHint)) {
+    if (
+      looksLikeGroupHint(groupHint) &&
+      !/^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(groupHint)
+    ) {
       const titleLine = body.split('\n')[0]?.trim() ?? body
       const shortTitle =
         titleLine.length > 90 ? `${titleLine.slice(0, 87)}…` : titleLine.split(/[.!?]/)[0]?.trim() || titleLine

@@ -3,6 +3,15 @@ import { loadAgentActionSettings } from '@shared/agent-action-settings'
 import { agentApi } from '../lib/api'
 import { armLinkedInPaste } from './linkedinComposeFill'
 
+function classifyDraftEditKind(original: string, edited: string): string {
+  if (original === edited) return 'unchanged'
+  if (!original.trim()) return 'replace'
+  if (!edited.trim()) return 'delete'
+  if (edited.startsWith(original) && edited.length > original.length) return 'append'
+  if (original.startsWith(edited) && edited.length < original.length) return 'truncate'
+  return 'modify'
+}
+
 export type ProposalResolvedAction = 'sent' | 'cleared' | 'reminded' | 'copied'
 
 export function dispatchProposalSync(proposalId: string, action: ProposalResolvedAction): void {
@@ -11,6 +20,19 @@ export function dispatchProposalSync(proposalId: string, action: ProposalResolve
   )
   window.dispatchEvent(new Event('notch:agent-proposal'))
   window.dispatchEvent(new Event('notch:stream-push'))
+  window.dispatchEvent(new Event('notch:engagements-updated'))
+}
+
+export function dispatchProposalDismissPending(proposalId: string): void {
+  window.dispatchEvent(
+    new CustomEvent('notch:agent-proposal-dismiss-pending', { detail: { proposalId } })
+  )
+}
+
+export function dispatchProposalDismissCancelled(proposalId: string): void {
+  window.dispatchEvent(
+    new CustomEvent('notch:agent-proposal-dismiss-cancelled', { detail: { proposalId } })
+  )
 }
 
 export function useAgentProposalActions() {
@@ -27,9 +49,22 @@ export function useAgentProposalActions() {
 
   const isBusy = useCallback((proposalId: string) => busyIds.has(proposalId), [busyIds])
 
-  const saveDraft = useCallback(async (proposalId: string, linkedinReply: string) => {
+  const saveDraft = useCallback(async (proposalId: string, linkedinReply: string, agentDraft?: string) => {
     try {
       const { proposal } = await agentApi.updateDraft(proposalId, linkedinReply)
+      if (agentDraft != null && agentDraft !== linkedinReply) {
+        const { trackOperatorEvent } = await import('../lib/operatorTelemetry')
+        trackOperatorEvent(
+          'agent_draft_edit',
+          {
+            proposalId,
+            originalLength: agentDraft.length,
+            editedLength: linkedinReply.length,
+            editKind: classifyDraftEditKind(agentDraft, linkedinReply)
+          },
+          { surface: 'agent_inbox', subjectType: 'agent_proposal', subjectId: proposalId }
+        )
+      }
       return { ok: true as const, proposal }
     } catch (err) {
       return {
@@ -39,10 +74,14 @@ export function useAgentProposalActions() {
     }
   }, [])
 
-  const regenerate = useCallback(async (proposalId: string) => {
+  const regenerate = useCallback(async (proposalId: string, linkedinReply?: string) => {
     setBusy(proposalId, true)
     try {
-      const { proposal } = await agentApi.refreshProposal(proposalId)
+      const edited = linkedinReply?.trim()
+      if (edited) {
+        await agentApi.updateDraft(proposalId, edited)
+      }
+      const { proposal } = await agentApi.refreshProposal(proposalId, edited)
       return { ok: true as const, proposal }
     } catch (err) {
       return {

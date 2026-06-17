@@ -121,7 +121,13 @@ export function FeedRailStreamPanel({
             disabled={!composeAction || composeBusy}
             onClick={onSubmitCompose}
           >
-            {composeBusy ? 'Running…' : composeAction ? 'Run action' : 'Post'}
+            {composeBusy
+              ? 'Running…'
+              : composeAction?.provider === 'meet'
+                ? 'Schedule Meet'
+                : composeAction
+                  ? 'Run action'
+                  : 'Post'}
           </button>
         </div>
       </div>

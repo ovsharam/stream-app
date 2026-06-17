@@ -25,6 +25,10 @@ export function clearLastCalendarError(): void {
   lastCalendarError = null
 }
 
+export function invalidateCalendarCache(): void {
+  cachedAt = 0
+}
+
 const COMPOSITE_SEP = '::'
 
 /** Today + next 13 days (2-week rail horizon; Cal.com may show further). */

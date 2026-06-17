@@ -21,6 +21,9 @@ export type OperatorEventType =
   | 'agent_proposal_approved'
   | 'agent_proposal_rejected'
   | 'agent_brief_ready'
+  | 'agent_draft_edit'
+  | 'agent_proposal_view'
+  | 'agent_proposal_fork'
 
 export type OperatorSurface =
   | 'feed'
@@ -32,6 +35,7 @@ export type OperatorSurface =
   | 'build'
   | 'notes'
   | 'navapp'
+  | 'pipeline'
 
 export interface OperatorEventBase {
   id: string
@@ -141,7 +145,10 @@ export const OPERATOR_EVENT_TYPES: OperatorEventType[] = [
   'agent_proposal_created',
   'agent_proposal_approved',
   'agent_proposal_rejected',
-  'agent_brief_ready'
+  'agent_brief_ready',
+  'agent_draft_edit',
+  'agent_proposal_view',
+  'agent_proposal_fork'
 ]
 
 export function isOperatorEventType(value: string): value is OperatorEventType {

@@ -9,6 +9,7 @@ import {
   IconPortal,
   IconRadar,
   IconSettings,
+  IconSpark,
   IconStream,
   IconYoutube
 } from './Icons'
@@ -20,7 +21,7 @@ import {
 
 type Tab = 'foryou' | 'signals'
 type Area = 'work' | 'feed'
-export type Page = 'stream' | 'settings' | 'integrations' | 'navapp' | 'build' | 'notes'
+export type Page = 'stream' | 'settings' | 'integrations' | 'navapp' | 'build' | 'notes' | 'mind' | 'pipeline'
 
 export type NavTarget = {
   id: string
@@ -49,10 +50,22 @@ const PRIMARY_NAV: NavTarget[] = [
     tab: 'foryou'
   },
   {
+    id: 'pipeline',
+    label: 'Pipeline',
+    hint: 'Deal conversion · FDE layer',
+    page: 'pipeline'
+  },
+  {
     id: 'notes',
     label: 'Notes',
     hint: 'Capture & reminders',
     page: 'notes'
+  },
+  {
+    id: 'mind',
+    label: 'Mind',
+    hint: 'Knowledge graph',
+    page: 'mind'
   },
   {
     id: 'build',
@@ -106,6 +119,8 @@ function NavIcon({ id }: { id: string }) {
       return <IconStream className={cls} />
     case 'notes':
       return <IconBookmark className={cls} />
+    case 'mind':
+      return <IconSpark className={cls} />
     case 'build':
       return <IconRadar className={cls} />
     case 'signals':

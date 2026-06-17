@@ -113,17 +113,26 @@ let navBrowserViewPartition: string | null = null
 let navBrowserViewTargetUrl: string | null = null
 let navAppLayout: 'full' | 'mini' = 'full'
 const authWindows = new Map<string, BrowserWindow>()
-let navAppTheme: 'light' | 'dark' | 'gray' | 'midnight' = 'dark'
+let navAppTheme = 'dark'
 
 const NAV_APP_THEME_BG: Record<string, string> = {
   light: '#faf9f5',
+  rose: '#fdf8f7',
+  slate: '#f4f6f8',
+  sepia: '#f3ead8',
   dark: '#181715',
   gray: '#1f1e1b',
-  midnight: '#141312'
+  midnight: '#141312',
+  ocean: '#0f1419',
+  forest: '#0f1410',
+  ember: '#1a1512',
+  obsidian: '#000000'
 }
 
+const LIGHT_THEMES = new Set(['light', 'rose', 'slate', 'sepia'])
+
 function navAppThemeIsDark(theme: string): boolean {
-  return theme !== 'light'
+  return !LIGHT_THEMES.has(theme)
 }
 
 function applyYoutubeDarkMode(dark: boolean): void {
@@ -254,7 +263,7 @@ function applyYoutubeMiniLayout(mini: boolean): void {
 }
 
 function applyNavAppAppearance(theme: string): void {
-  if (theme === 'light' || theme === 'dark' || theme === 'gray' || theme === 'midnight') {
+  if (theme in NAV_APP_THEME_BG) {
     navAppTheme = theme
   }
   const dark = navAppThemeIsDark(navAppTheme)

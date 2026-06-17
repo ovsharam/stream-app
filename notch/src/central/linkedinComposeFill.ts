@@ -124,21 +124,19 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
-export async function pasteReplyToLinkedIn(
+async function ensureLinkedInThreadLoaded(
   webview: WebviewEl,
   threadId: string,
-  replyText: string,
-  opts: { maxWaitMs?: number; senderName?: string } = {}
-): Promise<{ ok: boolean; reason?: string; sendReady?: boolean }> {
+  senderName?: string
+): Promise<{ ok: false; reason: string } | { ok: true; synthetic: boolean; exec: NonNullable<WebviewEl['executeJavaScript']> }> {
   const exec = webview.executeJavaScript
   if (!exec) return { ok: false, reason: 'no_webview' }
 
   const synthetic = isSyntheticLinkedInThreadId(threadId)
-  const senderName = opts.senderName?.trim()
-  if (synthetic && !senderName) return { ok: false, reason: 'no_thread_id' }
+  const name = senderName?.trim()
+  if (synthetic && !name) return { ok: false, reason: 'no_sender' }
 
   let current = webview.getURL?.() ?? ''
-  const onRealThread = urlHasRealLinkedInThread(current)
   const onSyntheticThread = current.includes(`/messaging/thread/${threadId}`)
 
   if (synthetic) {
@@ -155,13 +153,74 @@ export async function pasteReplyToLinkedIn(
         return { ok: false, reason: 'navigate_failed' }
       }
     }
-  } else if (!onRealThread && !current.includes(`/messaging/thread/${threadId}`) && webview.loadURL) {
+  } else if (!current.includes(`/messaging/thread/${threadId}`) && webview.loadURL) {
     try {
       webview.loadURL(linkedInThreadUrl(threadId))
     } catch {
       return { ok: false, reason: 'navigate_failed' }
     }
   }
+
+  return { ok: true, synthetic, exec }
+}
+
+export async function navigateToLinkedInThread(
+  webview: WebviewEl,
+  threadId: string,
+  opts: { maxWaitMs?: number; senderName?: string } = {}
+): Promise<{ ok: boolean; reason?: string }> {
+  const prepared = await ensureLinkedInThreadLoaded(webview, threadId, opts.senderName)
+  if (!prepared.ok) return prepared
+
+  const { synthetic, exec } = prepared
+  const senderName = opts.senderName?.trim()
+  const openJs = senderName ? buildLinkedInOpenConversationJs(senderName) : null
+  const deadline = Date.now() + (opts.maxWaitMs ?? 16_000)
+  let openAttempts = 0
+
+  while (Date.now() < deadline) {
+    await sleep(500)
+    const current = webview.getURL?.() ?? ''
+
+    if (!synthetic && current.includes(`/messaging/thread/${threadId}`)) {
+      return { ok: true }
+    }
+
+    if (synthetic && openJs) {
+      if (urlHasRealLinkedInThread(current)) return { ok: true }
+      if (openAttempts < 12) {
+        openAttempts += 1
+        try {
+          const result = (await exec.call(webview, openJs, true)) as {
+            ok?: boolean
+            clicked?: boolean
+          } | null
+          if (result?.ok && result?.clicked) return { ok: true }
+        } catch {
+          /* inbox still loading */
+        }
+      }
+      continue
+    }
+
+    if (!synthetic && urlHasRealLinkedInThread(current)) return { ok: true }
+  }
+
+  return { ok: false, reason: 'thread_not_found' }
+}
+
+export async function pasteReplyToLinkedIn(
+  webview: WebviewEl,
+  threadId: string,
+  replyText: string,
+  opts: { maxWaitMs?: number; senderName?: string } = {}
+): Promise<{ ok: boolean; reason?: string; sendReady?: boolean }> {
+  const prepared = await ensureLinkedInThreadLoaded(webview, threadId, opts.senderName)
+  if (!prepared.ok) return prepared
+
+  const { synthetic, exec } = prepared
+  const senderName = opts.senderName?.trim()
+  if (synthetic && !senderName) return { ok: false, reason: 'no_thread_id' }
 
   const deadline = Date.now() + (opts.maxWaitMs ?? 16_000)
   const fillJs = buildLinkedInFillComposeJs(replyText)
@@ -170,7 +229,7 @@ export async function pasteReplyToLinkedIn(
 
   while (Date.now() < deadline) {
     await sleep(500)
-    current = webview.getURL?.() ?? ''
+    const current = webview.getURL?.() ?? ''
 
     if (synthetic && openJs && !urlHasRealLinkedInThread(current)) {
       if (openAttempts < 8) {

@@ -43,7 +43,19 @@ function getDb(): Database.Database {
   db = new Database(path)
   db.pragma('journal_mode = WAL')
   db.exec(SCHEMA)
+  migrateEngagementColumns(db)
   return db
+}
+
+function migrateEngagementColumns(database: Database.Database): void {
+  const cols = database.prepare(`PRAGMA table_info(fde_engagements)`).all() as { name: string }[]
+  const names = new Set(cols.map((c) => c.name))
+  if (!names.has('proposal_ids_json')) {
+    database.exec(`ALTER TABLE fde_engagements ADD COLUMN proposal_ids_json TEXT NOT NULL DEFAULT '[]'`)
+  }
+  if (!names.has('signal_sources_json')) {
+    database.exec(`ALTER TABLE fde_engagements ADD COLUMN signal_sources_json TEXT NOT NULL DEFAULT '[]'`)
+  }
 }
 
 function rowToEngagement(r: Record<string, unknown>): FdeEngagement {
@@ -60,6 +72,8 @@ function rowToEngagement(r: Record<string, unknown>): FdeEngagement {
     openQuestions: JSON.parse(String(r.open_questions_json)) as string[],
     meetingIds: JSON.parse(String(r.meeting_ids_json)) as string[],
     feedItemIds: JSON.parse(String(r.feed_item_ids_json)) as string[],
+    proposalIds: JSON.parse(String(r.proposal_ids_json ?? '[]')) as string[],
+    signalSources: JSON.parse(String(r.signal_sources_json ?? '[]')) as FdeEngagement['signalSources'],
     googleDocUrl: r.google_doc_url ? String(r.google_doc_url) : undefined,
     escalationLevel: Number(r.escalation_level) as EscalationLevel,
     createdAt: Number(r.created_at),
@@ -107,6 +121,8 @@ export function upsertEngagement(
     openQuestions: input.openQuestions ?? existing?.openQuestions ?? [],
     meetingIds: input.meetingIds ?? existing?.meetingIds ?? [],
     feedItemIds: input.feedItemIds ?? existing?.feedItemIds ?? [],
+    proposalIds: input.proposalIds ?? existing?.proposalIds ?? [],
+    signalSources: input.signalSources ?? existing?.signalSources ?? [],
     googleDocUrl: input.googleDocUrl ?? existing?.googleDocUrl,
     escalationLevel: input.escalationLevel ?? existing?.escalationLevel ?? 0,
     createdAt: existing?.createdAt ?? now,
@@ -118,16 +134,20 @@ export function upsertEngagement(
       `INSERT INTO fde_engagements
        (id, client_name, company, stage, scope, summary, build_prompt,
         next_steps_json, flags_json, open_questions_json, meeting_ids_json, feed_item_ids_json,
+        proposal_ids_json, signal_sources_json,
         google_doc_url, escalation_level, created_at, updated_at)
        VALUES (@id, @client_name, @company, @stage, @scope, @summary, @build_prompt,
         @next_steps_json, @flags_json, @open_questions_json, @meeting_ids_json, @feed_item_ids_json,
+        @proposal_ids_json, @signal_sources_json,
         @google_doc_url, @escalation_level, @created_at, @updated_at)
        ON CONFLICT(id) DO UPDATE SET
         client_name=excluded.client_name, company=excluded.company, stage=excluded.stage,
         scope=excluded.scope, summary=excluded.summary, build_prompt=excluded.build_prompt,
         next_steps_json=excluded.next_steps_json, flags_json=excluded.flags_json,
         open_questions_json=excluded.open_questions_json, meeting_ids_json=excluded.meeting_ids_json,
-        feed_item_ids_json=excluded.feed_item_ids_json, google_doc_url=excluded.google_doc_url,
+        feed_item_ids_json=excluded.feed_item_ids_json,
+        proposal_ids_json=excluded.proposal_ids_json, signal_sources_json=excluded.signal_sources_json,
+        google_doc_url=excluded.google_doc_url,
         escalation_level=excluded.escalation_level, updated_at=excluded.updated_at`
     )
     .run({
@@ -143,6 +163,8 @@ export function upsertEngagement(
       open_questions_json: JSON.stringify(engagement.openQuestions),
       meeting_ids_json: JSON.stringify(engagement.meetingIds),
       feed_item_ids_json: JSON.stringify(engagement.feedItemIds),
+      proposal_ids_json: JSON.stringify(engagement.proposalIds ?? []),
+      signal_sources_json: JSON.stringify(engagement.signalSources ?? []),
       google_doc_url: engagement.googleDocUrl ?? null,
       escalation_level: engagement.escalationLevel,
       created_at: engagement.createdAt,
@@ -222,6 +244,7 @@ export function upsertEngagementFromMeeting(input: {
     openQuestions: input.extraction.questions,
     meetingIds,
     feedItemIds,
+    signalSources: [...new Set([...(existing?.signalSources ?? []), 'meeting'])],
     googleDocUrl: input.googleDocUrl ?? existing?.googleDocUrl,
     escalationLevel:
       input.extraction.flags.length > 2 ? 1 : (existing?.escalationLevel ?? 0)

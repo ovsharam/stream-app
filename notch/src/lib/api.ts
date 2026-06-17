@@ -152,6 +152,20 @@ export const clusterApi = {
         ingestedAt: number
       }[]
     }>('/kb/stats'),
+  kbGraph: (opts?: {
+    mode?: 'structured' | 'memories' | 'full'
+    maxEntities?: number
+    maxDatapoints?: number
+    maxEdges?: number
+  }) => {
+    const params = new URLSearchParams()
+    if (opts?.mode) params.set('mode', opts.mode)
+    if (opts?.maxEntities) params.set('maxEntities', String(opts.maxEntities))
+    if (opts?.maxDatapoints) params.set('maxDatapoints', String(opts.maxDatapoints))
+    if (opts?.maxEdges) params.set('maxEdges', String(opts.maxEdges))
+    const q = params.toString()
+    return json<import('@shared/kb-graph').KbGraphSnapshot>(`/kb/graph${q ? `?${q}` : ''}`)
+  },
   search: (q: string, timeoutMs = 15_000) =>
     json<import('@shared/cluster').ClusterSearchHit[]>(
       `/cluster/search?q=${encodeURIComponent(q)}`,
@@ -237,6 +251,17 @@ export const clusterApi = {
       `/fde/engagements/${encodeURIComponent(id)}`,
       { method: 'PATCH', body: JSON.stringify(patch) }
     ),
+  engagementHandoff: (id: string) =>
+    json<{ handoff: import('@shared/handoff').HandoffBrief }>(
+      `/fde/engagements/${encodeURIComponent(id)}/handoff`
+    ),
+  engagementFromProposal: (proposalId: string) =>
+    json<{ engagement: import('@shared/fde-engagement').FdeEngagement }>(
+      `/fde/engagements/from-proposal/${encodeURIComponent(proposalId)}`,
+      { method: 'POST', body: '{}' }
+    ),
+  mcpAgents: () =>
+    json<{ agents: import('@shared/fde-engagement').CustomMcpAgent[] }>('/fde/mcp-agents'),
   trainingSummary: () =>
     json<import('@shared/fde-training').FdeTrainingCorpusStats>('/fde/training/summary'),
   trainingDecisions: (engagementId: string) =>
@@ -275,8 +300,6 @@ export const clusterApi = {
     json<{ eventId: string; breakdown: import('@shared/graph-sync').FeedRankBreakdown }>(
       `/cluster/feed/rank?eventId=${encodeURIComponent(eventId)}&role=${encodeURIComponent(role)}`
     ),
-  mcpAgents: () =>
-    json<{ agents: import('@shared/fde-engagement').CustomMcpAgent[] }>('/fde/mcp-agents'),
   saveMcpAgent: (input: Omit<import('@shared/fde-engagement').CustomMcpAgent, 'id' | 'createdAt'> & { id?: string }) =>
     json<{ agent: import('@shared/fde-engagement').CustomMcpAgent }>('/fde/mcp-agents', {
       method: 'POST',
@@ -548,10 +571,13 @@ export const agentApi = {
       `/agent/proposals/${encodeURIComponent(id)}/reject`,
       { method: 'POST', body: JSON.stringify({ reason }) }
     ),
-  refreshProposal: (id: string) =>
+  refreshProposal: (id: string, linkedinReply?: string) =>
     json<{ proposal: import('@shared/agent-proposal').AgentProposal }>(
       `/agent/proposals/${encodeURIComponent(id)}/refresh`,
-      { method: 'POST', body: '{}' }
+      {
+        method: 'POST',
+        body: JSON.stringify(linkedinReply?.trim() ? { linkedinReply: linkedinReply.trim() } : {})
+      }
     ),
   updateDraft: (id: string, linkedinReply: string) =>
     json<{ proposal: import('@shared/agent-proposal').AgentProposal }>(

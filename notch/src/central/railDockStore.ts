@@ -30,7 +30,7 @@ const DEFAULT_DOCK: RailDockConfig = {
   width: RAIL_WIDTH_DEFAULT,
   compactTabs: false,
   rememberLastTab: true,
-  defaultTabWorkspace: 'agent',
+  defaultTabWorkspace: 'calendar',
   defaultTabFeed: 'context',
   activePreset: null
 }

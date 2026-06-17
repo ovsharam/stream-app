@@ -19,6 +19,7 @@ import {
   useRunningAgentsPanel
 } from './runningAgentsStore'
 import type { WorkspaceBrowserPageContext } from './workspaceBrowserContext'
+import { looksLikeMeetSchedule, meetActionTextForSubmit } from '@shared/meeting-compose'
 
 const STARTERS = [
   { id: 'today', label: 'What needs my attention today?', hint: 'Priorities & open loops' },
@@ -166,6 +167,51 @@ export function HomeChat({
     const agentId = startAgent({ title: agentTitle(trimmed), status: 'Thinking…' })
     const signal = createAgentAbortSignal(agentId)
     activeRequestRef.current = { agentId, assistantId, gen }
+
+    if (looksLikeMeetSchedule(trimmed)) {
+      try {
+        updateAgentStatus(agentId, 'Scheduling Google Meet…')
+        const result = await clusterApi.runAction(
+          { text: meetActionTextForSubmit(trimmed) },
+          { signal }
+        )
+        if (signal.aborted) return
+        finishAssistantMessage(assistantId, {
+          content: result.message,
+          error: result.ok ? undefined : result.message,
+          assist: result.ok
+            ? {
+                query: trimmed,
+                intent: 'general',
+                headline: 'Meeting scheduled',
+                response: result.message,
+                sayThis: '',
+                sources: []
+              }
+            : undefined
+        })
+        if (result.ok) {
+          window.dispatchEvent(new CustomEvent('notch:calendars-updated'))
+        }
+      } catch (err) {
+        if (!signal.aborted) {
+          finishAssistantMessage(assistantId, {
+            content: '',
+            error: err instanceof Error ? err.message : 'Could not schedule meeting'
+          })
+        }
+      } finally {
+        completeAgent(agentId)
+        if (activeRequestRef.current?.assistantId === assistantId) {
+          activeRequestRef.current = null
+        }
+        if (gen === genRef.current) {
+          setBusy(false)
+          inputRef.current?.focus()
+        }
+      }
+      return
+    }
 
     const history = messages
       .filter((m) => !m.loading && m.content.trim())

@@ -10,6 +10,7 @@ export function forceWebviewRepaint(webview: WorkspaceWebviewEl | null): void {
   if (!webview) return
 
   const host =
+    (webview.closest('.x-browser-main') as HTMLElement | null) ??
     (webview.closest('.x-workspace-media-layer--mini') as HTMLElement | null) ??
     (webview.closest('.x-workspace-mini-target') as HTMLElement | null) ??
     (webview.closest('.x-workspace') as HTMLElement | null) ??
@@ -55,21 +56,37 @@ export function forceWebviewRepaint(webview: WorkspaceWebviewEl | null): void {
   window.setTimeout(sync, 500)
 }
 
+export function repaintAllWorkspaceWebviews(): void {
+  if (typeof document === 'undefined') return
+  document.querySelectorAll('webview[data-workspace-tab-id]').forEach((node) => {
+    forceWebviewRepaint(node as WorkspaceWebviewEl)
+  })
+}
+
+function resizeHostsForWebview(webview: WorkspaceWebviewEl): HTMLElement[] {
+  const seen = new Set<HTMLElement>()
+  const add = (el: Element | null) => {
+    if (el instanceof HTMLElement && !seen.has(el)) seen.add(el)
+  }
+  add(webview.closest('.x-browser-main'))
+  add(webview.closest('.x-channel-main'))
+  add(webview.closest('.x-browser-shell'))
+  add(webview.closest('.x-workspace'))
+  add(webview.parentElement)
+  return [...seen]
+}
+
 export function useWebviewResizeSync(webviewEl: HTMLElement | null, enabled: boolean): void {
   useEffect(() => {
     if (!webviewEl || !enabled) return
 
     const webview = webviewEl as WorkspaceWebviewEl
-    const host =
-      (webview.closest('.x-workspace-media-layer') as HTMLElement | null) ??
-      (webview.closest('.x-workspace') as HTMLElement | null) ??
-      webview.parentElement
-
-    if (!host) return
+    const hosts = resizeHostsForWebview(webview)
+    if (hosts.length === 0) return
 
     const onResize = () => forceWebviewRepaint(webview)
     const observer = new ResizeObserver(onResize)
-    observer.observe(host)
+    for (const host of hosts) observer.observe(host)
     onResize()
 
     return () => observer.disconnect()

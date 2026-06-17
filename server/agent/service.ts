@@ -27,12 +27,17 @@ import {
 import { executeApprovedProposal } from './execute'
 import { emitServerEvent } from '../telemetry/service'
 import { recordComposeAction } from '../kb/telemetry'
+import { upsertEngagementFromAgentProposal } from '../fde/engagementFromProposal'
 
 function normalizeLinkedInSenderName(name: string): string {
   return cleanLinkedInSenderName(name)
 }
 
-async function draftLinkedInProposal(input: LinkedInIngestInput, proposalId: string) {
+async function draftLinkedInProposal(
+  input: LinkedInIngestInput,
+  proposalId: string,
+  opts?: { userDraft?: string }
+) {
   const threadText = threadAsText(input.threadMessages)
   const message = input.message.trim()
   const classifyMessage = threadText ? `${message}\n\nThread:\n${threadText}` : message
@@ -43,7 +48,8 @@ async function draftLinkedInProposal(input: LinkedInIngestInput, proposalId: str
 
   const classified = await classifyLinkedInMessage(
     { ...input, senderName, message: classifyMessage },
-    invitee
+    invitee,
+    opts?.userDraft ? { userDraft: opts.userDraft } : undefined
   )
   logInteraction(proposalId, 'intent_classified', classified as unknown as Record<string, unknown>)
 
@@ -211,6 +217,13 @@ export async function ingestLinkedInMessage(
 
   insertProposal(proposal)
 
+  try {
+    upsertEngagementFromAgentProposal(proposal, { stage: 'intake' })
+    io?.emit('cluster:refresh', { reason: 'fde-engagement' })
+  } catch (err) {
+    console.warn('[fde] engagement from agent ingest skipped:', err instanceof Error ? err.message : err)
+  }
+
   emitServerEvent(
     'agent_proposal_created',
     {
@@ -243,7 +256,11 @@ export function getAgentProposalLog(id: string) {
   return listInteractionLog(id)
 }
 
-export async function refreshAgentProposal(id: string, io?: SocketServer): Promise<AgentProposal> {
+export async function refreshAgentProposal(
+  id: string,
+  io?: SocketServer,
+  opts?: { userDraft?: string }
+): Promise<AgentProposal> {
   const proposal = getProposal(id)
   if (!proposal) throw new Error('Proposal not found')
   if (proposal.status !== 'pending') throw new Error('Only pending proposals can be refreshed')
@@ -256,7 +273,8 @@ export async function refreshAgentProposal(id: string, io?: SocketServer): Promi
       message: proposal.rawMessage,
       threadMessages: proposal.threadMessages
     },
-    id
+    id,
+    opts
   )
 
   proposal.senderName = draft.senderName
@@ -321,6 +339,13 @@ export async function approveAgentProposal(
   const executed = await executeApprovedProposal(proposal, { skipBooking: input.skipBooking }, io)
   updateProposal(executed)
 
+  try {
+    upsertEngagementFromAgentProposal(executed, { stage: 'intake', bumpEscalation: false })
+    io?.emit('cluster:refresh', { reason: 'fde-engagement' })
+  } catch (err) {
+    console.warn('[fde] engagement from agent approve skipped:', err instanceof Error ? err.message : err)
+  }
+
   recordComposeAction({
     operatorId: 'local',
     subjectId: id,
@@ -373,11 +398,32 @@ export function updateAgentProposalDraft(
   if (!proposal) throw new Error('Proposal not found')
   if (proposal.status !== 'pending') throw new Error(`Proposal already ${proposal.status}`)
 
-  proposal.linkedinReplyDraft = linkedinReply.trim()
+  const original = proposal.linkedinReplyDraft
+  const edited = linkedinReply.trim()
+  if (original !== edited) {
+    logInteraction(id, 'user_draft_edited', {
+      originalLength: original.length,
+      editedLength: edited.length,
+      editKind: classifyDraftEdit(original, edited),
+      agentDraft: original.slice(0, 500),
+      userDraft: edited.slice(0, 500)
+    })
+  }
+
+  proposal.linkedinReplyDraft = edited
   proposal.updatedAt = Date.now()
   updateProposal(proposal)
   io?.emit('agent:proposal-updated', proposal)
   return proposal
+}
+
+function classifyDraftEdit(original: string, edited: string): string {
+  if (original === edited) return 'unchanged'
+  if (!original.trim()) return 'replace'
+  if (!edited.trim()) return 'delete'
+  if (edited.startsWith(original) && edited.length > original.length) return 'append'
+  if (original.startsWith(edited) && edited.length < original.length) return 'truncate'
+  return 'modify'
 }
 
 export function snoozeAgentProposal(
@@ -406,6 +452,13 @@ export function snoozeAgentProposal(
     linkedinReplyDraft: proposal.linkedinReplyDraft
   })
   updateProposal(proposal)
+
+  try {
+    upsertEngagementFromAgentProposal(proposal, { stage: 'intake', bumpEscalation: true })
+    io?.emit('cluster:refresh', { reason: 'fde-engagement' })
+  } catch (err) {
+    console.warn('[fde] engagement from agent snooze skipped:', err instanceof Error ? err.message : err)
+  }
 
   recordComposeAction({
     operatorId: 'local',

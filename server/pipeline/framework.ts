@@ -175,6 +175,16 @@ export async function runPipelineSync(): Promise<PipelineSyncResult> {
     } catch (err) {
       errors.push(`sync: ${err instanceof Error ? err.message : String(err)}`)
     }
+
+    try {
+      const { buildDashboardSnapshot } =
+        require('../dashboard/aggregate') as typeof import('../dashboard/aggregate')
+      const { syncDashboardSnapshotToSupabase } =
+        require('../supabase/dashboardSnapshot') as typeof import('../supabase/dashboardSnapshot')
+      await syncDashboardSnapshotToSupabase(await buildDashboardSnapshot())
+    } catch (err) {
+      errors.push(`dashboard_snapshot: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   return {

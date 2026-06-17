@@ -16,7 +16,6 @@ type Props = {
 export function AgentInboxPanel({ events = [], onOpenBuildDojo }: Props) {
   const [proposals, setProposals] = useState<Awaited<ReturnType<typeof agentApi.listProposals>>['proposals']>([])
   const [error, setError] = useState<string | null>(null)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -41,27 +40,17 @@ export function AgentInboxPanel({ events = [], onOpenBuildDojo }: Props) {
     [events, proposals]
   )
 
-  useEffect(() => {
-    if (expandedId && !items.some((item) => item.id === expandedId)) {
-      setExpandedId(null)
-    }
-  }, [expandedId, items])
-
   return (
     <div className="x-rail-tab-body x-agent-inbox">
-      <header className="x-agent-inbox-head">
-        <h2 className="x-agent-inbox-head-title">Agent</h2>
-        {items.length > 0 ? (
-          <span className="x-agent-inbox-count">
-            {items.length} item{items.length === 1 ? '' : 's'}
-          </span>
-        ) : null}
-      </header>
-
       {error ? <p className="x-agent-inbox-error">{error}</p> : null}
 
       {items.length === 0 ? (
-        <p className="x-agent-inbox-empty">No drafts or active builds.</p>
+        <div className="x-agent-inbox-empty">
+          <p className="x-agent-inbox-empty-title">Nothing pending</p>
+          <p className="x-agent-inbox-empty-hint">
+            Draft replies and running builds show up here when they need you.
+          </p>
+        </div>
       ) : (
         <ul className="x-agent-inbox-list">
           {items.map((item) =>
@@ -70,13 +59,9 @@ export function AgentInboxPanel({ events = [], onOpenBuildDojo }: Props) {
                 <AgentInboxStatusRow item={item} onOpenBuildDojo={onOpenBuildDojo} />
               </li>
             ) : (
-              <AgentInboxDraftRow
-                key={item.id}
-                item={item}
-                expanded={expandedId === item.id}
-                onToggleExpand={() => setExpandedId((id) => (id === item.id ? null : item.id))}
-                onComplete={load}
-              />
+              <li key={item.id} className="x-agent-inbox-entry">
+                <AgentInboxDraftRow item={item} onComplete={load} />
+              </li>
             )
           )}
         </ul>

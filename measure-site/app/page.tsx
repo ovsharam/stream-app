@@ -231,16 +231,26 @@ export default function MeasurePage() {
         {!apiConfigured && !apiStatus.checking && !hasLoadedData ? (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
             <strong className="font-medium">Waiting for live data.</strong> {statusMessage(apiStatus)}
+            {apiStatus.cacheAvailable ? (
+              <span className="mt-1 block text-xs text-amber-200/80">
+                Supabase cache exists — refresh may still load the last snapshot.
+              </span>
+            ) : null}
             {apiStatus.apiUrl ? (
               <span className="mt-1 block text-xs text-amber-200/80">
                 Target: <code className="rounded bg-black/30 px-1 py-0.5">{apiStatus.apiUrl}</code>
               </span>
             ) : null}
+            <span className="mt-2 block text-xs text-amber-200/70">
+              Permanent fix on your Mac: <code className="rounded bg-black/30 px-1">npm run install:stream-stack</code>
+            </span>
           </div>
         ) : !apiConfigured && !apiStatus.checking && hasLoadedData ? (
           <div className="rounded-xl border border-zinc-700 bg-zinc-900/60 px-4 py-3 text-sm text-zinc-400">
-            Showing cached snapshot — live tunnel offline. Run <code className="text-zinc-300">npm run tunnel:api</code>{' '}
-            and keep Notch open for real-time updates.
+            {apiStatus.cacheAvailable
+              ? `Showing Supabase snapshot${apiStatus.cacheAgeMs != null ? ` from ${Math.round(apiStatus.cacheAgeMs / 60_000)}m ago` : ''} — tunnel offline.`
+              : 'Showing cached snapshot — live tunnel offline.'}{' '}
+            Run <code className="text-zinc-300">npm run install:stream-stack</code> on your Mac for auto-start at login.
           </div>
         ) : null}
         {error ? (

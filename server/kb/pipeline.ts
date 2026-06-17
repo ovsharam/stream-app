@@ -12,6 +12,9 @@ import {
   listDatapoints,
   listEntities,
   listTraces,
+  listDatapointIdsLinkedToEntities,
+  listEdgesForNodes,
+  getEntity,
   upsertEntity
 } from './store'
 import {
@@ -463,7 +466,7 @@ function scoreChunk(
   return Math.min(1, score + graphBoost)
 }
 
-/** GraphRAG-lite: lexical + intention-weighted retrieval (embedding slot later). */
+/** GraphRAG-lite: lexical + graph-linked retrieval (embedding slot later). */
 export function retrieveContext(query: string, limit = 12): GraphRagContext {
   const datapoints = listDatapoints(400)
   const entities = listEntities(150)
@@ -472,6 +475,26 @@ export function retrieveContext(query: string, limit = 12): GraphRagContext {
   const feedCtx = buildFeedOperatorContext()
   const dealKeywords = feedCtx.activeDeal?.keywords
   const dealEntityIds = feedCtx.activeDeal?.entityIds
+
+  const q = query.toLowerCase()
+  const matchedEntityIds = entities
+    .filter((e) => {
+      const label = e.label.toLowerCase()
+      return q.split(/\s+/).some((w) => w.length > 2 && label.includes(w))
+    })
+    .map((e) => e.id)
+
+  const graphLinkedDpIds = new Set(listDatapointIdsLinkedToEntities(matchedEntityIds, limit * 2))
+  for (const eid of dealEntityIds ?? []) {
+    for (const dpId of listDatapointIdsLinkedToEntities([eid], 12)) graphLinkedDpIds.add(dpId)
+  }
+
+  const neighborEntityIds = new Set<string>()
+  for (const edge of listEdgesForNodes(matchedEntityIds, 200)) {
+    if (edge.relation === 'mentions') continue
+    if (matchedEntityIds.includes(edge.fromId)) neighborEntityIds.add(edge.toId)
+    if (matchedEntityIds.includes(edge.toId)) neighborEntityIds.add(edge.fromId)
+  }
 
   const chunks: GraphRagChunk[] = datapoints
     .map((dp) => ({
@@ -482,7 +505,8 @@ export function retrieveContext(query: string, limit = 12): GraphRagContext {
         query,
         dp,
         entityLabels,
-        graphRetrievalBoost(dp, entityLabels, dealKeywords, dealEntityIds)
+        graphRetrievalBoost(dp, entityLabels, dealKeywords, dealEntityIds) +
+          (graphLinkedDpIds.has(dp.id) ? 0.22 : 0)
       ),
       intention: dp.intention,
       entityLabels: dp.entityIds.map((id) => entityLabels.get(id) ?? '').filter(Boolean),
@@ -498,14 +522,27 @@ export function retrieveContext(query: string, limit = 12): GraphRagContext {
     inferIntention(query)
   )
 
-  const relatedEntities = entities
-    .filter((e) => query && e.label.toLowerCase().includes(query.toLowerCase().split(/\s+/)[0] ?? ''))
-    .slice(0, 8)
+  const relatedFromQuery = entities.filter((e) => {
+    const label = e.label.toLowerCase()
+    return q.split(/\s+/).some((w) => w.length > 2 && label.includes(w))
+  })
+
+  const relatedFromGraph = [...neighborEntityIds]
+    .map((id) => getEntity(id))
+    .filter((e): e is KbEntity => Boolean(e))
+    .slice(0, 6)
+
+  const relatedEntities =
+    relatedFromQuery.length > 0
+      ? [...relatedFromQuery, ...relatedFromGraph].slice(0, 8)
+      : relatedFromGraph.length > 0
+        ? relatedFromGraph
+        : entities.filter((e) => e.ontologyType).slice(0, 6)
 
   return {
     query,
     chunks,
-    relatedEntities: relatedEntities.length > 0 ? relatedEntities : entities.slice(0, 6),
+    relatedEntities,
     recentTraces: traces.slice(0, 8),
     intentionProfile
   }

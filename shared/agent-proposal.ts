@@ -55,6 +55,7 @@ export type AgentInteractionStage =
   | 'booking_executed'
   | 'booking_failed'
   | 'linkedin_reply_ready'
+  | 'user_draft_edited'
 
 export type AgentThreadMessage = {
   sender: 'self' | 'other'

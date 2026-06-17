@@ -12,6 +12,10 @@ export type DashboardApiStatus = {
   message?: string
   apiUrl?: string
   upstreamStatus?: number
+  /** Supabase dashboard_snapshots available when tunnel is down */
+  cacheAvailable?: boolean
+  cacheAgeMs?: number
+  cacheExportedAt?: number
 }
 
 export function statusMessage(status: DashboardApiStatus): string {

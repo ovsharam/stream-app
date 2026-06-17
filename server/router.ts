@@ -100,6 +100,7 @@ import {
 import { registerIntegrationExecutors } from './integrations/executors'
 import { runIntegrationAction } from './integrations/registry'
 import { parseComposeCommand, COMPOSE_HELP } from '../shared/compose'
+import { meetActionTextForSubmit } from '../shared/meeting-compose'
 import { normalizeNote } from './normalizer'
 import { upsertItem } from './db'
 import type { StreamItem } from '../shared/types'
@@ -1670,7 +1671,10 @@ export function createRouter(io?: SocketServer): Router {
 
   router.post('/cluster/action', async (req, res) => {
     const sid = getSessionId(req, res)
-    const raw = expandMentionsWithContacts(String(req.body.text ?? '').trim(), sid)
+    const raw = expandMentionsWithContacts(
+      meetActionTextForSubmit(String(req.body.text ?? '').trim()),
+      sid
+    )
     const contextItemId = req.body.contextItemId ? String(req.body.contextItemId) : undefined
     const parsed = parseComposeCommand(raw)
     if (!parsed) {
@@ -1685,7 +1689,7 @@ export function createRouter(io?: SocketServer): Router {
         command: parsed.body,
         raw,
         contextItemId,
-        sessionId: '',
+        sessionId: sid,
         io
       })
 
@@ -1963,7 +1967,12 @@ export function createRouter(io?: SocketServer): Router {
   router.post('/agent/proposals/:id/refresh', async (req, res) => {
     const { refreshAgentProposal } = require('./agent/service') as typeof import('./agent/service')
     try {
-      const proposal = await refreshAgentProposal(req.params.id, io)
+      const userDraft = req.body?.linkedinReply ? String(req.body.linkedinReply).trim() : undefined
+      const proposal = await refreshAgentProposal(
+        req.params.id,
+        io,
+        userDraft ? { userDraft } : undefined
+      )
       res.json({ proposal })
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : String(err) })
@@ -1999,6 +2008,31 @@ export function createRouter(io?: SocketServer): Router {
     const { exportAgentTrainingRecords } = require('./agent/store') as typeof import('./agent/store')
     const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 200))
     res.json({ records: exportAgentTrainingRecords(limit) })
+  })
+
+  router.get('/fde/engagements/:id/handoff', (req, res) => {
+    const { getEngagement } = require('./fde/engagementStore') as typeof import('./fde/engagementStore')
+    const { buildHandoffBrief } = require('./fde/handoffBrief') as typeof import('./fde/handoffBrief')
+    const engagement = getEngagement(req.params.id)
+    if (!engagement) {
+      res.status(404).json({ error: 'not found' })
+      return
+    }
+    res.json({ handoff: buildHandoffBrief(engagement) })
+  })
+
+  router.post('/fde/engagements/from-proposal/:proposalId', (req, res) => {
+    const { getProposal } = require('./agent/store') as typeof import('./agent/store')
+    const { upsertEngagementFromAgentProposal } =
+      require('./fde/engagementFromProposal') as typeof import('./fde/engagementFromProposal')
+    const proposal = getProposal(req.params.proposalId)
+    if (!proposal) {
+      res.status(404).json({ error: 'proposal not found' })
+      return
+    }
+    const engagement = upsertEngagementFromAgentProposal(proposal, { stage: 'intake' })
+    io?.emit('cluster:refresh', { reason: 'fde-engagement' })
+    res.json({ engagement })
   })
 
   router.get('/fde/engagements', (_req, res) => {
@@ -2206,6 +2240,17 @@ export function createRouter(io?: SocketServer): Router {
     } catch (e) {
       res.status(500).json({ error: (e as Error).message })
     }
+  })
+
+  router.get('/kb/graph', (req, res) => {
+    const { buildKbGraphSnapshot } = require('./kb/graphSnapshot') as typeof import('./kb/graphSnapshot')
+    const modeRaw = String(req.query.mode ?? 'structured')
+    const mode =
+      modeRaw === 'memories' || modeRaw === 'full' || modeRaw === 'structured' ? modeRaw : 'structured'
+    const maxEntities = Math.min(800, Math.max(50, Number(req.query.maxEntities) || 400))
+    const maxDatapoints = Math.min(300, Math.max(0, Number(req.query.maxDatapoints) || 120))
+    const maxEdges = Math.min(2000, Math.max(100, Number(req.query.maxEdges) || 800))
+    res.json(buildKbGraphSnapshot({ mode, maxEntities, maxDatapoints, maxEdges }))
   })
 
   router.get('/kb/stats', (_req, res) => {

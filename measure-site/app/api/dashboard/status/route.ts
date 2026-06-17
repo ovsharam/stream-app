@@ -5,6 +5,7 @@ import { auth } from '@/auth'
 import { isMeasureAuthEnabled } from '@/lib/allowlist'
 import type { DashboardApiStatus } from '@/lib/dashboard-status'
 import { measureApiSecret, streamApiUrl, upstreamHeaders } from '@/lib/stream-api-config'
+import { fetchDashboardFromSupabase } from '@/lib/supabase-dashboard'
 
 const PROBE_TIMEOUT_MS = 8_000
 
@@ -66,15 +67,30 @@ export async function GET() {
       upstreamStatus: upstream.status,
       message: `STREAM API returned HTTP ${upstream.status}. Check local API logs.`
     }
+    const cached = await fetchDashboardFromSupabase()
+    if (cached) {
+      body.cacheAvailable = true
+      body.cacheExportedAt = cached.exportedAt
+      body.cacheAgeMs = Date.now() - cached.exportedAt
+      body.message = `Tunnel offline (HTTP ${upstream.status}). Supabase cache available — dashboard will show last synced snapshot.`
+    }
     return NextResponse.json(body)
   } catch {
+    const cached = await fetchDashboardFromSupabase()
     const body: DashboardApiStatus = {
       configured: true,
       reachable: false,
       reason: 'unreachable',
       apiUrl: apiBase,
       message:
-        'Cannot reach the STREAM API. Start Notch (npm run dev:notch:live) and keep your Cloudflare Tunnel to api.appliedscope.com running.'
+        'Cannot reach the STREAM API. Run npm run install:stream-stack on your Mac for auto-start at login.',
+      cacheAvailable: Boolean(cached),
+      cacheExportedAt: cached?.exportedAt,
+      cacheAgeMs: cached ? Date.now() - cached.exportedAt : undefined
+    }
+    if (cached) {
+      body.message =
+        'Tunnel offline. Showing last Supabase snapshot — run npm run install:stream-stack on your Mac for live data.'
     }
     return NextResponse.json(body)
   }

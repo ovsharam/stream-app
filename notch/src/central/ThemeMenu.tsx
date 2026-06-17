@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { THEMES, type ThemeId } from './useTheme'
+import { THEME_GROUPS, type ThemeId } from './useTheme'
 
 type Props = {
   open: boolean
@@ -66,17 +66,25 @@ export function ThemeMenu({ open, theme, setTheme, anchorRef, onClose }: Props) 
         aria-label="Appearance"
       >
         <p className="x-theme-menu-title">Appearance</p>
-        {THEMES.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`x-theme-option ${theme === t.id ? 'active' : ''}`}
-            onClick={() => pick(t.id)}
-          >
-            <span className={`x-theme-swatch x-theme-swatch-${t.id}`} aria-hidden />
-            <span className="x-theme-option-label">{t.label}</span>
-            {theme === t.id && <span className="x-theme-check" aria-hidden>✓</span>}
-          </button>
+        {THEME_GROUPS.map((group) => (
+          <div key={group.label} className="x-theme-menu-group">
+            <p className="x-theme-menu-group-label">{group.label}</p>
+            {group.themes.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={`x-theme-option ${theme === t.id ? 'active' : ''}`}
+                onClick={() => pick(t.id)}
+              >
+                <span className={`x-theme-swatch x-theme-swatch-${t.id}`} aria-hidden />
+                <span className="x-theme-option-copy">
+                  <span className="x-theme-option-label">{t.label}</span>
+                  {t.hint ? <span className="x-theme-option-hint">{t.hint}</span> : null}
+                </span>
+                {theme === t.id ? <span className="x-theme-check" aria-hidden>✓</span> : null}
+              </button>
+            ))}
+          </div>
         ))}
       </div>
     </>,

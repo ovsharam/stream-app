@@ -1,8 +1,5 @@
-import { useEffect, useState } from 'react'
 import type { FdeEngagement, EngagementStage, ScopeBucket } from '@shared/fde-engagement'
-import { clusterApi } from '../lib/api'
-
-const CACHE_KEY = 'stream.central.engagements'
+import { useEngagements } from './useEngagements'
 
 const STAGE_LABEL: Record<EngagementStage, string> = {
   intake: 'Intake',
@@ -17,23 +14,6 @@ const SCOPE_LABEL: Record<ScopeBucket, string> = {
   unknown: 'Scope TBD'
 }
 
-function readCachedEngagements(): FdeEngagement[] {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY)
-    return raw ? (JSON.parse(raw) as FdeEngagement[]) : []
-  } catch {
-    return []
-  }
-}
-
-function writeCachedEngagements(list: FdeEngagement[]): void {
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(list))
-  } catch {
-    /* ignore quota */
-  }
-}
-
 type Props = {
   onOpenMeeting?: (feedItemId: string) => void
   onSelect?: (engagement: FdeEngagement) => void
@@ -41,62 +21,7 @@ type Props = {
 }
 
 export function EngagementsPanel({ onOpenMeeting, onSelect, compact }: Props) {
-  const [engagements, setEngagements] = useState<FdeEngagement[]>(() => readCachedEngagements())
-  const [refreshing, setRefreshing] = useState(false)
-  const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set())
-
-  const load = async (opts?: { silent?: boolean }) => {
-    if (!opts?.silent) setRefreshing(true)
-    try {
-      const data = await clusterApi.engagements()
-      setEngagements(data.engagements)
-      writeCachedEngagements(data.engagements)
-    } catch {
-      /* keep stale cache on error */
-    } finally {
-      setRefreshing(false)
-    }
-  }
-
-  useEffect(() => {
-    void load({ silent: engagements.length > 0 })
-    const onRefresh = () => void load({ silent: true })
-    window.addEventListener('notch:engagements-updated', onRefresh)
-    window.addEventListener('notch:stream-push', onRefresh)
-    window.addEventListener('stream:user-role', onRefresh)
-    return () => {
-      window.removeEventListener('notch:engagements-updated', onRefresh)
-      window.removeEventListener('notch:stream-push', onRefresh)
-      window.removeEventListener('stream:user-role', onRefresh)
-    }
-  }, [])
-
-  const patch = async (id: string, patchFields: Partial<FdeEngagement>) => {
-    const prev = engagements.find((e) => e.id === id)
-    if (!prev) return
-
-    const optimistic = { ...prev, ...patchFields }
-    setEngagements((list) => list.map((e) => (e.id === id ? optimistic : e)))
-    setPendingIds((s) => new Set(s).add(id))
-
-    try {
-      const { engagement } = await clusterApi.patchEngagement(id, patchFields)
-      setEngagements((list) => {
-        const next = list.map((e) => (e.id === id ? engagement : e))
-        writeCachedEngagements(next)
-        return next
-      })
-      window.dispatchEvent(new Event('notch:engagements-updated'))
-    } catch {
-      setEngagements((list) => list.map((e) => (e.id === id ? prev : e)))
-    } finally {
-      setPendingIds((s) => {
-        const next = new Set(s)
-        next.delete(id)
-        return next
-      })
-    }
-  }
+  const { engagements, refreshing, pendingIds, patch } = useEngagements()
 
   if (engagements.length === 0 && refreshing) {
     return <p className="x-portal-empty x-eng-loading">Loading clients…</p>

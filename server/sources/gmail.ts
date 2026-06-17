@@ -2,6 +2,7 @@ import { google } from 'googleapis'
 import type { Server as SocketServer } from 'socket.io'
 import { normalizeGmailThread } from '../normalizer'
 import { upsertItems, itemExists, getRecentItems } from '../db'
+import { streamItemToApi } from '../../shared/serialize'
 import type { StreamItem } from '../../shared/types'
 import { getOAuth2Client, GOOGLE_SCOPES, authClientForTokens, GOOGLE_REQUEST_OPTS } from './googleOAuth'
 import {
@@ -50,75 +51,108 @@ export async function handleGmailCallback(code: string, sessionId: string): Prom
   await upsertGmailAccount(tokens, sessionId)
 }
 
+function isTransientGoogleError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|fetch failed/i.test(msg)
+}
+
+async function withGoogleRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn()
+  } catch (err) {
+    if (!isTransientGoogleError(err)) throw err
+    console.warn(`[gmail] transient error (${label}), retrying once:`, err instanceof Error ? err.message : err)
+    await new Promise((r) => setTimeout(r, 400))
+    return fn()
+  }
+}
+
 async function fetchGmailThreadsForAccount(
   account: GmailAccountRecord,
   limit = 8
-): Promise<StreamItem[]> {
+): Promise<{ items: StreamItem[]; threadErrors: string[] }> {
   assertGoogleApiAllowed(`gmail.threads:${account.email}`)
   const oauth2 = getOAuth2Client()
   oauth2.setCredentials(account.tokens)
   const gmail = google.gmail({ version: 'v1', auth: oauth2 })
 
-  const listRes = await gmail.users.threads.list(
-    {
-      userId: 'me',
-      maxResults: limit,
-      q: 'in:inbox -category:promotions -category:social'
-    },
-    GOOGLE_REQUEST_OPTS
+  const listRes = await withGoogleRetry(`threads.list:${account.email}`, () =>
+    gmail.users.threads.list(
+      {
+        userId: 'me',
+        maxResults: limit,
+        q: 'in:inbox -category:promotions -category:social'
+      },
+      GOOGLE_REQUEST_OPTS
+    )
   )
 
   const items: StreamItem[] = []
+  const threadErrors: string[] = []
   const slug = accountSlug(account.email)
 
   for (const thread of listRes.data.threads ?? []) {
     if (!thread.id) continue
 
-    const detail = await gmail.users.threads.get(
-      {
-        userId: 'me',
-        id: thread.id,
-        format: 'metadata',
-        metadataHeaders: ['Subject', 'From', 'Date']
-      },
-      GOOGLE_REQUEST_OPTS
-    )
+    try {
+      const detail = await withGoogleRetry(`threads.get:${thread.id}`, () =>
+        gmail.users.threads.get(
+          {
+            userId: 'me',
+            id: thread.id!,
+            format: 'metadata',
+            metadataHeaders: ['Subject', 'From', 'Date']
+          },
+          GOOGLE_REQUEST_OPTS
+        )
+      )
 
-    const messages = detail.data.messages ?? []
-    const latest = messages[messages.length - 1]
-    if (!latest) continue
+      const messages = detail.data.messages ?? []
+      const latest = messages[messages.length - 1]
+      if (!latest) continue
 
-    const headers = latest.payload?.headers ?? []
-    const getHeader = (name: string) =>
-      headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value
+      const headers = latest.payload?.headers ?? []
+      const getHeader = (name: string) =>
+        headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value
 
-    const fromRaw = getHeader('From') ?? ''
-    const fromMatch = fromRaw.match(/^(?:"?([^"]*)"?\s)?<?([^>]+)>?$/)
-    const from = {
-      name: fromMatch?.[1]?.trim() || fromRaw,
-      email: fromMatch?.[2]?.trim() || fromRaw
-    }
-
-    const normalized = normalizeGmailThread({
-      id: `${slug}-${thread.id}`,
-      snippet: detail.data.snippet ?? thread.snippet ?? undefined,
-      subject: getHeader('Subject') ?? undefined,
-      from,
-      date: new Date(parseInt(latest.internalDate ?? '0', 10)),
-      body: detail.data.snippet ?? thread.snippet ?? '',
-      labelIds: latest.labelIds ?? undefined,
-      metadata: {
-        threadId: thread.id,
-        accountEmail: account.email,
-        accountId: account.id,
-        messageCount: messages.length
+      const fromRaw = getHeader('From') ?? ''
+      const fromMatch = fromRaw.match(/^(?:"?([^"]*)"?\s)?<?([^>]+)>?$/)
+      const from = {
+        name: fromMatch?.[1]?.trim() || fromRaw,
+        email: fromMatch?.[2]?.trim() || fromRaw
       }
-    })
 
-    if (normalized) items.push(normalized)
+      const normalized = normalizeGmailThread({
+        id: `${slug}-${thread.id}`,
+        snippet: detail.data.snippet ?? thread.snippet ?? undefined,
+        subject: getHeader('Subject') ?? undefined,
+        from,
+        date: new Date(parseInt(latest.internalDate ?? '0', 10)),
+        body: detail.data.snippet ?? thread.snippet ?? '',
+        labelIds: latest.labelIds ?? undefined,
+        metadata: {
+          threadId: thread.id,
+          accountEmail: account.email,
+          accountId: account.id,
+          messageCount: messages.length
+        }
+      })
+
+      if (normalized) items.push(normalized)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      threadErrors.push(`${thread.id}: ${message}`)
+      console.warn('[gmail] thread fetch skipped', account.email, thread.id, message)
+    }
   }
 
-  return items
+  return { items, threadErrors }
+}
+
+let lastGmailSuccessAt = 0
+
+export function getLastGmailSyncAt(): number {
+  return lastGmailSuccessAt
 }
 
 let lastGmailError: string | null = null
@@ -165,8 +199,11 @@ export async function syncGmail(io?: SocketServer): Promise<StreamItem[]> {
 
   for (const account of accounts) {
     try {
-      const items = await fetchGmailThreadsForAccount(account, 15)
+      const { items, threadErrors } = await fetchGmailThreadsForAccount(account, 15)
       allItems.push(...items)
+      if (threadErrors.length > 0) {
+        errors.push(`${account.email}: ${threadErrors.length} thread(s) skipped`)
+      }
     } catch (err) {
       markGoogleRateLimited(err, 'gmail.sync')
       const message = err instanceof Error ? err.message : String(err)
@@ -188,9 +225,14 @@ export async function syncGmail(io?: SocketServer): Promise<StreamItem[]> {
 
   if (allItems.length > 0) {
     const newItems = allItems.filter((i) => !itemExists(i.id))
+    const updatedCount = allItems.length - newItems.length
     upsertItems(allItems)
+    lastGmailSuccessAt = Date.now()
     for (const item of newItems) {
-      io?.emit('stream:item', item)
+      io?.emit('stream:item', streamItemToApi(item))
+    }
+    if (updatedCount > 0) {
+      io?.emit('stream:update', { source: 'gmail', count: updatedCount })
     }
   }
 

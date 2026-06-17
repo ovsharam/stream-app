@@ -22,6 +22,10 @@ export interface FdeEngagement {
   openQuestions: string[]
   meetingIds: string[]
   feedItemIds: string[]
+  /** Linked agent proposals (LinkedIn queue, etc.). */
+  proposalIds?: string[]
+  /** Inbound channels feeding this deal. */
+  signalSources?: ('linkedin' | 'gmail' | 'meeting' | 'monday' | 'slack')[]
   googleDocUrl?: string
   escalationLevel: EscalationLevel
   createdAt: number

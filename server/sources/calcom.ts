@@ -989,6 +989,19 @@ function parseCalendarDate(text: string, hour: number, minute: number): Date | n
     return date
   }
 
+  if (/\btoday\b/.test(lower)) {
+    const d = new Date(now)
+    d.setHours(hour, minute, 0, 0)
+    return d
+  }
+
+  if (/\btomorrow\b/.test(lower)) {
+    const d = new Date(now)
+    d.setDate(d.getDate() + 1)
+    d.setHours(hour, minute, 0, 0)
+    return d
+  }
+
   const weekday = lower.match(
     /\b(next\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\b/
   )
@@ -1026,6 +1039,11 @@ function parseCalendarDate(text: string, hour: number, minute: number): Date | n
 }
 
 function parseNaturalDateTime(text: string): Date | null {
+  if (/\b(right now|asap|immediately)\b/i.test(text)) {
+    const d = new Date()
+    d.setSeconds(0, 0)
+    return d
+  }
   const clock = parseClock(text) ?? { hour: 9, minute: 0 }
   return parseCalendarDate(text, clock.hour, clock.minute)
 }
@@ -1042,7 +1060,7 @@ function stripGuestPhrases(text: string): string {
     .trim()
 }
 
-function parseTimeZoneFromText(text: string): string | undefined {
+export function parseTimeZoneFromText(text: string): string | undefined {
   const lower = text.toLowerCase()
   if (/\b(pst|pdt|pacific)\b/.test(lower)) return 'America/Los_Angeles'
   if (/\b(mst|mdt|mountain)\b/.test(lower)) return 'America/Denver'

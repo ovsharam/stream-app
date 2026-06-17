@@ -182,6 +182,38 @@ export function getEntity(id: string): KbEntity | undefined {
   return row ? rowEntity(row) : undefined
 }
 
+export function listEdgesForNodes(nodeIds: string[], limit = 500): KbEdge[] {
+  if (nodeIds.length === 0) return []
+  const d = getDb()
+  const ids = new Set(nodeIds)
+  const out: KbEdge[] = []
+  for (const edge of listAllEdges()) {
+    if (out.length >= limit) break
+    if (ids.has(edge.fromId) || ids.has(edge.toId)) out.push(edge)
+  }
+  return out
+}
+
+export function listDatapointIdsLinkedToEntities(entityIds: string[], limit = 48): string[] {
+  if (entityIds.length === 0) return []
+  const want = new Set(entityIds)
+  const found: string[] = []
+  const seen = new Set<string>()
+  for (const edge of listAllEdges()) {
+    if (found.length >= limit) break
+    if (edge.relation !== 'mentions') continue
+    if (!isDatapointId(edge.fromId) || !want.has(edge.toId)) continue
+    if (seen.has(edge.fromId)) continue
+    seen.add(edge.fromId)
+    found.push(edge.fromId)
+  }
+  return found
+}
+
+function isDatapointId(id: string): boolean {
+  return id.startsWith('dp-')
+}
+
 export function linkEntities(
   fromId: string,
   toId: string,

@@ -15,7 +15,8 @@ export const COMPOSE_PROVIDERS = [
   'gong',
   'obsidian',
   'mind',
-  'calcom'
+  'calcom',
+  'meet'
 ] as const
 
 export type ComposeProvider = (typeof COMPOSE_PROVIDERS)[number]
@@ -55,7 +56,10 @@ const PROVIDER_ALIASES: Record<string, ComposeProvider> = {
   kb: 'mind',
   think: 'mind',
   calcom: 'calcom',
-  cal: 'calcom'
+  cal: 'calcom',
+  meet: 'meet',
+  gmeet: 'meet',
+  googlemeet: 'meet'
 }
 
 export function parseComposeCommand(raw: string): ComposeCommand | null {
@@ -86,6 +90,21 @@ export function parseComposeCommand(raw: string): ComposeCommand | null {
       provider,
       intent: 'book',
       body: calcomBook[1].trim(),
+      raw: text
+    }
+  }
+
+  if (provider === 'meet') {
+    const body =
+      rest
+        .replace(/^(?:schedule\s+(?:a\s+)?(?:google\s+)?meet(?:ing)?\s+)?(?:with\s+)?/i, '')
+        .replace(/^(?:start\s+(?:a\s+)?(?:google\s+)?meet(?:ing)?\s+with\s+)/i, '')
+        .replace(/\bon\s+google\s+meet\b/gi, '')
+        .trim() || rest
+    return {
+      provider: 'meet',
+      intent: 'schedule',
+      body,
       raw: text
     }
   }
@@ -295,7 +314,8 @@ const COMPOSE_MENTION_META: Record<
   obsidian: { label: 'Obsidian', kind: 'app', hint: 'Vault notes' },
   gong: { label: 'Gong', kind: 'app', hint: 'Call notes' },
   mind: { label: 'Mind', kind: 'agent', hint: 'Personal KB' },
-  calcom: { label: 'Cal.com', kind: 'app', hint: 'Scheduling' }
+  calcom: { label: 'Cal.com', kind: 'app', hint: 'Scheduling' },
+  meet: { label: 'Google Meet', kind: 'app', hint: 'Schedule & invite' }
 }
 
 /** Default @mention targets for compose autocomplete. */
@@ -391,6 +411,9 @@ export function expandContactMentions(
     if (nameKey && !byAlias.has(nameKey)) byAlias.set(nameKey, c)
     const first = c.name.split(/\s+/)[0]?.toLowerCase()
     if (first && !byAlias.has(first)) byAlias.set(first, c)
+    const local = c.email.split('@')[0]?.toLowerCase()
+    if (local && !byAlias.has(local)) byAlias.set(local, c)
+    if (local && !byToken.has(local)) byToken.set(local, c)
     const slug = c.name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
@@ -442,7 +465,14 @@ export const COMPOSE_SUGGESTIONS: Partial<Record<ComposeProvider, ComposeSuggest
   obsidian: [{ label: 'append:', insert: 'append: ', hint: 'Append to vault note' }],
   gong: [{ label: '#ID note:', insert: '#CALL_ID note: ', hint: 'Call note' }],
   mind: [{ label: 'capture', insert: '', hint: 'Freeform KB note' }],
-  calcom: [{ label: 'book', insert: 'book @name for July 10 2:30pm PST', hint: '@cal book @martin @apoorva …' }]
+  calcom: [{ label: 'book', insert: 'book @name for July 10 2:30pm PST', hint: '@cal book @martin @apoorva …' }],
+  meet: [
+    {
+      label: 'with @name',
+      insert: 'with @name tomorrow at 3pm',
+      hint: 'Google Meet + calendar invite'
+    }
+  ]
 }
 
 export function resolveComposeProvider(token: string): ComposeProvider | null {
@@ -585,6 +615,14 @@ export const COMPOSE_HELP: { provider: ComposeProvider; examples: string[] }[] =
       '@cal book June 10 2026 1-2pm guests are client@co.com and partner@co.com',
       '@calcom book: 30min / client@co.com / Jane Doe / auto / Follow-up from call',
       '@cal book Tuesday 3pm with lead@acme.com'
+    ]
+  },
+  {
+    provider: 'meet',
+    examples: [
+      '@meet with @nikhil tomorrow at 3pm',
+      'Schedule a Google meet with @martin June 10 2pm PST about product sync',
+      '@meet with nikhil@co.com Friday 10am for 45 minutes'
     ]
   }
 ]

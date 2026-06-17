@@ -10,6 +10,8 @@ import { ContextRail } from './ContextRail'
 import { IntegrationsPanel } from './IntegrationsPanel'
 import { BuildDojo } from './BuildDojo'
 import { NotesView } from './NotesView'
+import { MindGraphView } from './MindGraphView'
+import { PipelineView } from './PipelineView'
 import { NavBladeToggle, persistNavOpen, readNavOpen } from './NavBladeToggle'
 import { SideNav, type NavTarget, type Page } from './SideNav'
 import { NavAppPlayer } from './NavAppPlayer'
@@ -27,6 +29,7 @@ import { LinkedInBackgroundPerception } from './LinkedInBackgroundPerception'
 import { AppToastStack } from './AppToastStack'
 import { useAgentProposalNotifications } from './useAgentProposalNotifications'
 import { useCalendarToasts } from './useCalendarToasts'
+import { markCalendarShaded, wasCalendarShaded } from './calendarShade'
 import { useRailDockCss } from './useRailDockCss'
 import { RailResizeHandle } from './RailResizeHandle'
 import { LinkedInPerceptionProvider } from './LinkedInPerceptionContext'
@@ -44,6 +47,7 @@ import {
 import { ComposeInput } from './ComposeInput'
 import { useComposeContacts } from './useComposeContacts'
 import { parseComposeCommand } from '@shared/compose'
+import { composeActionFromText, meetActionTextForSubmit } from '@shared/meeting-compose'
 import {
   getContextSelectedAt,
   setTaskCorrelation,
@@ -73,7 +77,7 @@ import {
   pauseWorkspaceMedia,
   tabEligibleForMiniPlayer
 } from './workspacePlayback'
-import { forceWebviewRepaint } from './useWebviewResizeSync'
+import { forceWebviewRepaint, repaintAllWorkspaceWebviews } from './useWebviewResizeSync'
 import { useWebviewNavigation } from './useWebviewNavigation'
 import {
   captureWorkspaceBrowserContext,
@@ -166,9 +170,17 @@ function loadWorkspaceState(): {
         pinnedRaw ? (JSON.parse(pinnedRaw) as PinnedAppSession) : null
       )
       const browserExpanded = localStorage.getItem('stream.central.browserExpanded') !== '0'
+      let resolvedActiveId = activeBrowserTabId ?? browserTabs.at(-1)?.id ?? null
+      const activeTab = resolvedActiveId
+        ? browserTabs.find((t) => t.id === resolvedActiveId)
+        : null
+      // Don't restore focus to auto-opened calendar meet tabs after refresh.
+      if (activeTab?.autoOpened && activeTab.id.startsWith('cal-')) {
+        resolvedActiveId = browserTabs.find((t) => t.id !== activeTab.id)?.id ?? null
+      }
       return {
         browserTabs,
-        activeBrowserTabId: activeBrowserTabId ?? browserTabs.at(-1)?.id ?? null,
+        activeBrowserTabId: resolvedActiveId,
         homePane: 'chat',
         pinnedSession,
         browserExpanded,
@@ -205,7 +217,7 @@ function loadWorkspaceState(): {
 export function CentralApp() {
   const persistedWorkspace = loadWorkspaceState()
 
-  const { events, live, syncing } = useCentralStream()
+  const { events, live, syncing, streamError } = useCentralStream()
   const [area, setArea] = useState<Area>('work')
   const [tab, setTab] = useState<Tab>('foryou')
   const [page, setPage] = useState<Page>('stream')
@@ -799,7 +811,7 @@ export function CentralApp() {
     void refreshBrowserPageContext()
   }, [browserMode, browserContextTabId, refreshBrowserPageContext])
 
-  const composeAction = parseComposeCommand(compose)
+  const composeAction = composeActionFromText(compose)
   const contextEvent = contextItemId
     ? events.find((e) => streamItemId(e) === contextItemId)
     : null
@@ -834,7 +846,7 @@ export function CentralApp() {
       updateAgentStatus(agentId, 'Executing…')
       const result = await clusterApi.runAction(
         {
-          text: compose,
+          text: meetActionTextForSubmit(compose),
           contextItemId: contextItemId ?? undefined
         },
         { signal }
@@ -862,6 +874,9 @@ export function CentralApp() {
         }
         if (composeAction.provider === 'monday') {
           void integrationApi.syncSource('monday').catch(() => undefined)
+        }
+        if (composeAction.provider === 'meet') {
+          window.dispatchEvent(new CustomEvent('notch:calendars-updated'))
         }
         if (composeAction.intent === 'send') {
           setContextItemId(null)
@@ -1060,7 +1075,6 @@ export function CentralApp() {
       try {
         const data = await clusterApi.calendar()
         const now = Date.now()
-        let focusTab: WorkspaceTab | null = null
 
         for (const evt of data.events ?? []) {
           const tab = tabFromCalendarEvent(evt)
@@ -1069,24 +1083,18 @@ export function CentralApp() {
           const startsIn = evt.startsAt - now
           const isLive = evt.live || (startsIn <= 0 && !evt.ended)
           const startsSoon = startsIn > 0 && startsIn <= 15 * 60_000
+
+          // Live / imminent meetings: toast notifications only — never auto-open or hijack focus.
+          if (isLive || startsSoon) continue
+
           const morningPrep =
             evt.dayIndex === 0 && startsIn > 15 * 60_000 && startsIn <= 4 * 3_600_000
-
-          if (!isLive && !startsSoon && !morningPrep) continue
-          if (autoShadedRef.current.has(tab.id)) {
-            if (isLive || startsSoon) focusTab = tab
-            continue
-          }
+          if (!morningPrep) continue
+          if (wasCalendarShaded(evt.id) || autoShadedRef.current.has(tab.id)) continue
 
           autoShadedRef.current.add(tab.id)
+          markCalendarShaded(evt.id)
           openBrowserTab({ ...tab, autoOpened: true }, { activate: false })
-          if (isLive || startsSoon) focusTab = tab
-        }
-
-        if (focusTab) {
-          setActiveBrowserTabId(focusTab.id)
-          setHomePane('browser')
-          setWorkspaceView('home')
         }
       } catch {
         /* calendar optional */
@@ -1142,11 +1150,12 @@ export function CentralApp() {
   }, [focusMeetingItemId, focusMeetingEvent])
 
   const showPostCallRail = Boolean(focusMeetingItemId) && page === 'stream'
-  const contextRailCollapsed = pinnedActive || homeBrowserActive
-    ? workspaceRailCollapsed
-    : area === 'feed'
-      ? feedRailCollapsed
-      : false
+  const contextRailCollapsed =
+    showWorkspaceRail || pinnedActive || homeBrowserActive
+      ? workspaceRailCollapsed
+      : area === 'feed'
+        ? feedRailCollapsed
+        : false
   const showContextRail =
     !threadTarget &&
     !showPostCallRail &&
@@ -1155,9 +1164,30 @@ export function CentralApp() {
 
   const showThreadRail =
     Boolean(threadTarget) && page === 'stream' && (area === 'feed' || browserMode)
-  const hasRightRail = showThreadRail || showPostCallRail || showContextRail
+  const hasRightRail =
+    page === 'stream' && (showThreadRail || showPostCallRail || showContextRail)
 
   const slideBladeLayout = showWorkspaceRail && !pinnedActive
+
+  useEffect(() => {
+    if (!browserMode) return
+    repaintAllWorkspaceWebviews()
+    const t1 = window.setTimeout(repaintAllWorkspaceWebviews, 80)
+    const t2 = window.setTimeout(repaintAllWorkspaceWebviews, 280)
+    return () => {
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+    }
+  }, [
+    browserMode,
+    navOpen,
+    browserSidebarCollapsed,
+    workspaceRailCollapsed,
+    feedRailCollapsed,
+    showContextRail,
+    hasRightRail,
+    activeBrowserTabId
+  ])
 
   const navAppPlayerMode =
     !activeNavApp ? 'off' : page === 'navapp' && !navAppMini ? 'full' : navAppMini ? 'mini' : 'off'
@@ -1240,6 +1270,26 @@ export function CentralApp() {
       ) : page === 'notes' ? (
         <main className="x-main x-main-utility">
           <NotesView onOpenIntegrations={() => setPage('integrations')} />
+        </main>
+      ) : page === 'mind' ? (
+        <main className="x-main x-main-utility x-main-mind-graph">
+          <MindGraphView />
+        </main>
+      ) : page === 'pipeline' ? (
+        <main className="x-main x-main-utility x-main-pipeline">
+          <PipelineView
+            onOpenMeeting={(itemId) => {
+              setPage('stream')
+              setArea('feed')
+              setThreadTarget({ itemId })
+            }}
+            onOpenBuild={() => setPage('build')}
+            onOpenAgentQueue={() => {
+              setPage('stream')
+              setArea('feed')
+              window.dispatchEvent(new Event('notch:open-agent-inbox'))
+            }}
+          />
         </main>
       ) : page === 'navapp' ? (
         <main className="x-main x-main-nav-app" aria-hidden="true" />
@@ -1396,6 +1446,12 @@ export function CentralApp() {
 
             <FeedStreamBar activeStreamId={feedStreamId} onStreamChange={setFeedStreamId} />
 
+            {streamError ? (
+              <p className="x-stream-error-banner" role="status">
+                {streamError}
+              </p>
+            ) : null}
+
                   <div className="x-compose">
                     <div className="x-avatar x-avatar-user">A</div>
                     <div className="x-compose-body">
@@ -1431,7 +1487,7 @@ export function CentralApp() {
                         placeholder={
                           mondayContext
                             ? '@monday: comment or move to Done · @monday create: new ticket'
-                            : '@mind · @claude · @gemini · @cursor · @github · @gdocs · @gong · @perplexity · @gmail · @monday · @slack · @discord · @x'
+                            : 'Start a meet with @name right now · @mind · @claude · @monday…'
                         }
                         rows={3}
                       />
@@ -1447,7 +1503,13 @@ export function CentralApp() {
                           disabled={!composeAction || composeBusy}
                           onClick={() => void submitCompose()}
                         >
-                          {composeBusy ? 'Running…' : composeAction ? 'Run action' : 'Post'}
+                          {composeBusy
+                            ? 'Running…'
+                            : composeAction?.provider === 'meet'
+                              ? 'Schedule Meet'
+                              : composeAction
+                                ? 'Run action'
+                                : 'Post'}
                         </button>
                       </div>
                     </div>
@@ -1643,6 +1705,17 @@ export function CentralApp() {
                 }}
               />
             </aside>
+          ) : null}
+          {showWorkspaceRail && !threadTarget && !showPostCallRail ? (
+            <button
+              type="button"
+              className={`x-context-rail-tab${workspaceRailCollapsed ? ' x-context-rail-tab-collapsed' : ''}`}
+              aria-label={workspaceRailCollapsed ? 'Show side panel' : 'Hide side panel'}
+              title={workspaceRailCollapsed ? 'Show side panel' : 'Hide side panel'}
+              onClick={toggleWorkspaceRail}
+            >
+              {workspaceRailCollapsed ? '‹' : '›'}
+            </button>
           ) : null}
           </div>
         </>

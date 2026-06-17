@@ -43,6 +43,11 @@ const plist = `<?xml version="1.0" encoding="UTF-8"?>
   <true/>
   <key>KeepAlive</key>
   <true/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
   <key>StandardOutPath</key>
   <string>${join(LOG_DIR, 'stream-tunnel.log')}</string>
   <key>StandardErrorPath</key>

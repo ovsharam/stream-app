@@ -18,6 +18,17 @@ const PAGE_SPOOF = `(function() {
 
 void webFrame.executeJavaScript(PAGE_SPOOF, true).catch(() => {})
 
+const HIDE_SCROLLBAR = `(function(){
+  var id='notch-hide-scrollbar';
+  if(document.getElementById(id))return;
+  var s=document.createElement('style');
+  s.id=id;
+  s.textContent='html,body,*{scrollbar-width:none!important;-ms-overflow-style:none!important}*::-webkit-scrollbar,html::-webkit-scrollbar,body::-webkit-scrollbar{display:none!important;width:0!important;height:0!important;background:transparent!important}';
+  (document.head||document.documentElement).appendChild(s);
+})();`
+
+void webFrame.executeJavaScript(HIDE_SCROLLBAR, true).catch(() => {})
+
 try {
   Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true })
 } catch {

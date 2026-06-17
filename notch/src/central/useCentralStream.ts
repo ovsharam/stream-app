@@ -58,6 +58,7 @@ export function useCentralStream() {
   const [events, setEvents] = useState<CentralStreamEvent[]>([])
   const [live, setLive] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [streamError, setStreamError] = useState<string | null>(null)
 
   const lastSyncMs = useRef(0)
   const liveRef = useRef(false)
@@ -83,6 +84,7 @@ export function useCentralStream() {
       lastSyncMs.current = Date.now()
 
       setEvents((prev) => mergeEvents(prev, incoming))
+      setStreamError(null)
       const nextLive = incoming.some(isLiveEvent)
       liveRef.current = nextLive
       setLive(nextLive)
@@ -90,8 +92,12 @@ export function useCentralStream() {
       void integrationApi.cursorReconcileBuilds().then((result) => {
         if (result.updated > 0) window.dispatchEvent(new Event('notch:stream-push'))
       })
-    } catch {
-      /* keep stale data on error */
+    } catch (err) {
+      setStreamError(
+        err instanceof Error
+          ? err.message
+          : 'Cannot reach Stream API — run npm run dev:notch and refresh'
+      )
     } finally {
       inFlightRef.current = false
       if (syncDelayRef.current) {
@@ -158,5 +164,5 @@ export function useCentralStream() {
     }
   }, [sync, scheduleSync])
 
-  return { events, live, syncing }
+  return { events, live, syncing, streamError }
 }

@@ -138,11 +138,12 @@ export function useDataDashboard() {
 
   useEffect(() => {
     void (async () => {
-      const status = await checkStatus()
-      if (status.reachable) {
+      await checkStatus()
+      try {
         await refresh()
-      } else {
-        setSnapshot(emptyDashboardSnapshot())
+      } catch {
+        /* refresh sets error + empty snapshot if both live and cache fail */
+      } finally {
         setLoading(false)
       }
     })()

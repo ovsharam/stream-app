@@ -7,7 +7,6 @@ const KIND_LABELS: Record<AppToastKind, string> = {
 }
 
 function ToastCard({ toast }: { toast: AppToast }) {
-  const primary = toast.actions?.find((a) => a.primary) ?? toast.actions?.[0]
   const kindClass =
     toast.kind === 'meeting'
       ? 'x-toast-meeting'
@@ -15,6 +14,7 @@ function ToastCard({ toast }: { toast: AppToast }) {
         ? 'x-toast-agent'
         : 'x-toast-info'
   const urgentClass = toast.urgency === 'high' ? ' x-toast-urgent' : ''
+  const actions = toast.actions ?? []
 
   return (
     <div
@@ -22,31 +22,9 @@ function ToastCard({ toast }: { toast: AppToast }) {
       role="status"
       aria-live="polite"
     >
-      <div className="x-toast-row">
-        <span className="x-toast-badge">{KIND_LABELS[toast.kind]}</span>
-        <div className="x-toast-copy">
-          <p className="x-toast-title">{toast.title}</p>
-          {toast.subtitle ? <p className="x-toast-subtitle">{toast.subtitle}</p> : null}
-        </div>
-        <div className="x-toast-row-actions">
-          {toast.actions?.map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              className={action.primary ? 'x-toast-pill x-toast-pill-primary' : 'x-toast-pill'}
-              onClick={(e) => {
-                e.stopPropagation()
-                action.onClick()
-              }}
-            >
-              {action.label}
-            </button>
-          ))}
-          {primary && !toast.actions?.length ? (
-            <button type="button" className="x-toast-pill x-toast-pill-primary" onClick={primary.onClick}>
-              Open
-            </button>
-          ) : null}
+      <div className="x-toast-inner">
+        <div className="x-toast-head">
+          <span className="x-toast-badge">{KIND_LABELS[toast.kind]}</span>
           <button
             type="button"
             className="x-toast-dismiss"
@@ -56,6 +34,25 @@ function ToastCard({ toast }: { toast: AppToast }) {
             ×
           </button>
         </div>
+        <p className="x-toast-title">{toast.title}</p>
+        {toast.subtitle ? <p className="x-toast-subtitle">{toast.subtitle}</p> : null}
+        {actions.length > 0 ? (
+          <div className="x-toast-foot">
+            {actions.map((action) => (
+              <button
+                key={action.label}
+                type="button"
+                className={action.primary ? 'x-toast-pill x-toast-pill-primary' : 'x-toast-pill'}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  action.onClick()
+                }}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   )

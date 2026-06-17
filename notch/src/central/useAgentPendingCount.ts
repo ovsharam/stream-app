@@ -3,6 +3,7 @@ import { agentApi } from '../lib/api'
 
 export function useAgentPendingCount(): number {
   const [count, setCount] = useState(0)
+  const [pendingDismiss, setPendingDismiss] = useState<Set<string>>(() => new Set())
 
   const load = useCallback(async () => {
     try {
@@ -24,5 +25,30 @@ export function useAgentPendingCount(): number {
     }
   }, [load])
 
-  return count
+  useEffect(() => {
+    const addPending = (e: Event) => {
+      const id = (e as CustomEvent<{ proposalId?: string }>).detail?.proposalId
+      if (!id) return
+      setPendingDismiss((prev) => new Set(prev).add(id))
+    }
+    const removePending = (e: Event) => {
+      const id = (e as CustomEvent<{ proposalId?: string }>).detail?.proposalId
+      if (!id) return
+      setPendingDismiss((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    }
+    window.addEventListener('notch:agent-proposal-dismiss-pending', addPending)
+    window.addEventListener('notch:agent-proposal-dismiss-cancelled', removePending)
+    window.addEventListener('notch:agent-proposal-resolved', removePending)
+    return () => {
+      window.removeEventListener('notch:agent-proposal-dismiss-pending', addPending)
+      window.removeEventListener('notch:agent-proposal-dismiss-cancelled', removePending)
+      window.removeEventListener('notch:agent-proposal-resolved', removePending)
+    }
+  }, [])
+
+  return Math.max(0, count - pendingDismiss.size)
 }

@@ -11,6 +11,7 @@ import {
 import { workspaceUrlsEquivalent, LINKEDIN_MESSAGING_URL, type EmbedBrowseKind } from './embedBrowse'
 import { useLinkedInComposePaste } from './useLinkedInComposePaste'
 import { useLinkedInPerceptionBackground } from './LinkedInPerceptionContext'
+import { WEBVIEW_HIDE_SCROLLBAR_JS } from './webviewHideScrollbar'
 
 type Props = {
   className?: string
@@ -138,7 +139,6 @@ export function EmbeddedWebview({
   }
 
   useEffect(() => {
-    if (!embedBrowseKind) return
     const getter = window.notchDesktop?.getGuestPreloadPath
     if (!getter) return
     void getter()
@@ -148,7 +148,20 @@ export function EmbeddedWebview({
       .catch(() => {
         /* mount without preload */
       })
-  }, [embedBrowseKind])
+  }, [])
+
+  useEffect(() => {
+    const webview = webviewEl as WebviewEl | null
+    if (!webview?.executeJavaScript || !domReady) return
+
+    const hideScrollbar = () => {
+      void webview.executeJavaScript?.(WEBVIEW_HIDE_SCROLLBAR_JS, true).catch(() => {})
+    }
+
+    hideScrollbar()
+    webview.addEventListener?.('did-finish-load', hideScrollbar)
+    return () => webview.removeEventListener?.('did-finish-load', hideScrollbar)
+  }, [webviewEl, domReady])
 
   useEffect(() => {
     if (!reloadNonce || !domReady) return

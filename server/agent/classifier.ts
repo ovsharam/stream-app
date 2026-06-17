@@ -17,7 +17,8 @@ const SCHEDULE_RE = /\b(schedule|book|meeting|call|sync|catch up|calendar|slot|t
 
 function heuristicClassify(
   input: LinkedInIngestInput,
-  invitee: InviteeResolution
+  invitee: InviteeResolution,
+  opts?: { userDraft?: string }
 ): ClassifierResult {
   const lower = input.message.toLowerCase()
   let intent: AgentIntent = 'other'
@@ -37,7 +38,9 @@ function heuristicClassify(
   const firstName = input.senderName.split(/\s+/)[0] ?? 'there'
 
   let linkedinReplyDraft = `Hi ${firstName} — thanks for reaching out. I'll follow up shortly.`
-  if (intent === 'schedule_new') {
+  if (opts?.userDraft?.trim()) {
+    linkedinReplyDraft = opts.userDraft.trim()
+  } else if (intent === 'schedule_new') {
     linkedinReplyDraft = `Hi ${firstName} — happy to find time. I'll send a calendar invite shortly with a few options that work on my end.`
   } else if (intent === 'reschedule') {
     linkedinReplyDraft = `Hi ${firstName} — no problem, we can move this. I'll send updated times shortly.`
@@ -109,15 +112,20 @@ function parseClassifierJson(text: string): ClassifierResult | null {
 
 export async function classifyLinkedInMessage(
   input: LinkedInIngestInput,
-  invitee: InviteeResolution
+  invitee: InviteeResolution,
+  opts?: { userDraft?: string }
 ): Promise<ClassifierResult> {
   if (!isClaudeConnected() && !process.env.ANTHROPIC_API_KEY?.trim()) {
-    return heuristicClassify(input, invitee)
+    return heuristicClassify(input, invitee, opts)
   }
+
+  const userDraftBlock = opts?.userDraft?.trim()
+    ? `\nUSER_EDITED_DRAFT (refine this reply; preserve the operator's intent and phrasing where possible):\n${opts.userDraft.trim()}`
+    : ''
 
   const userBlock = `SENDER: ${input.senderName}
 THREAD_ID: ${input.threadId}
-RESOLVED_INVITEE: ${JSON.stringify(invitee)}
+RESOLVED_INVITEE: ${JSON.stringify(invitee)}${userDraftBlock}
 MESSAGE:
 ${input.message}`
 
@@ -138,7 +146,7 @@ ${input.message}`
     console.warn('[agent] classifier fallback:', err instanceof Error ? err.message : err)
   }
 
-  return heuristicClassify(input, invitee)
+  return heuristicClassify(input, invitee, opts)
 }
 
 export function messageLooksActionable(text: string): boolean {

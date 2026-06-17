@@ -36,6 +36,7 @@ import { getCaptureProfile, isObsidianConfigured } from '../../sources/captureSt
 import { ingestConsciousness } from '../../kb/pipeline'
 import type { ComposeCommand } from '../../../shared/compose'
 import { parseComposeCommand } from '../../../shared/compose'
+import { scheduleGoogleMeetFromText } from '../../sources/googleMeetSchedule'
 import { getRecentItems } from '../../db'
 
 export type ActionRunContext = ActionRunInput & {
@@ -344,6 +345,19 @@ async function runCalcom(ctx: ActionRunContext): Promise<ActionRunResult> {
   }
 }
 
+async function runMeet(ctx: ActionRunContext): Promise<ActionRunResult> {
+  if (ctx.parsed.intent !== 'schedule') {
+    return fail('meet', 'Use @meet with @name tomorrow at 3pm')
+  }
+  const meetBody =
+    ctx.raw.replace(/^@(?:meet|gmeet|googlemeet)\s+/i, '').trim() ||
+    ctx.parsed.body.trim() ||
+    ctx.command.trim()
+  const result = await scheduleGoogleMeetFromText(meetBody, ctx.sessionId, ctx.io)
+  if (!result.ok) return fail('meet', result.message)
+  return ok('meet', result.message)
+}
+
 async function runObsidian(ctx: ActionRunContext): Promise<ActionRunResult> {
   if (!isObsidianConfigured(ctx.sessionId)) {
     return fail(
@@ -395,5 +409,6 @@ export function registerIntegrationExecutors(): void {
   registerActionExecutor('obsidian', wrap('obsidian', runObsidian))
   registerActionExecutor('gong', wrap('gong', runGong))
   registerActionExecutor('calcom', wrap('calcom', runCalcom))
+  registerActionExecutor('meet', wrap('meet', runMeet))
   registerActionExecutor('mind', wrap('mind', runMind))
 }

@@ -9,7 +9,7 @@ import { syncPerplexity } from './sources/perplexity'
 import { syncSlack } from './sources/slack'
 import { syncX } from './sources/x'
 import { ingestRecentStream } from './kb/pipeline'
-import { syncGoogleSourcesIfDue } from './googleBackgroundSync'
+import { syncGmailIfDue } from './googleBackgroundSync'
 
 const POLL_MS = 90_000
 let lastPollAt = 0
@@ -32,7 +32,7 @@ export function pollIntegrationsIfDue(io?: SocketServer): void {
     syncClaude(io),
     syncPerplexity(io),
     syncCalcom(io),
-    syncGoogleSourcesIfDue(io)
+    syncGmailIfDue(io)
   ])
     .then(() => {
       try {

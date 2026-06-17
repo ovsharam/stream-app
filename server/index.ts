@@ -24,7 +24,7 @@ import { initOperatorTelemetryStore } from './telemetry/store'
 import { initAgentStore } from './agent/store'
 import { bindDashboardSocket } from './dashboard/broadcast'
 import { initIntentionEpisodes } from './intention/service'
-import { syncGoogleSourcesIfDue } from './googleBackgroundSync'
+import { syncGoogleSourcesIfDue, startGmailBackgroundSync } from './googleBackgroundSync'
 
 config({ path: join(process.cwd(), '.env.local') })
 config()
@@ -47,9 +47,10 @@ async function main(): Promise<void> {
   initAgentStore()
   initIntentionEpisodes()
 
-  const { startPipelineAutoSync } =
+  const { startPipelineAutoSync, runPipelineSync } =
     require('./pipeline/framework') as typeof import('./pipeline/framework')
   startPipelineAutoSync()
+  void runPipelineSync()
 
   if (process.env.GEMINI_API_KEY?.trim()) {
     console.log('[server] GEMINI_API_KEY loaded — auto-connects per session')
@@ -138,6 +139,9 @@ async function main(): Promise<void> {
     console.log(`[server] STREAM API ready on :${PORT}`)
     void backgroundSync()
     setInterval(() => void backgroundSync(), 5 * 60_000)
+    const stopGmailSync = startGmailBackgroundSync(io)
+    process.on('SIGTERM', stopGmailSync)
+    process.on('SIGINT', stopGmailSync)
     void startSlackSocketMode(io).catch((e) =>
       console.warn('[slack] socket mode skipped:', e.message)
     )

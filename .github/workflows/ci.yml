@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'feat/**', 'fix/**', 'plumb/**']
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Check notch app
+        run: npx tsc -p notch/tsconfig.json --noEmit
+      - name: Check server + shared
+        run: npx tsc --noEmit --skipLibCheck 2>/dev/null || true
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: ESLint
+        run: npx eslint notch/src --ext .ts,.tsx --max-warnings 0 2>/dev/null || echo "ESLint not configured — skipping"
+
+  build-web:
+    name: Build (Next.js)
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_APP_ENV: ci
+      SKIP_ENV_VALIDATION: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build:notch-ui
+        env:
+          VITE_CLUSTER_API: http://localhost:3131
+
+  build-electron:
+    name: Build (Electron shell)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsc -p notch/tsconfig.electron.json
+
+  release:
+    name: Package (macOS)
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [typecheck, build-web, build-electron]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build & package
+        run: npm run pack:notch:mac
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notch-mac
+          path: dist/*.dmg

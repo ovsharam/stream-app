@@ -15,6 +15,8 @@ RUN npm rebuild better-sqlite3
 # Copy application source
 COPY server/ ./server/
 COPY shared/ ./shared/
+COPY notch/graph/ ./notch/graph/
+COPY notch/simulation/ ./notch/simulation/
 COPY tsconfig.json ./tsconfig.node.json* ./
 
 # Expose API port

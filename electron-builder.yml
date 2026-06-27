@@ -1,5 +1,5 @@
-appId: com.appliedscope.notch
-productName: Notch
+appId: com.appliedscope.plumb
+productName: Plumb
 copyright: Copyright © Applied Scope
 
 directories:
@@ -29,7 +29,7 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
 
 dmg:
-  title: Notch
+  title: Plumb
   contents:
     - x: 130
       y: 220
@@ -38,6 +38,10 @@ dmg:
       type: link
       path: /Applications
 
-publish: null
+publish:
+  provider: github
+  owner: ovsharam
+  repo: stream-app
+  releaseType: release
 
 afterPack: scripts/notch-after-pack.mjs

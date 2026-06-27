@@ -2656,6 +2656,72 @@ export function createRouter(io?: SocketServer): Router {
     }
   })
 
+  /* ── Behavioral Telemetry ─────────────────────────────────────────────── */
+
+  router.post('/telemetry', async (req, res) => {
+    const events = Array.isArray(req.body) ? req.body : [req.body]
+    if (events.length === 0) { res.json({ ok: true }); return }
+    try {
+      const { storeTelemetryEvents } = await import('./telemetryStore')
+      await storeTelemetryEvents(events, req.userId ?? undefined)
+    } catch {
+      /* telemetry store is optional — never fail a client request */
+    }
+    res.json({ ok: true })
+  })
+
+  router.get('/telemetry/recent', (_req, res) => {
+    try {
+      const { getRecentTelemetry } = require('./telemetryStore') as typeof import('./telemetryStore')
+      res.json({ events: getRecentTelemetry(500) })
+    } catch {
+      res.json({ events: [] })
+    }
+  })
+
+  router.get('/telemetry/stats', (_req, res) => {
+    try {
+      const { getRecentTelemetry } = require('./telemetryStore') as typeof import('./telemetryStore')
+      const events = getRecentTelemetry(2000)
+      const now = Date.now()
+      const last24h = events.filter((e) => now - e.ts < 86_400_000)
+      const llmCalls = last24h.filter((e) => e.event === 'chat.response')
+      const feedImpressions = last24h.filter((e) => e.event === 'feed.impression')
+      const signalRates = last24h.filter((e) => e.event === 'feed.signal_rate')
+      const sessions = new Set(last24h.map((e) => e.sessionId)).size
+      const ratings = { confirmed: 0, noise: 0, known: 0 }
+      for (const ev of signalRates) {
+        const r = (ev as Record<string, unknown>).rating as string
+        if (r === 'confirmed') ratings.confirmed++
+        else if (r === 'noise') ratings.noise++
+        else if (r === 'known') ratings.known++
+      }
+      const avgLatency = llmCalls.length
+        ? Math.round(llmCalls.reduce((s, e) => s + (((e as Record<string, unknown>).latencyMs as number) ?? 0), 0) / llmCalls.length)
+        : null
+      const thinkingRate = llmCalls.length
+        ? Math.round((llmCalls.filter((e) => (e as Record<string, unknown>).hadThinking).length / llmCalls.length) * 100)
+        : 0
+      const navCounts: Record<string, number> = {}
+      for (const ev of last24h.filter((e) => e.event === 'nav.page')) {
+        const p = (ev as Record<string, unknown>).page as string
+        navCounts[p] = (navCounts[p] ?? 0) + 1
+      }
+      res.json({
+        sessions,
+        llmCalls: llmCalls.length,
+        avgLatencyMs: avgLatency,
+        thinkingRate,
+        feedImpressions: feedImpressions.length,
+        signalRatings: ratings,
+        topPages: Object.entries(navCounts).sort((a, b) => b[1] - a[1]).slice(0, 6),
+        totalEvents: last24h.length
+      })
+    } catch {
+      res.json({ sessions: 0, llmCalls: 0, avgLatencyMs: null, thinkingRate: 0, feedImpressions: 0, signalRatings: { confirmed: 0, noise: 0, known: 0 }, topPages: [], totalEvents: 0 })
+    }
+  })
+
   return router
 }
 

@@ -1,0 +1,256 @@
+@import "tailwindcss";
+
+:root {
+  --ink:     #0c0c0c;
+  --paper:   #ffffff;
+  --line:    #e8e8e8;
+  --muted:   #6b6b6b;
+  --subtle:  #aaaaaa;
+  --teal:    #1db584;
+  --teal-dim: rgba(29,181,132,0.10);
+  --dark:    #0d1117;
+  --dark-2:  #0a0f14;
+}
+
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-inter), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Keyframes ─────────────────────────────────────────────────────── */
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-up {
+  from { transform: translateY(12px); }
+  to   { transform: translateY(0); }
+}
+
+@keyframes stream-tick {
+  to { transform: translateY(-50%); }
+}
+
+@keyframes dot-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.25; }
+}
+
+/* ── Hero animations (CSS-only, no JS) ────────────────────────────── */
+
+.h0 { animation: fade-up 0.65s cubic-bezier(0.16,1,0.3,1)        both; }
+.h1 { animation: fade-up 0.65s cubic-bezier(0.16,1,0.3,1) .08s   both; }
+.h2 { animation: fade-up 0.65s cubic-bezier(0.16,1,0.3,1) .16s   both; }
+.h3 { animation: fade-up 0.65s cubic-bezier(0.16,1,0.3,1) .25s   both; }
+.h4 { animation: fade-up 0.65s cubic-bezier(0.16,1,0.3,1) .35s   both; }
+.h5 { animation: fade-up 0.8s  cubic-bezier(0.16,1,0.3,1) .46s   both; }
+
+/* ── Scroll reveals — transform only, never opacity ───────────────── */
+
+@supports (animation-timeline: view()) {
+  .reveal {
+    animation: slide-up 0.6s cubic-bezier(0.16,1,0.3,1) both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 28%;
+  }
+  .reveal-d1 { animation-delay: 70ms; }
+  .reveal-d2 { animation-delay: 140ms; }
+  .reveal-d3 { animation-delay: 210ms; }
+}
+
+.stream { animation: stream-tick 28s linear infinite; }
+.blink  { animation: dot-blink   2s  ease-in-out infinite; }
+
+/* ── Typography ─────────────────────────────────────────────────────── */
+
+.serif {
+  font-family: var(--font-lora), Georgia, 'Times New Roman', serif;
+}
+
+.display {
+  font-family: var(--font-lora), Georgia, serif;
+  font-size: clamp(2.6rem, 5.2vw, 4.25rem);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+}
+
+.display-md {
+  font-family: var(--font-lora), Georgia, serif;
+  font-size: clamp(1.6rem, 2.6vw, 2.25rem);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.16;
+}
+
+.display-sm {
+  font-family: var(--font-lora), Georgia, serif;
+  font-size: clamp(1.25rem, 2vw, 1.6rem);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.section-no {
+  font-family: var(--font-jetbrains), monospace;
+  font-size: 0.6875rem;
+  color: var(--subtle);
+  letter-spacing: 0.01em;
+}
+
+/* ── Access link ─────────────────────────────────────────────────────── */
+
+.access-link {
+  font-size: 0.9375rem;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: #bbb;
+  letter-spacing: -0.01em;
+  transition: text-decoration-color .15s;
+}
+.access-link:hover { text-decoration-color: var(--ink); }
+
+/* ── Nav link ─────────────────────────────────────────────────────────── */
+
+.nav-a {
+  font-size: .875rem;
+  color: var(--muted);
+  text-decoration: none;
+  letter-spacing: -0.01em;
+  transition: color .14s;
+}
+.nav-a:hover { color: var(--ink); }
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.65rem 1.25rem;
+  border-radius: 999px;
+  text-decoration: none;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  border: none;
+  line-height: 1;
+  transition: opacity .15s, transform .1s;
+}
+.btn-solid   { background: var(--ink); color: #fff; }
+.btn-solid:hover  { opacity: .78; }
+.btn-solid:active { transform: scale(.97); }
+
+.btn-teal    { background: var(--teal); color: #fff; border-radius: 999px; }
+.btn-teal:hover  { opacity: .85; }
+
+.btn-ghost-dk { background: transparent; color: rgba(255,255,255,0.6); border: 1px solid rgba(255,255,255,0.16); border-radius: 999px; }
+.btn-ghost-dk:hover { color: #fff; border-color: rgba(255,255,255,0.36); }
+
+.btn-outline  { background: transparent; color: var(--muted); border: 1px solid #d4d4d4; border-radius: 999px; }
+.btn-outline:hover { color: var(--ink); border-color: #888; }
+
+/* ── Divider ─────────────────────────────────────────────────────────── */
+
+.section-rule { border: none; border-top: 1px solid var(--line); }
+
+/* ── Feature grid ────────────────────────────────────────────────────── */
+
+.feat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.feat-cell {
+  background: #fff;
+  padding: 40px 36px;
+}
+
+/* ── Compare cards ───────────────────────────────────────────────────── */
+
+.comp-card {
+  border-radius: 12px;
+  padding: 32px;
+  border: 1px solid var(--line);
+}
+.comp-card.bad  { background: #fafafa; }
+.comp-card.good { background: rgba(29,181,132,0.04); border-color: rgba(29,181,132,0.28); }
+
+/* ── Dark section overrides ──────────────────────────────────────────── */
+
+.dark-sect { background: var(--dark); }
+.dark-sect .section-no { color: rgba(255,255,255,0.25); }
+.dark-sect .nav-a { color: rgba(255,255,255,0.4); }
+
+/* ── Extraction tree animation ───────────────────────────────────────── */
+
+@keyframes draw-path {
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes dot-appear {
+  to { opacity: 1; }
+}
+
+.tree-line {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+
+.tree-dot {
+  opacity: 0;
+}
+
+/* Triggered when .tree-in is added via IntersectionObserver */
+.tree-in .tree-line { animation: draw-path 0.55s cubic-bezier(0.4,0,0.2,1) forwards; }
+.tree-in .tree-dot  { animation: dot-appear 0.2s ease forwards; }
+
+/* Line delays — trunk → split → spines → items (parallel) */
+.tree-in .tl0  { animation-delay: 0ms; }
+.tree-in .tl1  { animation-delay: 260ms; }
+.tree-in .tl2a { animation-delay: 480ms; }
+.tree-in .tl2b { animation-delay: 480ms; }
+.tree-in .tl3  { animation-delay: 680ms; }
+.tree-in .tl4  { animation-delay: 820ms; }
+.tree-in .tl5  { animation-delay: 960ms; }
+.tree-in .tl6  { animation-delay: 680ms; }
+.tree-in .tl7  { animation-delay: 790ms; }
+.tree-in .tl8  { animation-delay: 900ms; }
+.tree-in .tl9  { animation-delay: 1010ms; }
+.tree-in .tl10 { animation-delay: 1120ms; }
+
+/* Dot delays — shortly after their branch line finishes */
+.tree-in .tn0  { animation-delay: 0ms; }
+.tree-in .tn1  { animation-delay: 780ms; }
+.tree-in .tn2  { animation-delay: 920ms; }
+.tree-in .tn3  { animation-delay: 1060ms; }
+.tree-in .tn4  { animation-delay: 780ms; }
+.tree-in .tn5  { animation-delay: 890ms; }
+.tree-in .tn6  { animation-delay: 1000ms; }
+.tree-in .tn7  { animation-delay: 1110ms; }
+.tree-in .tn8  { animation-delay: 1220ms; }
+
+/* ── Login page ─────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .login-left { display: none !important; }
+}

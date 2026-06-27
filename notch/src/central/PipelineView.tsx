@@ -116,17 +116,6 @@ export function PipelineView({ buildEvents, onOpenCase, onOpenMeeting, onOpenBui
     }
   }, [engagements, proposals.length, buildActivity.runningBuilds.length])
 
-  const latestSignal = useMemo(() => {
-    if (engagements.length === 0) return null
-    const sorted = [...engagements].sort((a, b) => b.updatedAt - a.updatedAt)
-    const latest = sorted[0]!
-    return {
-      kind: latest.stage === 'build' ? 'build' : 'deal',
-      detail: `${latest.clientName}${latest.summary ? ` — ${latest.summary.slice(0, 80)}` : ''}`,
-      at: latest.updatedAt
-    }
-  }, [engagements])
-
   const byStage = useMemo(
     () => engagementsByPipelineStage(filteredEngagements, buildActivity.displayStage),
     [filteredEngagements, buildActivity]
@@ -191,12 +180,12 @@ export function PipelineView({ buildEvents, onOpenCase, onOpenMeeting, onOpenBui
     <div className="x-pipeline">
       <header className="x-pipeline-toolbar">
         <div className="x-pipeline-toolbar-main">
-          <div className="x-pipeline-breadcrumb">
-            <span>Workspace</span>
-            <span className="x-pipeline-breadcrumb-sep">/</span>
-            <span>Pipeline</span>
+          <h1 className="x-pipeline-title">Pipeline</h1>
+          <div className="x-pipeline-kpis-inline" aria-label="Pipeline metrics">
+            <span className="x-pipeline-kpi-chip"><strong>{kpis.open}</strong> open</span>
+            {kpis.building > 0 ? <span className="x-pipeline-kpi-chip x-pipeline-kpi-chip-accent"><strong>{kpis.building}</strong> building</span> : null}
+            {kpis.contextGaps > 0 ? <span className="x-pipeline-kpi-chip x-pipeline-kpi-chip-warn"><strong>{kpis.contextGaps}</strong> gaps</span> : null}
           </div>
-          <h1 className="x-pipeline-title">Deployment pipeline</h1>
         </div>
         <label className="x-pipeline-search">
           <IconSearch className="x-pipeline-search-icon" />
@@ -216,7 +205,7 @@ export function PipelineView({ buildEvents, onOpenCase, onOpenMeeting, onOpenBui
           ) : null}
           {proposals.length > 0 ? (
             <button type="button" className="x-pipeline-agent-pill" onClick={openAgentQueue}>
-              {proposals.length} agent draft{proposals.length === 1 ? '' : 's'}
+              {proposals.length} draft{proposals.length === 1 ? '' : 's'}
             </button>
           ) : null}
           {onOpenBuild ? (
@@ -226,7 +215,7 @@ export function PipelineView({ buildEvents, onOpenCase, onOpenMeeting, onOpenBui
           ) : null}
           {onOpenDemo ? (
             <button type="button" className="x-pipeline-btn x-pipeline-btn-muted" onClick={onOpenDemo}>
-              Live demo
+              Demo
             </button>
           ) : null}
           <button
@@ -235,37 +224,10 @@ export function PipelineView({ buildEvents, onOpenCase, onOpenMeeting, onOpenBui
             disabled={creating}
             onClick={() => setNewCaseOpen(true)}
           >
-            New engagement
+            + New
           </button>
         </div>
       </header>
-
-      {latestSignal ? (
-        <div className="x-pipeline-sensor" aria-live="polite">
-          <span className="x-pipeline-sensor-kind">{latestSignal.kind}</span>
-          <span className="x-pipeline-sensor-detail">{latestSignal.detail}</span>
-          <span className="x-pipeline-sensor-time">{formatRelative(latestSignal.at)}</span>
-        </div>
-      ) : null}
-
-      <div className="x-pipeline-kpis" aria-label="Pipeline metrics">
-        <div className="x-pipeline-kpi">
-          <span className="x-pipeline-kpi-value">{kpis.open}</span>
-          <span className="x-pipeline-kpi-label">Open</span>
-        </div>
-        <div className="x-pipeline-kpi">
-          <span className="x-pipeline-kpi-value">{kpis.building}</span>
-          <span className="x-pipeline-kpi-label">Building</span>
-        </div>
-        <div className="x-pipeline-kpi">
-          <span className="x-pipeline-kpi-value">{kpis.contextGaps}</span>
-          <span className="x-pipeline-kpi-label">Gaps</span>
-        </div>
-        <div className="x-pipeline-kpi">
-          <span className="x-pipeline-kpi-value">{kpis.signals}</span>
-          <span className="x-pipeline-kpi-label">Signals</span>
-        </div>
-      </div>
 
       <div className="x-pipeline-body">
         <div className={`x-pipeline-board${refreshing ? ' x-pipeline-board-refreshing' : ''}`}>
@@ -318,11 +280,15 @@ export function PipelineView({ buildEvents, onOpenCase, onOpenMeeting, onOpenBui
                   byStage[col.id].map((e) => {
                     const isBuilding = buildActivity.buildingEngagementIds.has(e.id)
                     const linkedPending = (e.proposalIds ?? []).some((id) => proposalById.has(id))
+                    const escClass = e.escalationLevel === 2
+                      ? ' x-pipeline-card-esc-2'
+                      : e.escalationLevel === 1 ? ' x-pipeline-card-esc-1' : ''
+                    const extraSignals = e.signalSources && e.signalSources.length > 3 ? e.signalSources.length - 3 : 0
                     return (
                       <li key={e.id}>
                         <button
                           type="button"
-                          className={`x-pipeline-card${e.escalationLevel > 0 ? ' alert' : ''}${pendingIds.has(e.id) ? ' pending' : ''}${isBuilding ? ' x-pipeline-card-building' : ''}`}
+                          className={`x-pipeline-card${escClass}${pendingIds.has(e.id) ? ' pending' : ''}${isBuilding ? ' x-pipeline-card-building' : ''}`}
                           onClick={() => onOpenCase(e.id)}
                         >
                           <div className="x-pipeline-card-top">
@@ -337,9 +303,20 @@ export function PipelineView({ buildEvents, onOpenCase, onOpenMeeting, onOpenBui
                           {e.company ? <p className="x-pipeline-card-co">{e.company}</p> : null}
                           {e.summary ? (
                             <p className="x-pipeline-card-summary">
-                              {e.summary.slice(0, 120)}
-                              {e.summary.length > 120 ? '…' : ''}
+                              {e.summary.slice(0, 110)}
+                              {e.summary.length > 110 ? '…' : ''}
                             </p>
+                          ) : null}
+                          {e.stage === 'context' && e.contextScore != null ? (
+                            <div className="x-pipeline-context-score-wrap">
+                              <span className="x-pipeline-context-score-label">Context {e.contextScore}%</span>
+                              <div className="x-pipeline-context-score">
+                                <div className="x-pipeline-context-score-fill" style={{ width: `${e.contextScore}%` }} />
+                              </div>
+                            </div>
+                          ) : null}
+                          {e.nextSteps.length > 0 ? (
+                            <p className="x-pipeline-card-next">→ {e.nextSteps[0]}</p>
                           ) : null}
                           <div className="x-pipeline-card-foot">
                             <span className="x-pipeline-card-time">{formatRelative(e.updatedAt)}</span>
@@ -352,11 +329,24 @@ export function PipelineView({ buildEvents, onOpenCase, onOpenMeeting, onOpenBui
                                   agent
                                 </span>
                               ) : null}
-                              {e.signalSources?.slice(0, 2).map((s) => (
+                              {e.openQuestions.length > 0 ? (
+                                <span className="x-pipeline-card-gaps" title={e.openQuestions.join('\n')}>
+                                  {e.openQuestions.length} gap{e.openQuestions.length > 1 ? 's' : ''}
+                                </span>
+                              ) : null}
+                              {e.meetingIds.length > 0 ? (
+                                <span className="x-pipeline-card-mtg">
+                                  {e.meetingIds.length} mtg{e.meetingIds.length > 1 ? 's' : ''}
+                                </span>
+                              ) : null}
+                              {e.signalSources?.slice(0, 3).map((s) => (
                                 <span key={s} className="x-pipeline-signal">
                                   {SIGNAL_LABEL[s] ?? s}
                                 </span>
                               ))}
+                              {extraSignals > 0 ? (
+                                <span className="x-pipeline-signal">+{extraSignals}</span>
+                              ) : null}
                             </div>
                           </div>
                           {e.flags.length > 0 ? (
@@ -375,8 +365,7 @@ export function PipelineView({ buildEvents, onOpenCase, onOpenMeeting, onOpenBui
 
       {engagements.length === 0 && !refreshing ? (
         <p className="x-pipeline-empty">
-          Engagements appear from calls, inbound signals, and agent routing — or create one with{' '}
-          <strong>New engagement</strong>.
+          Engagements are created from processed meetings, inbound signals, and agent routing — or add one with <strong>+ New</strong>.
         </p>
       ) : filteredEngagements.length === 0 && searchQuery.trim() ? (
         <p className="x-pipeline-empty">No engagements match &ldquo;{searchQuery.trim()}&rdquo;.</p>

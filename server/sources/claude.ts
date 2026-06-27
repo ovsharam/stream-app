@@ -65,20 +65,24 @@ function inferenceKey(): string | undefined {
 async function queryWithApiKey(
   key: string,
   query: string,
-  systemPrompt: string
+  systemPrompt: string,
+  opts?: { thinking?: boolean }
 ): Promise<Response> {
+  const thinking = opts?.thinking
   return fetch(API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-api-key': key,
-      'anthropic-version': '2023-06-01'
+      'anthropic-version': '2023-06-01',
+      ...(thinking ? { 'anthropic-beta': 'interleaved-thinking-2025-05-14' } : {})
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
+      max_tokens: thinking ? 16000 : 1024,
       system: systemPrompt,
-      messages: [{ role: 'user', content: query }]
+      messages: [{ role: 'user', content: query }],
+      ...(thinking ? { thinking: { type: 'enabled', budget_tokens: 8000 } } : {})
     })
   })
 }
@@ -102,8 +106,9 @@ async function ensureDerivedKey(oauth: ClaudeOAuthCreds): Promise<string | null>
 
 export async function queryClaude(
   query: string,
-  systemPrompt: string
-): Promise<StreamItem> {
+  systemPrompt: string,
+  opts?: { thinking?: boolean }
+): Promise<StreamItem & { thinking?: string }> {
   const oauth = await getValidClaudeOAuth()
   let key = inferenceKey()
 
@@ -113,9 +118,10 @@ export async function queryClaude(
   let usedOAuth = false
 
   if (key) {
-    res = await queryWithApiKey(key, query, systemPrompt)
+    res = await queryWithApiKey(key, query, systemPrompt, opts)
   } else if (oauth) {
     usedOAuth = true
+    // thinking not supported via OAuth path — falls through to API key
     const body = buildClaudeOAuthBody({ query, systemPrompt })
     res = await fetchClaudeOAuth(oauth.accessToken, body)
   } else {
@@ -127,7 +133,7 @@ export async function queryClaude(
     const derived = await ensureDerivedKey(oauth)
     if (derived) {
       key = derived
-      res = await queryWithApiKey(derived, query, systemPrompt)
+      res = await queryWithApiKey(derived, query, systemPrompt, opts)
       usedOAuth = false
     } else if (usedOAuth) {
       const haikuBody = buildClaudeOAuthBody({
@@ -144,13 +150,14 @@ export async function queryClaude(
   }
 
   const data = (await res.json()) as {
-    content?: { type: string; text?: string }[]
+    content?: { type: string; text?: string; thinking?: string }[]
   }
   const answer =
     data.content?.find((c) => c.type === 'text')?.text?.trim() ??
     'Claude returned an empty response.'
+  const thinking = data.content?.find((c) => c.type === 'thinking')?.thinking
 
-  return normalizeAiAssist({
+  const item = normalizeAiAssist({
     source: 'claude',
     query,
     answer,
@@ -161,6 +168,7 @@ export async function queryClaude(
       authType: usedOAuth ? 'oauth' : key ? 'api_key' : 'oauth'
     }
   })
+  return thinking ? { ...item, thinking } : item
 }
 
 export async function askClaude(

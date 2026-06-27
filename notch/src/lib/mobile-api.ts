@@ -1,4 +1,4 @@
-import type { AssistResult, ClusterSearchHit } from '../../shared/cluster'
+import type { AssistResult, ClusterSearchHit } from '@shared/cluster'
 
 const API = import.meta.env.VITE_CLUSTER_API ?? 'http://localhost:3000'
 

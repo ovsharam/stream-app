@@ -42,7 +42,7 @@ export function useWebviewNavigation(tabId: string | null | undefined) {
     }
 
     let webview: NavWebviewEl | null = null
-    let pollTimer: ReturnType<typeof setInterval> | null = null
+    let pollTimer: number | null = null
 
     const applyState = (el: NavWebviewEl | null = findWorkspaceWebview(tabId) as NavWebviewEl | null) => {
       const state = readNavState(el)

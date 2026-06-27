@@ -85,7 +85,7 @@ export function useEmbedBrowseSignIn(
     const webview = el as WebviewEl | null
     if (!opts.enabled || !opts.kind || !partition || !webview?.addEventListener) return
 
-    let checkTimer: ReturnType<typeof setTimeout> | null = null
+    let checkTimer: number | null = null
     const check = () => {
       if (checkTimer) window.clearTimeout(checkTimer)
       checkTimer = window.setTimeout(() => {

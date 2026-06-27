@@ -510,28 +510,38 @@ Objective: ${objective === 'v1_ship' ? 'fastest shippable win' : 'discovery'}.`
       })()
 
   const parse = chat ? parseChatAssist : parseAssistFromLlm
+  const { traceLlmCall } = await import('../observability')
 
   try {
     if (isGeminiConnected() || ensureGeminiFromEnv('default')) {
-      const item = await queryGemini(userPrompt, systemPrompt)
+      const item = await traceLlmCall(
+        { model: 'gemini', surface: chat ? 'chat' : 'mobile', query: q, sessionId: session?.id },
+        () => queryGemini(userPrompt, systemPrompt)
+      )
       const parsed = parse(llmRawAnswer(item), q)
       return {
         query: q,
         intent: chat ? 'general' : /say|respond|answer|wtf/i.test(q) ? 'say_this' : 'general',
         ...parsed,
         sources: chat ? [] : [...new Set(latent.chunks.slice(0, 4).map((c) => c.source))],
-        latentContext: chat ? undefined : latent
+        latentContext: chat ? undefined : latent,
+        traceId: item.traceId
       }
     }
     if (isClaudeConnected() || ensureClaudeFromEnv('default')) {
-      const item = await queryClaude(userPrompt, systemPrompt)
+      const item = await traceLlmCall(
+        { model: 'claude-sonnet-4', surface: chat ? 'chat' : 'mobile', query: q, sessionId: session?.id, thinking: chat },
+        () => queryClaude(userPrompt, systemPrompt, { thinking: chat })
+      )
       const parsed = parse(llmRawAnswer(item), q)
       return {
         query: q,
         intent: chat ? 'general' : /say|respond|answer|wtf/i.test(q) ? 'say_this' : 'general',
         ...parsed,
         sources: chat ? [] : [...new Set(latent.chunks.slice(0, 4).map((c) => c.source))],
-        latentContext: chat ? undefined : latent
+        latentContext: chat ? undefined : latent,
+        thinking: item.thinking,
+        traceId: item.traceId
       }
     }
   } catch (err) {

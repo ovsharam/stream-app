@@ -264,7 +264,7 @@ function CalendarTimeGrid({
 }: {
   dayEvents: CalendarRailEvent[]
   viewDate: Date
-  nowMarkerRef?: RefObject<HTMLDivElement | null>
+  nowMarkerRef?: RefObject<HTMLDivElement>
 }) {
   const [, tick] = useState(0)
   const showingToday = isToday(viewDate)

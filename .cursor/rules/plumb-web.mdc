@@ -1,0 +1,23 @@
+---
+description: Rules for the Notch FDE web app (plumb-web/)
+globs: plumb-web/**/*
+---
+
+You are building "Notch" — a deployment workspace for Forward-Deployed Engineers ("Zendesk for FDEs").
+
+STACK (never substitute without asking):
+- Next.js 15 App Router, TypeScript strict, Tailwind, shadcn/ui
+- Supabase for Postgres + Auth + Realtime + Storage, with Row-Level Security ON for every table
+- Drizzle ORM for all DB access (no raw SQL in components, no Supabase client queries in components — go through a typed data layer in /lib/db)
+- Vercel AI SDK for all model calls, behind a router in /lib/ai that can target Anthropic, OpenAI, or Gemini
+- All secrets in .env.local, never hardcoded, never sent to the client
+
+RULES:
+- Server Components by default; Client Components only when interactivity requires it ("use client" at top).
+- Every mutation goes through a Server Action or Route Handler, never a client-side DB call.
+- Type everything. No `any`. Share types from /lib/types.
+- Each feature: schema -> data layer -> server action -> UI. In that order.
+- After each prompt, output: what you created, how to test it, and any TODO you stubbed.
+- If a decision is ambiguous, ask before generating. Do not invent product scope.
+
+Do not modify the Electron Notch app (`notch/`) or local STREAM API (`server/`) unless explicitly asked.

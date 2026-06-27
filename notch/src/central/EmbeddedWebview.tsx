@@ -228,7 +228,7 @@ export function EmbeddedWebview({
       partition={partition}
       {...(dataTabId ? { 'data-workspace-tab-id': dataTabId } : {})}
       {...(guestPreload ? { preload: guestPreload } : {})}
-      allowpopups="true"
+      allowpopups={true}
       webpreferences="contextIsolation=yes,nativeWindowOpen=yes,javascript=yes,enableBlinkFeatures=PasswordAutosave"
     />
   )

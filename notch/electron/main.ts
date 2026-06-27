@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { app, BrowserView, BrowserWindow, globalShortcut, screen, Tray, nativeImage, ipcMain, shell, dialog, session, Notification } from 'electron'
+import { autoUpdater } from 'electron-updater'
 
 /** Avoid crash dialogs when stdout/stderr pipe closes (concurrently restarts, detached Terminal). */
 function ignoreBrokenPipe(stream: NodeJS.WriteStream): void {
@@ -1126,7 +1127,7 @@ function createCentralWindow(): BrowserWindow {
     height: 860,
     minWidth: 1008,
     minHeight: 560,
-    title: 'Stream',
+    title: 'Plumb',
     backgroundColor: '#141413',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 18 },
@@ -1237,12 +1238,17 @@ app.whenReady().then(async () => {
       await startPackagedApi()
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      dialog.showErrorBox('Notch', `Could not start local API:\n${msg}`)
+      dialog.showErrorBox('Plumb', `Could not start local API:\n${msg}`)
       app.quit()
       return
     }
   } else if (USE_REMOTE_API) {
-    console.log(`[notch] Using remote Plumb API at ${API}`)
+    console.log(`[plumb] Using remote Plumb API at ${API}`)
+  }
+
+  // Auto-updater — only in packaged builds
+  if (!isDev) {
+    autoUpdater.checkForUpdatesAndNotify().catch(() => { /* ignore update check failures */ })
   }
 
   setupEmbeddedBrowsing()
@@ -1270,11 +1276,11 @@ app.whenReady().then(async () => {
   }
 
   tray = new Tray(createTrayIcon())
-  tray.setToolTip('Stream — ⌘⇧M mobile cluster')
+  tray.setToolTip('Plumb — ⌘⇧M toggle')
   tray.setContextMenu(
     require('electron').Menu.buildFromTemplate([
       {
-        label: 'Stream Central',
+        label: 'Plumb',
         click: () => {
           if (centralWindow && !centralWindow.isDestroyed()) {
             centralWindow.show()

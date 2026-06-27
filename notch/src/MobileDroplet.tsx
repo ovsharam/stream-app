@@ -32,8 +32,8 @@ export default function MobileDroplet() {
   }, [])
 
   const applyPhase = useCallback(
-    (p: Phase) => {
-      setPhase(p)
+    (p: string) => {
+      setPhase(p as Phase)
       if (p === 'hidden') {
         setQuery('')
         setMessages([])

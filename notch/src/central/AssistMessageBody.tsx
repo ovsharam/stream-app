@@ -79,6 +79,19 @@ function renderChatContent(text: string) {
   return blocks
 }
 
+function ThinkingBlock({ text }: { text: string }) {
+  return (
+    <details className="x-thinking-block">
+      <summary className="x-thinking-block-toggle">
+        <span className="x-thinking-block-icon">◆</span>
+        Model reasoning
+        <span className="x-thinking-block-chevron">›</span>
+      </summary>
+      <pre className="x-thinking-block-body">{text}</pre>
+    </details>
+  )
+}
+
 export function AssistMessageBody({ assist }: Props) {
   const main = String(assist.response ?? '').trim()
   const composeCommands = extractComposeCommands(main)
@@ -115,6 +128,7 @@ export function AssistMessageBody({ assist }: Props) {
 
   return (
     <div className="x-home-msg-body">
+      {assist.thinking ? <ThinkingBlock text={assist.thinking} /> : null}
       {renderChatContent(main)}
       {composeCommands.length > 0 ? (
         <div className="x-home-run-all">

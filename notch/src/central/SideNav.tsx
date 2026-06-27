@@ -3,11 +3,11 @@ import {
   IconApps,
   IconBookmark,
   IconGlobe,
+  IconHome,
   IconLinkedin,
   IconNotch,
   IconPipeline,
   IconPlus,
-  IconPortal,
   IconRadar,
   IconSettings,
   IconSpark,
@@ -50,23 +50,17 @@ export type NavTarget = {
 
 const PRIMARY_NAV: NavTarget[] = [
   {
-    id: 'pipeline',
-    label: 'Pipeline',
-    hint: 'Deployments · deals · FDE workflow',
-    page: 'pipeline'
-  },
-  {
-    id: 'clients',
-    label: 'Clients',
-    hint: 'Accounts & engagements',
-    page: 'clients'
-  },
-  {
     id: 'home',
     label: 'Home',
     hint: 'Chat & agents',
     area: 'work',
     showLiveBadge: true
+  },
+  {
+    id: 'pipeline',
+    label: 'Pipeline',
+    hint: 'Deals & deployments',
+    page: 'pipeline'
   },
   {
     id: 'feed',
@@ -76,6 +70,18 @@ const PRIMARY_NAV: NavTarget[] = [
     tab: 'foryou'
   },
   {
+    id: 'clients',
+    label: 'Clients',
+    hint: 'Accounts & engagements',
+    page: 'clients'
+  },
+  {
+    id: 'build',
+    label: 'Agents',
+    hint: 'Agent builds & automation',
+    page: 'build'
+  },
+  {
     id: 'notes',
     label: 'Notes',
     hint: 'Capture & reminders',
@@ -83,15 +89,9 @@ const PRIMARY_NAV: NavTarget[] = [
   },
   {
     id: 'mind',
-    label: 'Mind',
+    label: 'Knowledge',
     hint: 'Knowledge graph',
     page: 'mind'
-  },
-  {
-    id: 'build',
-    label: 'Build Dojo',
-    hint: 'Agent builds & chat',
-    page: 'build'
   }
 ]
 
@@ -134,7 +134,7 @@ function NavIcon({ id }: { id: string }) {
   const cls = 'x-side-nav-icon'
   switch (id) {
     case 'home':
-      return <IconPortal className={cls} />
+      return <IconHome className={cls} />
     case 'feed':
       return <IconStream className={cls} />
     case 'pipeline':
@@ -344,7 +344,6 @@ export function SideNav({
           <IconNotch className="x-side-nav-brand-icon" />
           <span className="x-side-nav-brand-text">
             <strong>Notch</strong>
-            <span>Deployment workspace</span>
           </span>
         </button>
       </div>
@@ -392,16 +391,15 @@ export function SideNav({
               type="button"
               className="x-side-nav-pin-app"
               onClick={() => setAddingApp(true)}
-              title="Pin a connected app"
+              title="Add a connected app"
             >
               <IconPlus className="x-side-nav-icon" />
-              <span>Pin app</span>
+              <span>Add app</span>
             </button>
           )}
         </div>
 
-        <div className="x-side-nav-group">
-          <p className="x-side-nav-group-label">System</p>
+        <div className="x-side-nav-group x-side-nav-group-system">
           {SYSTEM_NAV.map((target) => (
             <NavButton
               key={target.id}

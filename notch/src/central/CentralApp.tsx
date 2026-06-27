@@ -42,6 +42,7 @@ import { FeedSearchBar, filterFeedEvents } from './FeedSearchBar'
 import { FeedStreamBar, useFeedStreamId } from './FeedStreamBar'
 import { filterEventsByStream } from './feedStreamsStore'
 import { useCentralStream } from './useCentralStream'
+import { initTelemetry, track } from '../lib/telemetry'
 import {
   completeAgent,
   createAgentAbortSignal,
@@ -417,6 +418,10 @@ export function CentralApp() {
   }, [dockNavAppMini])
 
   useEffect(() => {
+    initTelemetry({ enabled: true })
+  }, [])
+
+  useEffect(() => {
     if (!navAppMini || !activeNavAppId) return
     const verify = async () => {
       const state = await window.notchDesktop?.getNavAppPlayback?.()
@@ -581,6 +586,7 @@ export function CentralApp() {
   }
 
   const onNav = (item: NavTarget) => {
+    track({ event: 'nav.page', page: item.page ?? item.area ?? item.id, fromPage: page })
     if (item.navAppId) {
       if (item.navAppId === activeNavAppId && page === 'navapp') return
       // Switching embedded apps should not mini-dock the outgoing session.
@@ -588,7 +594,7 @@ export function CentralApp() {
         openNavApp(item.navAppId)
         return
       }
-      withMediaLeave(() => openNavApp(item.navAppId))
+      withMediaLeave(() => openNavApp(item.navAppId!))
       return
     }
     withMediaLeave(() => {
@@ -1730,7 +1736,7 @@ export function CentralApp() {
                 onRefreshBrowserPageContext={refreshBrowserPageContext}
                 feedRail={{
                   live,
-                  activeThreadId: threadTarget?.itemId ?? null,
+                  activeThreadId: (threadTarget as { itemId: string } | null)?.itemId ?? null,
                   contextItemId,
                   onOpenThread: (itemId, day) => {
                     selectContext(itemId)

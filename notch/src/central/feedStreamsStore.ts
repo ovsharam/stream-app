@@ -91,13 +91,13 @@ export function sourcesForStream(id: string): Set<StreamSource> | null {
   return new Set(stream.sources)
 }
 
-export function filterEventsByStream<T extends { source: StreamSource }>(
+export function filterEventsByStream<T extends { source: string }>(
   events: T[],
   streamId: string
 ): T[] {
   const sources = sourcesForStream(streamId)
   if (!sources) return events
-  return events.filter((e) => sources.has(e.source))
+  return events.filter((e) => (sources as Set<string>).has(e.source))
 }
 
 export function newStreamId(): string {

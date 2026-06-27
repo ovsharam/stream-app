@@ -1,6 +1,9 @@
+import type { FeedSignalRating } from '@shared/telemetry'
+
 const STORAGE_KEY = 'notch.feedFeedback'
 
-export type FeedVote = 'up' | 'down' | null
+/** Signal quality rating — replaces binary up/down. */
+export type FeedVote = FeedSignalRating | null
 
 type FeedbackMap = Record<string, FeedVote>
 

@@ -22,14 +22,10 @@ import type { WorkspaceBrowserPageContext } from './workspaceBrowserContext'
 import { looksLikeMeetSchedule, meetActionTextForSubmit } from '@shared/meeting-compose'
 
 const STARTERS = [
-  { id: 'today', label: 'What needs my attention today?', hint: 'Priorities & open loops' },
-  {
-    id: 'tomorrow',
-    label: 'Plan tomorrow by top priorities',
-    hint: 'Calendar, KB, tasks & agent handoffs'
-  },
-  { id: 'call', label: 'Prep me for my next call', hint: 'Context & talking points' },
-  { id: 'monday', label: 'Summarize my open Monday tasks', hint: 'Board status' }
+  { id: 'today',    label: "What's on my plate today?",  hint: 'Priorities & open loops' },
+  { id: 'call',     label: 'Prep me for my next call',   hint: 'Context & talking points' },
+  { id: 'tomorrow', label: 'Plan for tomorrow',           hint: 'Calendar & handoffs' },
+  { id: 'pipeline', label: 'Pipeline status summary',    hint: 'Deals, gaps & signals' }
 ] as const
 
 type Props = {
@@ -334,11 +330,8 @@ export function HomeChat({
           ) : (
           <div className="x-home-hero">
             <header className="x-home-welcome">
-              <p className="x-home-date">{dateLabel}</p>
               <h1 className="x-home-greeting">{greeting}</h1>
-              <p className="x-home-lede">
-                Ask about deals, calls, and tasks — agents keep working while you chat.
-              </p>
+              <p className="x-home-lede">Ask about your pipeline, calls, and tasks.</p>
             </header>
             {agentsPanel}
             <div className="x-home-starter-grid">

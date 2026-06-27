@@ -53,9 +53,9 @@ type Props = {
   variant?: 'page' | 'rail'
 }
 
-function formatWhen(ts: CentralStreamEvent['timestamp']): string | undefined {
+function formatWhen(ts: number | undefined): string | undefined {
   if (!ts) return undefined
-  const d = ts instanceof Date ? ts : new Date(ts)
+  const d = new Date(ts)
   if (Number.isNaN(d.getTime())) return undefined
   return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
@@ -63,7 +63,7 @@ function formatWhen(ts: CentralStreamEvent['timestamp']): string | undefined {
 /** Avoid showing locale date strings as the hero title when pipeline had no session title. */
 function postCallHeadings(event: CentralStreamEvent): { heading: string; when?: string } {
   const stripped = event.title.replace(/^Meeting ·\s*/i, '').trim()
-  const when = formatWhen(event.timestamp)
+  const when = formatWhen(event.ts)
   const looksLikeFallbackDate =
     !stripped ||
     /^\d{1,2}[/.-]\d{1,2}/.test(stripped) ||

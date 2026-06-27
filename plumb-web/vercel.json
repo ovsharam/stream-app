@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/stream/:path*",
+      "destination": "https://api.useplumb.ai/:path*"
+    }
+  ]
+}

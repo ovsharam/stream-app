@@ -104,6 +104,10 @@ export type AssistResult = {
   triggerPhrase?: string
   /** Personal KB / GraphRAG-lite context for latent retrieval. */
   latentContext?: GraphRagContext
+  /** Extended thinking block from the model — shown collapsed in UI. */
+  thinking?: string
+  /** Braintrust trace ID for this response. */
+  traceId?: string
 }
 
 export type ClusterContext = {
@@ -149,6 +153,8 @@ export type StreamSource =
   | 'insight'
   | 'calcom'
   | 'linkedin'
+  | 'cursor'
+  | 'claude'
 
 export type StreamEventKind =
   | 'transcript_live'

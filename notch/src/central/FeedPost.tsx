@@ -7,6 +7,8 @@ import { clusterApi, openBrowserLink, openMeeting } from '../lib/api'
 import { trackOperatorEvent } from '../lib/operatorTelemetry'
 import { feedEventBrowseUrl } from './workspace'
 import { getFeedVote, setFeedVote } from './feedFeedbackStore'
+import { track, rateFeedSignal } from '../lib/telemetry'
+import type { FeedSignalRating } from '@shared/telemetry'
 import { AgentProposalFeedCard } from './AgentProposalFeedCard'
 import { GmailCalendarInviteCard, isCalendarInviteEvent } from './GmailCalendarInviteCard'
 import { IconGmail, IconLinkedin, IconMonday, IconReply, IconRepost, IconShare, IconViews } from './Icons'
@@ -641,20 +643,17 @@ function PostActions({
 }) {
   const [vote, setVote] = useState(() => getFeedVote(event.id))
 
-  const toggleVote = (e: MouseEvent, next: 'up' | 'down') => {
+  const toggleVote = (e: MouseEvent, next: FeedSignalRating) => {
     e.stopPropagation()
-    const prev = vote
     const result = setFeedVote(event.id, next)
     setVote(result)
+    if (result) {
+      rateFeedSignal(event.id, event.source, result)
+      track({ event: 'feed.action', itemId: event.id, source: event.source, action: 'dismiss' })
+    }
     trackOperatorEvent(
       'feed_vote',
-      {
-        eventId: event.id,
-        source: event.source,
-        itemId,
-        vote: result ?? 'clear',
-        previousVote: prev
-      },
+      { eventId: event.id, source: event.source, itemId, vote: result ?? 'clear' },
       { surface, subjectType: 'stream_item', subjectId: itemId }
     )
   }
@@ -678,28 +677,29 @@ function PostActions({
           <button type="button" className="x-action" aria-label="Repost" onClick={(e) => e.stopPropagation()}>
             <IconRepost className="x-action-icon" />
           </button>
-          <button
-            type="button"
-            className={`x-action x-action-vote${vote === 'up' ? ' x-action-vote-active' : ''}`}
-            aria-label="Helpful"
-            aria-pressed={vote === 'up'}
-            onClick={(e) => toggleVote(e, 'up')}
-          >
-            <span className="x-action-vote-glyph" aria-hidden>
-              ▲
-            </span>
-          </button>
-          <button
-            type="button"
-            className={`x-action x-action-vote x-action-vote-down${vote === 'down' ? ' x-action-vote-active' : ''}`}
-            aria-label="Not helpful"
-            aria-pressed={vote === 'down'}
-            onClick={(e) => toggleVote(e, 'down')}
-          >
-            <span className="x-action-vote-glyph" aria-hidden>
-              ▼
-            </span>
-          </button>
+          <div className="x-signal-rate" title="Rate this signal">
+            <button
+              type="button"
+              className={`x-signal-rate-btn${vote === 'confirmed' ? ' active confirmed' : ''}`}
+              aria-label="Confirmed — real signal"
+              aria-pressed={vote === 'confirmed'}
+              onClick={(e) => toggleVote(e, 'confirmed')}
+            >✓</button>
+            <button
+              type="button"
+              className={`x-signal-rate-btn${vote === 'noise' ? ' active noise' : ''}`}
+              aria-label="Noise — not relevant"
+              aria-pressed={vote === 'noise'}
+              onClick={(e) => toggleVote(e, 'noise')}
+            >–</button>
+            <button
+              type="button"
+              className={`x-signal-rate-btn${vote === 'known' ? ' active known' : ''}`}
+              aria-label="Already knew this"
+              aria-pressed={vote === 'known'}
+              onClick={(e) => toggleVote(e, 'known')}
+            >K</button>
+          </div>
           <button type="button" className="x-action" aria-label="Views" onClick={(e) => e.stopPropagation()}>
             <IconViews className="x-action-icon" />
           </button>

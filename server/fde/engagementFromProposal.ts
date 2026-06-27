@@ -1,5 +1,6 @@
 import type { AgentProposal } from '../../shared/agent-proposal'
 import type { EngagementStage, FdeEngagement } from '../../shared/fde-engagement'
+import { normalizeEngagementStage } from '../../shared/fde-context'
 import { listEngagements, upsertEngagement } from './engagementStore'
 
 function intentFlags(proposal: AgentProposal): string[] {
@@ -54,9 +55,14 @@ export function upsertEngagementFromAgentProposal(
     existing?.summary ??
     `${clientName} reached out on LinkedIn (${proposal.intent.replace(/_/g, ' ')})`
 
+  const existingStage = existing ? normalizeEngagementStage(existing.stage) : undefined
   const stage: EngagementStage =
     opts?.stage ??
-    (existing?.stage === 'maintenance' ? 'maintenance' : existing?.stage === 'build' ? 'build' : 'intake')
+    (existingStage === 'deploy'
+      ? 'deploy'
+      : existingStage === 'build'
+        ? 'build'
+        : 'intake')
 
   const scope = existing?.scope ?? 'unknown'
 

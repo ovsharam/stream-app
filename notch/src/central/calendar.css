@@ -326,6 +326,15 @@
   min-height: 280px;
   margin-top: 8px;
   padding: 0 0 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.x-cal-grid-empty-hint {
+  margin: 0 12px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--x-muted);
 }
 
 .x-cal-grid {

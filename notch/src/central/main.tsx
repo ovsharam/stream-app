@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client'
 import { CentralApp } from './CentralApp'
 import { applyThemeToDocument, readStoredTheme } from './useTheme'
 import './central.css'
+import './enterprise.css'
 
 if (
   typeof window !== 'undefined' &&

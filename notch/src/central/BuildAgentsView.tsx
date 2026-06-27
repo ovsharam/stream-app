@@ -249,10 +249,15 @@ export function BuildAgentsView({ events, onOpenIntegrations }: Props) {
     if (!text || busy) return
     if (!ready) {
       if (executor === 'claude-code') {
+        const cc = buildStatus?.claudeCode
         setError(
-          buildStatus?.claudeCode.cliPath
-            ? 'Run claude login, then add a project folder.'
-            : 'Install Claude Code and run claude login.'
+          cc?.cliPath
+            ? cc.accountLabel
+              ? 'Add a local project folder in Setup.'
+              : 'Run claude login in Terminal, then add a project folder.'
+            : cc?.accountLabel
+              ? 'Claude is signed in but Notch cannot find the CLI — restart from Terminal or set CLAUDE_CLI_PATH.'
+              : 'Install Claude Code: npm i -g @anthropic-ai/claude-code && claude login'
         )
       } else if (executor === 'cursor-cloud') {
         setError('Connect Cursor and set a cloud repo in Apps.')

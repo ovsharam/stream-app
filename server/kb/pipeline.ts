@@ -23,7 +23,17 @@ import {
   upsertOntologyEntity,
   type ExtractContext
 } from './ontology'
+import {
+  ensureEngagementDealEntity,
+  ensureEngagementMeetingEntity,
+  linkDatapointToEngagement,
+  ontologyContextForMeeting,
+  ontologyContextForProposal,
+  ontologyContextForStreamItem,
+  engagementDealEntityId
+} from './dealContext'
 import { buildFeedOperatorContext } from '../graph/feedRanker'
+import type { AgentProposal } from '../../shared/agent-proposal'
 
 function extractEntities(text: string): KbEntity[] {
   const entities: KbEntity[] = []
@@ -74,25 +84,12 @@ function entitiesFromStreamItem(item: StreamItem): KbEntity[] {
   return entities
 }
 
-function streamOntologyCtx(item: StreamItem): ExtractContext {
-  const md = item.metadata ?? {}
-  return {
-    dealHint: typeof md.dealHint === 'string' ? md.dealHint : undefined,
-    senderName: item.sender?.name,
-    senderHandle: item.sender.handle,
-    sessionId: typeof md.sessionId === 'string' ? md.sessionId : undefined,
-    meetingTitle: item.source === 'meeting' ? item.title : undefined
-  }
-}
-
 function ensureMeetingEntity(input: {
   sessionId: string
   title?: string
   dealHint?: string
 }): KbEntity {
-  const label =
-    input.title?.trim() || input.dealHint?.trim() || `Meeting ${input.sessionId.slice(5, 17)}`
-  return upsertOntologyEntity('meeting', label)
+  return ensureEngagementMeetingEntity(input)
 }
 
 function writeDatapoint(
@@ -119,6 +116,21 @@ function writeDatapoint(
     }
   }
 
+  if (ontologyCtx?.engagementId) {
+    const { getEngagement } = require('../fde/engagementStore') as typeof import('../fde/engagementStore')
+    const eng = getEngagement(ontologyCtx.engagementId)
+    if (eng) {
+      linkDatapointToEngagement(dp.id, eng, {
+        sessionId: ontologyCtx.sessionId,
+        senderName: ontologyCtx.senderName
+      })
+      const deal = ensureEngagementDealEntity(eng)
+      if (!allEntities.some((e) => e.id === deal.id)) {
+        allEntities.push(deal)
+      }
+    }
+  }
+
   for (const ent of allEntities) {
     linkEntities(dp.id, ent.id, 'mentions', 1)
     if (parentEntity) {
@@ -127,13 +139,14 @@ function writeDatapoint(
   }
   if (parentEntity) {
     linkEntities(dp.id, parentEntity.id, 'part_of', 1)
-    if (ontologyCtx?.dealHint) {
+    if (!ontologyCtx?.engagementId && ontologyCtx?.dealHint) {
       const deal = upsertOntologyEntity('deal', ontologyCtx.dealHint)
       linkEntities(deal.id, parentEntity.id, 'part_of_deal', 1)
     }
   }
 
   applyOntologyRelations(ontology.relations)
+
   dp.entityIds = [...new Set([...dp.entityIds, ...allEntities.map((e) => e.id)])]
   insertDatapoint(dp)
 
@@ -150,7 +163,9 @@ function writeDatapoint(
     }
     if (parentEntity) {
       edges.push(makeGraphEdge(dp.id, parentEntity.id, 'part_of', 1))
-      if (ontologyCtx?.dealHint) {
+      if (ontologyCtx?.engagementId) {
+        edges.push(makeGraphEdge(engagementDealEntityId(ontologyCtx.engagementId), parentEntity.id, 'part_of_deal', 1))
+      } else if (ontologyCtx?.dealHint) {
         const deal = upsertOntologyEntity('deal', ontologyCtx.dealHint)
         edges.push(makeGraphEdge(deal.id, parentEntity.id, 'part_of_deal', 1))
         vertices.push(entityToVertex(deal))
@@ -158,6 +173,14 @@ function writeDatapoint(
     }
     for (const r of ontology.relations) {
       edges.push(makeGraphEdge(r.fromId, r.toId, r.type, r.weight))
+    }
+    if (ontologyCtx?.engagementId) {
+      const dealId = engagementDealEntityId(ontologyCtx.engagementId)
+      edges.push(makeGraphEdge(dp.id, dealId, 'part_of_deal', 1))
+      const dealEnt = allEntities.find((e) => e.id === dealId)
+      if (dealEnt && !vertices.some((v) => v.id === dealId)) {
+        vertices.push(entityToVertex(dealEnt))
+      }
     }
     appendGraphDelta({ vertices, edges })
   } catch (e) {
@@ -189,7 +212,12 @@ function datapointFromStreamItem(item: StreamItem): Datapoint {
     }
   }
 
-  return writeDatapoint(dp, entities, undefined, streamOntologyCtx(item))
+  const ctx = ontologyContextForStreamItem(item)
+  if (ctx.engagementId) {
+    dp.metadata.engagementId = ctx.engagementId
+  }
+
+  return writeDatapoint(dp, entities, undefined, ctx)
 }
 
 /** Every feed item → graph node (idempotent upsert). */
@@ -248,11 +276,39 @@ export function ingestMeetingChunk(input: {
     }
   }
 
-  return writeDatapoint(dp, entities, parent, {
-    sessionId: input.sessionId,
-    meetingTitle: input.title,
-    dealHint: input.dealHint
-  })
+  return writeDatapoint(dp, entities, parent, ontologyContextForMeeting(input))
+}
+
+export function ingestAgentProposal(
+  proposal: AgentProposal,
+  engagement?: import('../../shared/fde-engagement').FdeEngagement | null
+): Datapoint {
+  const body = [proposal.rawMessage, proposal.linkedinReplyDraft].filter(Boolean).join('\n\n')
+  const entities = extractEntities(body)
+  entities.push(upsertOntologyEntity('stakeholder', proposal.senderName))
+  const ctx = ontologyContextForProposal(proposal, engagement)
+
+  const dp: Datapoint = {
+    id: `dp-agent-${proposal.id}`,
+    kind: 'integration_event',
+    source: 'linkedin',
+    sourceRef: proposal.threadId,
+    title: `${proposal.senderName} · LinkedIn draft`,
+    body,
+    ingestedAt: proposal.detectedAt ?? proposal.createdAt,
+    intention: inferIntention(body),
+    entityIds: entities.map((e) => e.id),
+    metadata: {
+      proposalId: proposal.id,
+      intent: proposal.intent,
+      senderName: proposal.senderName,
+      threadId: proposal.threadId,
+      engagementId: ctx.engagementId,
+      dealHint: ctx.dealHint
+    }
+  }
+
+  return writeDatapoint(dp, entities, undefined, ctx)
 }
 
 export function ingestMeetingSignal(input: {
@@ -286,11 +342,7 @@ export function ingestMeetingSignal(input: {
     }
   }
 
-  return writeDatapoint(dp, entities, parent, {
-    sessionId: input.sessionId,
-    meetingTitle: input.title,
-    dealHint: input.dealHint
-  })
+  return writeDatapoint(dp, entities, parent, ontologyContextForMeeting(input))
 }
 
 export function ingestMeetingPrediction(input: {
@@ -332,11 +384,7 @@ export function ingestMeetingPrediction(input: {
     }
   }
 
-  return writeDatapoint(dp, entities, parent, {
-    sessionId: input.sessionId,
-    meetingTitle: input.title,
-    dealHint: input.dealHint
-  })
+  return writeDatapoint(dp, entities, parent, ontologyContextForMeeting(input))
 }
 
 export function ingestMeetingStar(input: {
@@ -363,11 +411,7 @@ export function ingestMeetingStar(input: {
     metadata: { subtype: 'star', dealHint: input.dealHint }
   }
 
-  return writeDatapoint(dp, entities, parent, {
-    sessionId: input.sessionId,
-    meetingTitle: input.title,
-    dealHint: input.dealHint
-  })
+  return writeDatapoint(dp, entities, parent, ontologyContextForMeeting(input))
 }
 
 export function ingestMobileCluster(input: {

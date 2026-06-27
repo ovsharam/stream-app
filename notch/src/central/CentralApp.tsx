@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ClusterSearchHit } from '@shared/cluster'
+import type { CaseWorkspaceTab } from '@shared/fde-workspace'
 import { isSyntheticLinkedInThreadId } from '@shared/linkedin-thread'
 import { FeedPost } from './FeedPost'
 import { HomeChatProvider } from './homeChatContext'
@@ -11,6 +12,9 @@ import { IntegrationsPanel } from './IntegrationsPanel'
 import { BuildDojo } from './BuildDojo'
 import { NotesView } from './NotesView'
 import { MindGraphView } from './MindGraphView'
+import { CaseWorkspaceView } from './CaseWorkspaceView'
+import { ClientsView } from './ClientsView'
+import { LiveFlowView } from './LiveFlowView'
 import { PipelineView } from './PipelineView'
 import { NavBladeToggle, persistNavOpen, readNavOpen } from './NavBladeToggle'
 import { SideNav, type NavTarget, type Page } from './SideNav'
@@ -220,7 +224,13 @@ export function CentralApp() {
   const { events, live, syncing, streamError } = useCentralStream()
   const [area, setArea] = useState<Area>('work')
   const [tab, setTab] = useState<Tab>('foryou')
-  const [page, setPage] = useState<Page>('stream')
+  const [page, setPage] = useState<Page>('pipeline')
+  const [activeCaseId, setActiveCaseId] = useState<string | null>(null)
+  const [activeCaseTab, setActiveCaseTab] = useState<CaseWorkspaceTab | undefined>(undefined)
+  const [buildContext, setBuildContext] = useState<{
+    engagementId: string
+    prompt?: string
+  } | null>(null)
   const [focusMeetingItemId, setFocusMeetingItemId] = useState<string | null>(null)
   const [compose, setCompose] = useState('')
   const [composeBusy, setComposeBusy] = useState(false)
@@ -1199,10 +1209,24 @@ export function CentralApp() {
   const browserMiniTabId =
     workspaceMini != null && !workspaceMini.pinId ? workspaceMini.tabId : null
 
+  const openCase = useCallback((id: string, tab?: CaseWorkspaceTab) => {
+    setActiveCaseId(id)
+    setActiveCaseTab(tab)
+    setPage('case')
+  }, [])
+
+  const openBuildForCase = useCallback(
+    (input: { engagementId: string; prompt?: string }) => {
+      setBuildContext(input)
+      setPage('build')
+    },
+    []
+  )
+
   return (
     <LinkedInPerceptionProvider backgroundActive={linkedInPinned}>
     <div
-      className={`x-app ${navOpen ? 'x-app-nav-open' : 'x-app-nav-closed'} ${showThreadRail ? 'x-app-thread-open' : ''} ${showPostCallRail ? 'x-app-post-call-open' : ''} ${browserMode ? 'x-app-browser-mode' : ''} ${showWorkspaceRail ? 'x-app-workspace-open' : ''} ${page === 'navapp' ? 'x-app-nav-app' : page !== 'stream' ? 'x-app-utility' : 'x-app-stream'} ${!hasRightRail ? 'x-app-no-rail' : ''}${slideBladeLayout ? ' x-app-home-chat' : ''}${navAppMini ? ' x-app-nav-app-mini' : ''}${workspaceMini ? ' x-app-workspace-mini' : ''}${pinnedActive ? ' x-app-pinned-app' : ''}`}
+      className={`x-app ${navOpen ? 'x-app-nav-open' : 'x-app-nav-closed'} ${showThreadRail ? 'x-app-thread-open' : ''} ${showPostCallRail ? 'x-app-post-call-open' : ''} ${browserMode ? 'x-app-browser-mode' : ''} ${showWorkspaceRail ? 'x-app-workspace-open' : ''} ${page === 'navapp' ? 'x-app-nav-app' : page !== 'stream' ? 'x-app-utility' : 'x-app-stream'} ${!hasRightRail ? 'x-app-no-rail' : ''}${slideBladeLayout ? ' x-app-home-chat' : ''}${navAppMini ? ' x-app-nav-app-mini' : ''}${workspaceMini ? ' x-app-workspace-mini' : ''}${pinnedActive ? ' x-app-pinned-app' : ''}${typeof document !== 'undefined' && document.documentElement.classList.contains('x-electron') ? ' x-app-enterprise' : ''}`}
     >
       {linkedInPinned ? <LinkedInBackgroundPerception /> : null}
       {typeof window !== 'undefined' &&
@@ -1265,7 +1289,34 @@ export function CentralApp() {
           <BuildDojo
             events={events}
             onOpenIntegrations={() => setPage('integrations')}
+            engagementId={buildContext?.engagementId ?? null}
+            initialPrompt={buildContext?.prompt ?? null}
           />
+        </main>
+      ) : page === 'case' && activeCaseId ? (
+        <main className="x-main x-main-utility x-main-case">
+          <CaseWorkspaceView
+            caseId={activeCaseId}
+            initialTab={activeCaseTab}
+            onBack={() => {
+              setActiveCaseTab(undefined)
+              setPage('pipeline')
+            }}
+            onOpenMeeting={(itemId) => {
+              setPage('stream')
+              setArea('feed')
+              setThreadTarget({ itemId })
+            }}
+            onOpenBuild={openBuildForCase}
+            onOpenInbox={() => {
+              setPage('stream')
+              setArea('feed')
+            }}
+          />
+        </main>
+      ) : page === 'clients' ? (
+        <main className="x-main x-main-utility x-main-clients">
+          <ClientsView onOpenCase={openCase} />
         </main>
       ) : page === 'notes' ? (
         <main className="x-main x-main-utility">
@@ -1275,9 +1326,15 @@ export function CentralApp() {
         <main className="x-main x-main-utility x-main-mind-graph">
           <MindGraphView />
         </main>
+      ) : page === 'demo' ? (
+        <main className="x-main x-main-utility x-main-live-flow">
+          <LiveFlowView onOpenCase={openCase} onBack={() => setPage('pipeline')} />
+        </main>
       ) : page === 'pipeline' ? (
         <main className="x-main x-main-utility x-main-pipeline">
           <PipelineView
+            buildEvents={events}
+            onOpenCase={openCase}
             onOpenMeeting={(itemId) => {
               setPage('stream')
               setArea('feed')
@@ -1289,6 +1346,7 @@ export function CentralApp() {
               setArea('feed')
               window.dispatchEvent(new Event('notch:open-agent-inbox'))
             }}
+            onOpenDemo={() => setPage('demo')}
           />
         </main>
       ) : page === 'navapp' ? (
@@ -1529,6 +1587,7 @@ export function CentralApp() {
                       activeThreadId={threadTarget?.itemId ?? null}
                       onOpenWorkspace={openWorkspace}
                       onOpenInWork={openMeetingInWork}
+                      onOpenCase={openCase}
                       onOpenThread={(itemId, day) => {
                         selectContext(itemId)
                         setThreadTarget({ itemId, day })
@@ -1637,6 +1696,7 @@ export function CentralApp() {
                   variant="rail"
                   onDismiss={() => setFocusMeetingItemId(null)}
                   onRefresh={refreshStream}
+                  onOpenCase={openCase}
                 />
               ) : (
                 <div className="x-post-call-rail-loading">

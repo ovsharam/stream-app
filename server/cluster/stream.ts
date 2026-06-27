@@ -1,5 +1,6 @@
 import type { CentralStreamEvent } from '../../shared/cluster'
-import { getRecentItems } from '../db'
+import { FEED_HISTORY_ITEM_LIMIT, FEED_HISTORY_MS, FEED_MONDAY_THREAD_LIMIT } from '../../shared/feed'
+import { getItemsSince } from '../db'
 import { getActiveMeeting } from './meetingPipeline'
 import { prototypeRealEnabled } from '../prototype'
 import { getSimIntel, getSimSignals, getSimTranscript, isSimCallActive } from '../sim/engine'
@@ -103,7 +104,8 @@ function mapExternalSource(source: ExternalSource): CentralStreamEvent['source']
 }
 
 function externalEvents(now: number): CentralStreamEvent[] {
-  const items = getRecentItems(220).filter((item) =>
+  const sinceMs = now - FEED_HISTORY_MS
+  const items = getItemsSince(sinceMs, FEED_HISTORY_ITEM_LIMIT).filter((item) =>
     [
       'gmail',
       'slack',
@@ -124,7 +126,7 @@ function externalEvents(now: number): CentralStreamEvent[] {
   )
 
   const mondayItems = items.filter((item) => item.source === 'monday')
-  const nonMondayItems = items.filter((item) => item.source !== 'monday').slice(0, 100)
+  const nonMondayItems = items.filter((item) => item.source !== 'monday')
 
   const mondayThreadMap = new Map<
     string,
@@ -210,7 +212,7 @@ function externalEvents(now: number): CentralStreamEvent[] {
       }
     })
     .sort((a, b) => b.ts - a.ts)
-    .slice(0, 24)
+    .slice(0, FEED_MONDAY_THREAD_LIMIT)
 
   const nonMondayEvents: CentralStreamEvent[] = []
   const seenCalcomBookings = new Set<string>()

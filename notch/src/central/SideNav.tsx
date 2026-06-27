@@ -5,23 +5,37 @@ import {
   IconGlobe,
   IconLinkedin,
   IconNotch,
+  IconPipeline,
   IconPlus,
   IconPortal,
   IconRadar,
   IconSettings,
   IconSpark,
   IconStream,
-  IconYoutube
+  IconUser
 } from './Icons'
 import { integrationApi } from '../lib/api'
+import { useOperatorProfile } from './useOperatorProfile'
 import {
+  DEPRECATED_NAV_APP_IDS,
   listUnpinnedApps,
   type NavApp
 } from './navAppsStore'
 
 type Tab = 'foryou' | 'signals'
 type Area = 'work' | 'feed'
-export type Page = 'stream' | 'settings' | 'integrations' | 'navapp' | 'build' | 'notes' | 'mind' | 'pipeline'
+export type Page =
+  | 'stream'
+  | 'settings'
+  | 'integrations'
+  | 'navapp'
+  | 'build'
+  | 'notes'
+  | 'mind'
+  | 'pipeline'
+  | 'case'
+  | 'clients'
+  | 'demo'
 
 export type NavTarget = {
   id: string
@@ -36,6 +50,18 @@ export type NavTarget = {
 
 const PRIMARY_NAV: NavTarget[] = [
   {
+    id: 'pipeline',
+    label: 'Pipeline',
+    hint: 'Deployments · deals · FDE workflow',
+    page: 'pipeline'
+  },
+  {
+    id: 'clients',
+    label: 'Clients',
+    hint: 'Accounts & engagements',
+    page: 'clients'
+  },
+  {
     id: 'home',
     label: 'Home',
     hint: 'Chat & agents',
@@ -44,16 +70,10 @@ const PRIMARY_NAV: NavTarget[] = [
   },
   {
     id: 'feed',
-    label: 'Feed',
-    hint: 'Integration stream',
+    label: 'Inbox',
+    hint: 'Cross-channel signals',
     area: 'feed',
     tab: 'foryou'
-  },
-  {
-    id: 'pipeline',
-    label: 'Pipeline',
-    hint: 'Deal conversion · FDE layer',
-    page: 'pipeline'
   },
   {
     id: 'notes',
@@ -117,6 +137,10 @@ function NavIcon({ id }: { id: string }) {
       return <IconPortal className={cls} />
     case 'feed':
       return <IconStream className={cls} />
+    case 'pipeline':
+      return <IconPipeline className={cls} />
+    case 'clients':
+      return <IconUser className={cls} />
     case 'notes':
       return <IconBookmark className={cls} />
     case 'mind':
@@ -129,8 +153,6 @@ function NavIcon({ id }: { id: string }) {
       return <IconApps className={cls} />
     case 'settings':
       return <IconSettings className={cls} />
-    case 'youtube':
-      return <IconYoutube className={cls} />
     case 'linkedin':
       return <IconLinkedin className={cls} />
     case 'gmail':
@@ -299,13 +321,16 @@ export function SideNav({
   themeBtnRef
 }: Props) {
   const [addingApp, setAddingApp] = useState(false)
+  const operator = useOperatorProfile()
 
-  const appTargets: NavTarget[] = navApps.map((app) => ({
-    id: app.id,
-    label: app.label,
-    hint: pinHint(app),
-    navAppId: app.id
-  }))
+  const appTargets: NavTarget[] = navApps
+    .filter((app) => !DEPRECATED_NAV_APP_IDS.has(app.id))
+    .map((app) => ({
+      id: app.id,
+      label: app.label,
+      hint: pinHint(app),
+      navAppId: app.id
+    }))
 
   return (
     <aside className="x-side-nav">
@@ -319,7 +344,7 @@ export function SideNav({
           <IconNotch className="x-side-nav-brand-icon" />
           <span className="x-side-nav-brand-text">
             <strong>Notch</strong>
-            <span>Work OS</span>
+            <span>Deployment workspace</span>
           </span>
         </button>
       </div>
@@ -339,7 +364,9 @@ export function SideNav({
         </div>
 
         <div className="x-side-nav-group">
-          <p className="x-side-nav-group-label">Pinned</p>
+          {(appTargets.length > 0 || addingApp) ? (
+            <p className="x-side-nav-group-label">Work apps</p>
+          ) : null}
           {appTargets.map((target) => (
             <NavButton
               key={target.id}
@@ -400,11 +427,11 @@ export function SideNav({
           <span className="x-nav-theme-dot" aria-hidden />
           <span>Theme</span>
         </button>
-        <div className="x-side-nav-profile" title="Apoorva @ae">
-          <div className="x-avatar x-avatar-user">A</div>
+        <div className="x-side-nav-profile" title={operator.roleLabel}>
+          <div className="x-avatar x-avatar-user">{operator.initial}</div>
           <span className="x-side-nav-profile-text">
-            <strong>Apoorva</strong>
-            <span>@ae</span>
+            <strong>{operator.displayName}</strong>
+            <span>{operator.handle}</span>
           </span>
         </div>
       </div>

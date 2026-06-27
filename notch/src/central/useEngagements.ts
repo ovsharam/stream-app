@@ -53,7 +53,7 @@ export function useEngagements() {
   }, [load])
 
   const patch = useCallback(
-    async (id: string, patchFields: Partial<FdeEngagement>) => {
+    async (id: string, patchFields: Partial<FdeEngagement> & { scopeApproved?: boolean }) => {
       const prev = engagements.find((e) => e.id === id)
       if (!prev) return
 
@@ -68,8 +68,9 @@ export function useEngagements() {
           return next
         })
         window.dispatchEvent(new Event('notch:engagements-updated'))
-      } catch {
+      } catch (err) {
         setEngagements((list) => list.map((e) => (e.id === id ? prev : e)))
+        throw err
       } finally {
         setPendingIds((s) => {
           const next = new Set(s)
@@ -81,16 +82,29 @@ export function useEngagements() {
     [engagements]
   )
 
-  const create = useCallback(async (input: { clientName: string; company?: string }) => {
-    const { engagement } = await clusterApi.createEngagement(input)
+  const create = useCallback(
+    async (input: { clientName: string; company?: string; summary?: string }) => {
+      const { engagement } = await clusterApi.createEngagement(input)
+      setEngagements((list) => {
+        const next = [engagement, ...list]
+        writeCachedEngagements(next)
+        return next
+      })
+      window.dispatchEvent(new Event('notch:engagements-updated'))
+      return engagement
+    },
+    []
+  )
+
+  const remove = useCallback(async (id: string) => {
+    await clusterApi.deleteEngagement(id)
     setEngagements((list) => {
-      const next = [engagement, ...list]
+      const next = list.filter((e) => e.id !== id)
       writeCachedEngagements(next)
       return next
     })
     window.dispatchEvent(new Event('notch:engagements-updated'))
-    return engagement
   }, [])
 
-  return { engagements, refreshing, pendingIds, load, patch, create }
+  return { engagements, refreshing, pendingIds, load, patch, create, remove }
 }

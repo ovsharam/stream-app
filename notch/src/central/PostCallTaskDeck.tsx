@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { CentralStreamEvent } from '@shared/cluster'
-import { captureApi, openBrowserLink } from '../lib/api'
+import type { FdeEngagement } from '@shared/fde-engagement'
+import type { CaseWorkspaceTab } from '@shared/fde-workspace'
+import { captureApi, clusterApi, openBrowserLink } from '../lib/api'
 import { parseMeetingActionsMeta, parseMeetingNextSteps } from '@shared/meeting-actions'
 import { MeetingActionCards, MeetingActionRunAllButton, useMeetingActionApprovals } from './MeetingActionCards'
+import { engagementRef } from './pipelineDisplay'
 
 const POST_CALL_STEPS = [
   'Wrapping up transcript…',
@@ -46,6 +49,7 @@ type Props = {
   event: CentralStreamEvent
   onDismiss?: () => void
   onRefresh?: () => void
+  onOpenCase?: (id: string, tab?: CaseWorkspaceTab) => void
   variant?: 'page' | 'rail'
 }
 
@@ -84,14 +88,31 @@ function Chevron() {
   )
 }
 
-export function PostCallTaskDeck({ event, onDismiss, onRefresh, variant = 'page' }: Props) {
+export function PostCallTaskDeck({ event, onDismiss, onRefresh, onOpenCase, variant = 'page' }: Props) {
   const meta = event.meta ?? {}
   const nextSteps = parseMeetingNextSteps(meta)
   const actions = parseMeetingActionsMeta(meta)
   const googleDocUrl = meta.googleDocUrl ? String(meta.googleDocUrl) : undefined
   const sessionId = meta.sessionId ? String(meta.sessionId) : undefined
+  const feedItemId = meta.itemId ? String(meta.itemId) : event.id.replace(/^ext-/, '')
   const [appendBusy, setAppendBusy] = useState(false)
   const [appendMsg, setAppendMsg] = useState<string | null>(null)
+  const [linkedCase, setLinkedCase] = useState<FdeEngagement | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    clusterApi
+      .engagementByFeedItem(feedItemId)
+      .then((res) => {
+        if (!cancelled) setLinkedCase(res.engagement)
+      })
+      .catch(() => {
+        if (!cancelled) setLinkedCase(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [feedItemId])
 
   const meetingApprovals = useMeetingActionApprovals(event, onRefresh)
   const pendingCount = meetingApprovals.ready ? meetingApprovals.pendingCount : 0
@@ -144,6 +165,34 @@ export function PostCallTaskDeck({ event, onDismiss, onRefresh, variant = 'page'
             </h2>
             <div className="x-post-call-group">
               <p className="x-post-call-summary-body">{summary}</p>
+            </div>
+          </section>
+        ) : null}
+
+        {linkedCase && onOpenCase ? (
+          <section className="x-post-call-section" aria-label="Case">
+            <div className="x-post-call-group">
+              {linkedCase.buildPrompt ? (
+                <button
+                  type="button"
+                  className="x-post-call-row x-post-call-row-btn x-post-call-case-btn x-post-call-case-btn-primary"
+                  onClick={() => onOpenCase(linkedCase.id, 'build')}
+                >
+                  <span className="x-post-call-row-label">Review & run build brief</span>
+                  <span className="x-feed-case-badge">{engagementRef(linkedCase)}</span>
+                  <Chevron />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="x-post-call-row x-post-call-row-btn x-post-call-case-btn"
+                  onClick={() => onOpenCase(linkedCase.id, 'requirements')}
+                >
+                  <span className="x-post-call-row-label">Review requirements in case</span>
+                  <span className="x-feed-case-badge">{engagementRef(linkedCase)}</span>
+                  <Chevron />
+                </button>
+              )}
             </div>
           </section>
         ) : null}

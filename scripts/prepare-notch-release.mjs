@@ -38,7 +38,7 @@ await esbuild.build({
   target: 'node20',
   format: 'cjs',
   outfile: join(serverOut, 'index.js'),
-  external: ['better-sqlite3', 'falkordb'],
+  external: ['better-sqlite3', 'falkordb', '@cursor/sdk'],
   logLevel: 'info',
   sourcemap: true,
   alias: {
@@ -50,6 +50,7 @@ mkdirSync(join(serverOut, 'node_modules'), { recursive: true })
 copyNativeModule('better-sqlite3')
 copyNativeModule('bindings')
 copyNativeModule('file-uri-to-path')
+copyNativeModule('@cursor/sdk')
 
 writeFileSync(
   join(serverOut, 'package.json'),

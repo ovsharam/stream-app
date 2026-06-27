@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { GmailAccount, GoogleCalendarOption, MondayAccount } from '@shared/cluster'
 import { clusterApi, contactsApi, captureApi, integrationApi, type IntegrationConnections } from '../lib/api'
-import { IconGmail, IconMonday, IconYoutube, IconLinkedin } from './Icons'
+import { IconGmail, IconMonday, IconLinkedin } from './Icons'
 import { McpAgentsSection } from './McpAgentsSection'
 import { isNavAppDesktop, isNavAppPinned, pinnableEntryById, pinnableEntryForIntegration, type NavApp } from './navAppsStore'
 import { GOOGLE_BROWSE_PARTITION } from './embedBrowse'
 
 type IntegrationId =
-  | 'youtube'
   | 'linkedin'
   | 'gmail'
   | 'slack'
@@ -41,15 +40,6 @@ type IntegrationDef = {
 }
 
 const INTEGRATIONS: IntegrationDef[] = [
-  {
-    id: 'youtube',
-    name: 'YouTube',
-    tagline: 'In-app tab · sidebar pin',
-    feeds: 'Sidebar',
-    category: 'desktop',
-    brandClass: 'x-int-card-youtube',
-    icon: <IconYoutube className="x-int-brand-icon" />
-  },
   {
     id: 'linkedin',
     name: 'LinkedIn',
@@ -511,12 +501,12 @@ export function IntegrationsPanel({
     loadMondayCreateTarget
   ])
 
-  const feedIntegrationTotal = INTEGRATIONS.filter((i) => i.id !== 'youtube' && i.id !== 'linkedin').length
+  const feedIntegrationTotal = INTEGRATIONS.filter((i) => i.id !== 'linkedin').length
 
   const connectedCount = useMemo(() => {
     if (!connections) return 0
     return INTEGRATIONS.filter((i) => {
-      if (i.id === 'youtube' || i.id === 'linkedin') return false
+      if (i.id === 'linkedin') return false
       if (i.id === 'agents') return mcpAgentCount > 0
       return connections.connected[i.id]
     }).length
@@ -527,7 +517,7 @@ export function IntegrationsPanel({
 
   const isIntegrationConnected = useCallback(
     (id: IntegrationId): boolean => {
-      if (id === 'youtube' || id === 'linkedin') return false
+      if (id === 'linkedin') return false
       if (id === 'agents') return mcpAgentCount > 0
       return connections?.connected[id] ?? false
     },
@@ -639,7 +629,7 @@ export function IntegrationsPanel({
       setStatus(
         addAccount
           ? 'Complete sign-in in Chrome, then return to Notch. Google blocks in-app sign-in.'
-          : 'Complete Gmail sign-in in Chrome, then return to Notch. Use Open in Chrome for Docs and YouTube tabs.'
+          : 'Complete Gmail sign-in in Chrome, then return to Notch. Use Open in Chrome for Docs tabs.'
       )
     } catch (err) {
       setStatus(`Gmail connect failed: ${String(err)}`)
@@ -716,34 +706,6 @@ export function IntegrationsPanel({
   }
 
   const renderDetail = () => {
-    if (selected === 'youtube') {
-      const pinned = isNavAppPinned('youtube', navApps)
-      return (
-        <div className="x-int-detail">
-          <div className="x-int-detail-head">
-            <div>
-              <h3>YouTube</h3>
-              <p>Opens in an in-app tab with the context rail, like Monday.</p>
-            </div>
-            {desktop ? (
-              <button
-                type="button"
-                className="x-int-btn"
-                onClick={() => onOpenNavApp?.('youtube')}
-              >
-                Open
-              </button>
-            ) : null}
-          </div>
-          {desktop ? (
-            <p className="x-int-muted">
-              {pinned ? 'Pinned to sidebar.' : 'Use the pin icon on the card to add YouTube to the sidebar.'}
-            </p>
-          ) : null}
-        </div>
-      )
-    }
-
     if (selected === 'linkedin') {
       const pinned = isNavAppPinned('linkedin', navApps)
       return (
@@ -2197,7 +2159,7 @@ export function IntegrationsPanel({
 
   const renderAppTile = (item: IntegrationDef) => {
     const connected = isIntegrationConnected(item.id)
-    const isDesktopTab = item.id === 'youtube' || item.id === 'linkedin'
+    const isDesktopTab = item.id === 'linkedin'
     const pinnable = pinnableForItem(item.id)
     const showPin = canPinItem(item.id, connected || isDesktopTab, desktop)
     const pinned = pinnable ? isNavAppPinned(pinnable.id, navApps) : false

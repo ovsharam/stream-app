@@ -1,0 +1,28 @@
+Discovery call — Northwind Telephony × Acme Voice AI
+Date: 2026-05-28 · AE: Jordan · FDE: (you)
+
+Jordan: Thanks for jumping on. Northwind runs inbound sales and support on a legacy Avaya stack. They want your voice agent to look up CRM contacts when a call lands.
+
+Priya (Northwind IT): We use Salesforce Service Cloud. When someone calls, the rep needs the account name, open cases, and last order — basically before they say hello. Near-realtime is fine, I think?
+
+Jordan: What's the latency bar?
+
+Priya: Um, fast enough that the rep isn't waiting awkwardly. We haven't benchmarked it.
+
+Jordan: OAuth for Salesforce — do you have a connected app already?
+
+Priya: Our admin was going to set something up. I'm not sure which scopes they picked. Probably whatever is default.
+
+Priya: Also EU — some callers are German entities. Data can't leave EU for processing if we can help it.
+
+Jordan: Security review timeline?
+
+Priya: Probably 4–6 weeks if we need a new vendor. Faster if it's just an extension of what we already approved with Acme.
+
+FDE: So v1 is Salesforce lookup on inbound call, surfaced to the rep UI. Priya, can you confirm the exact fields reps need on screen?
+
+Priya: Account name, tier, last order date, and any open P1 case. That's the must-have.
+
+Jordan: Let's schedule a technical deep-dive next week. Priya — can you get your Salesforce admin on that call?
+
+[call ends]

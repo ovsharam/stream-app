@@ -1,6 +1,6 @@
 import type { EngagementStage } from './fde-engagement'
 
-/** Stages for the agentic conversion layer — SDR/AE top-of-funnel → FDE → post-sales. */
+/** Stages for the FDE deployment workspace — intake through deploy. */
 export const PIPELINE_STAGES: {
   id: EngagementStage
   label: string
@@ -9,24 +9,34 @@ export const PIPELINE_STAGES: {
   {
     id: 'intake',
     label: 'Intake',
-    hint: 'Technical buyer surfaced · AE gap · scope the mismatch'
+    hint: 'Scope inbound · qualify technical buyer · AE alignment'
+  },
+  {
+    id: 'context',
+    label: 'Context',
+    hint: 'Discovery · requirements · context score gate'
   },
   {
     id: 'build',
     label: 'Build',
-    hint: 'FDE solutioning · POC · custom software path'
+    hint: 'Solutioning · agents · POC · custom deploy path'
   },
   {
-    id: 'maintenance',
-    label: 'Live',
-    hint: 'White-glove onboard · support · expansion'
+    id: 'test',
+    label: 'Test',
+    hint: 'Validation · UAT · buyer sign-off'
+  },
+  {
+    id: 'deploy',
+    label: 'Deploy',
+    hint: 'Production handoff · support · expansion'
   },
   {
     id: 'paused',
-    label: 'Paused',
-    hint: 'Stalled pipeline · revisit later'
+    label: 'On hold',
+    hint: 'Stalled · waiting on customer or internal'
   }
 ]
 
 export const PIPELINE_THESIS =
-  'Top-of-funnel is automated — conversion is not. FDEs bridge technical buyers and business-side AEs until agents handle it agent-to-agent.'
+  'One workspace for forward-deployed engineering — intake, context, build, test, and deploy without switching tools.'

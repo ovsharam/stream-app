@@ -29,14 +29,24 @@ app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled')
 const mobileOnly = process.argv.includes('--mobile-only')
 const SIM = process.env.SIMULATION_MODE === 'true' || process.env.DEMO_MODE === '1'
 const HOTKEY = 'CommandOrControl+Shift+M'
-const API = 'http://localhost:3131'
+
+/**
+ * When PLUMB_API_URL is set (e.g. https://api.useplumb.ai), the Electron app
+ * connects to the hosted Railway API instead of spinning up a local server.
+ * Falls back to localhost:3131 for local dev and packaged standalone installs.
+ */
+const PLUMB_API_URL = process.env.PLUMB_API_URL?.trim()
+const API = PLUMB_API_URL ?? 'http://localhost:3131'
+const USE_REMOTE_API = Boolean(PLUMB_API_URL)
+
+const rendererDir = join(__dirname, '../../dist-renderer')
 
 const CENTRAL_URL = isDev
   ? 'http://localhost:5174/central.html'
-  : `file://${join(__dirname, '../dist-renderer/central.html')}`
+  : pathToFileURL(join(rendererDir, 'central.html')).href
 const MOBILE_URL = isDev
   ? 'http://localhost:5174/'
-  : `file://${join(__dirname, '../dist-renderer/index.html')}`
+  : pathToFileURL(join(rendererDir, 'index.html')).href
 
 const MOBILE_SIZE = { w: 280, h: 420 }
 
@@ -448,6 +458,7 @@ async function simPost(path: string): Promise<void> {
 }
 
 function registerShortcuts(): void {
+  if (!app.isReady()) return
   globalShortcut.unregisterAll()
   const ok = globalShortcut.register(HOTKEY, toggleMobile)
   if (!ok) console.error(`[notch] failed to register ${HOTKEY}`)
@@ -1220,7 +1231,8 @@ if (!gotSingleInstanceLock) {
   })
 
 app.whenReady().then(async () => {
-  if (!isDev) {
+  if (!isDev && !USE_REMOTE_API) {
+    // Only spin up the bundled local API when not using the hosted remote API
     try {
       await startPackagedApi()
     } catch (err) {
@@ -1229,6 +1241,8 @@ app.whenReady().then(async () => {
       app.quit()
       return
     }
+  } else if (USE_REMOTE_API) {
+    console.log(`[notch] Using remote Plumb API at ${API}`)
   }
 
   setupEmbeddedBrowsing()
@@ -1458,4 +1472,13 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll()
 })
 app.on('window-all-closed', () => {})
-app.on('activate', () => registerShortcuts())
+app.on('activate', () => {
+  if (!app.isReady()) return
+  registerShortcuts()
+  if (centralWindow && !centralWindow.isDestroyed()) {
+    centralWindow.show()
+    centralWindow.focus()
+  } else if (!mobileOnly) {
+    centralWindow = createCentralWindow()
+  }
+})

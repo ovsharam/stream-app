@@ -1,8 +1,8 @@
 /**
- * FDE client engagement — intake → build → maintenance across many agency clients.
+ * FDE client engagement — intake → context → build → test → deploy across agency clients.
  */
 
-export type EngagementStage = 'intake' | 'build' | 'maintenance' | 'paused'
+export type EngagementStage = 'intake' | 'context' | 'build' | 'test' | 'deploy' | 'paused'
 
 export type ScopeBucket = 'quick_win' | 'big_bet' | 'unknown'
 
@@ -28,6 +28,8 @@ export interface FdeEngagement {
   signalSources?: ('linkedin' | 'gmail' | 'meeting' | 'monday' | 'slack')[]
   googleDocUrl?: string
   escalationLevel: EscalationLevel
+  /** 0–100 readiness to leave context stage (computed from scope, brief, gaps). */
+  contextScore?: number
   createdAt: number
   updatedAt: number
 }

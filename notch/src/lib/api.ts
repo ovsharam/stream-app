@@ -1,9 +1,26 @@
 import type { MobileContext } from '@shared/mobile'
 import type { AssistResult, CentralStreamEvent, ClusterThread } from '@shared/cluster'
+import type { FlowStageEvent } from '@shared/fde-flow'
 import { loadMobileSettings } from './mobile-settings'
 import type { UserRole } from './user-role'
 
-const API = 'http://localhost:3131'
+/**
+ * Resolve the API base URL.
+ *
+ * Priority:
+ * 1. window.__PLUMB_API_URL__ — injected by the Electron preload when PLUMB_API_URL
+ *    env var is set (i.e. connecting to the hosted Railway API at api.useplumb.ai)
+ * 2. NEXT_PUBLIC_API_URL — for plumb-web / browser context
+ * 3. Hard-coded localhost fallback for local Electron dev
+ */
+function resolveApiBase(): string {
+  if (typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).__PLUMB_API_URL__) {
+    return String((window as unknown as Record<string, unknown>).__PLUMB_API_URL__)
+  }
+  return 'http://localhost:3131'
+}
+
+const API = resolveApiBase()
 
 async function json<T>(
   path: string,
@@ -238,11 +255,35 @@ export const clusterApi = {
     }),
   engagements: () =>
     json<{ engagements: import('@shared/fde-engagement').FdeEngagement[] }>('/fde/engagements'),
-  createEngagement: (input: { clientName: string; company?: string }) =>
+  createEngagement: (input: {
+    clientName: string
+    company?: string
+    summary?: string
+    stage?: import('@shared/fde-engagement').EngagementStage
+  }) =>
     json<{ engagement: import('@shared/fde-engagement').FdeEngagement }>('/fde/engagements', {
       method: 'POST',
       body: JSON.stringify(input)
     }),
+  deleteEngagement: (id: string) =>
+    json<{ ok: boolean }>(`/fde/engagements/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  engagementByFeedItem: (itemId: string) =>
+    json<{ engagement: import('@shared/fde-engagement').FdeEngagement }>(
+      `/fde/engagements/by-feed-item/${encodeURIComponent(itemId)}`
+    ),
+  engagementRequirements: (id: string) =>
+    json<{ requirements: import('@shared/fde-training').FdeRequirement[] }>(
+      `/fde/engagements/${encodeURIComponent(id)}/requirements`
+    ),
+  patchRequirement: (id: string, status: import('@shared/fde-training').RequirementStatus) =>
+    json<{ requirement: import('@shared/fde-training').FdeRequirement }>(
+      `/fde/requirements/${encodeURIComponent(id)}`,
+      { method: 'PATCH', body: JSON.stringify({ status }) }
+    ),
+  fdeClients: () =>
+    json<{
+      clients: { clientName: string; engagements: import('@shared/fde-engagement').FdeEngagement[] }[]
+    }>('/fde/clients'),
   patchEngagement: (
     id: string,
     patch: Partial<import('@shared/fde-engagement').FdeEngagement> & { scopeApproved?: boolean }
@@ -259,6 +300,20 @@ export const clusterApi = {
     json<{ engagement: import('@shared/fde-engagement').FdeEngagement }>(
       `/fde/engagements/from-proposal/${encodeURIComponent(proposalId)}`,
       { method: 'POST', body: '{}' }
+    ),
+  createEngagementFromFeedItem: (input: {
+    feedItemId: string
+    clientName?: string
+    company?: string
+  }) =>
+    json<{ engagement: import('@shared/fde-engagement').FdeEngagement }>('/fde/engagements/from-feed-item', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    }),
+  linkFeedItemToEngagement: (engagementId: string, feedItemId: string) =>
+    json<{ engagement: import('@shared/fde-engagement').FdeEngagement }>(
+      `/fde/engagements/${encodeURIComponent(engagementId)}/link-feed-item`,
+      { method: 'POST', body: JSON.stringify({ feedItemId }) }
     ),
   mcpAgents: () =>
     json<{ agents: import('@shared/fde-engagement').CustomMcpAgent[] }>('/fde/mcp-agents'),
@@ -306,7 +361,95 @@ export const clusterApi = {
       body: JSON.stringify(input)
     }),
   deleteMcpAgent: (id: string) =>
-    json<{ ok: boolean }>(`/fde/mcp-agents/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    json<{ ok: boolean }>(`/fde/mcp-agents/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  runFlowStream: (
+    input: { intakeText: string; skipExecute?: boolean; engagementId?: string },
+    onEvent: (event: FlowStageEvent) => void,
+    options?: { signal?: AbortSignal }
+  ) => runFlowStream(input, onEvent, options)
+}
+
+async function runFlowStream(
+  input: { intakeText: string; skipExecute?: boolean; engagementId?: string },
+  onEvent: (event: FlowStageEvent) => void,
+  options?: { signal?: AbortSignal }
+): Promise<void> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 600_000)
+  const onExternalAbort = () => controller.abort()
+  const externalSignal = options?.signal
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort()
+    else externalSignal.addEventListener('abort', onExternalAbort)
+  }
+
+  try {
+    const res = await fetch(`${API}/api/fde/flow/run`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+      signal: controller.signal
+    })
+
+    if (!res.ok) {
+      const text = await res.text()
+      let message = text || `Request failed (${res.status})`
+      try {
+        const parsed = JSON.parse(text) as { error?: string }
+        if (parsed.error) message = parsed.error
+      } catch {
+        /* use raw text */
+      }
+      throw new Error(message)
+    }
+
+    const reader = res.body?.getReader()
+    if (!reader) throw new Error('No response stream from flow endpoint')
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      const chunks = buffer.split('\n\n')
+      buffer = chunks.pop() ?? ''
+
+      for (const chunk of chunks) {
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue
+          const payload = line.slice(6).trim()
+          if (!payload) continue
+          onEvent(JSON.parse(payload) as FlowStageEvent)
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      for (const line of buffer.split('\n')) {
+        if (!line.startsWith('data: ')) continue
+        const payload = line.slice(6).trim()
+        if (!payload) continue
+        onEvent(JSON.parse(payload) as FlowStageEvent)
+      }
+    }
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('Flow run cancelled or timed out after 10 minutes')
+    }
+    if (err instanceof TypeError && /failed to fetch/i.test(err.message)) {
+      throw new Error(
+        'Cannot reach the Stream API at localhost:3131 — run npm run dev:notch:live and try again'
+      )
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+    if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort)
+  }
 }
 
 export const captureApi = {
@@ -491,6 +634,7 @@ export const integrationApi = {
     executor: import('@shared/build-executor').BuildExecutor
     prompt: string
     projectId?: string
+    engagementId?: string
   }) =>
     json<import('@shared/build-executor').BuildRunResult>('/build/run', {
       method: 'POST',

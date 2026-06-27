@@ -1,0 +1,22 @@
+{
+  "name": "notch-flow-test",
+  "private": true,
+  "description": "End-to-end FDE intake → score → build → email harness (not a product)",
+  "type": "module",
+  "scripts": {
+    "flow": "tsx flow.ts",
+    "flow:sample": "tsx flow.ts sample-intake.txt",
+    "flow:demo": "tsx flow.ts sample-intake.txt --demo",
+    "flow:demo:fast": "tsx flow.ts sample-intake.txt --demo --fast"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.85",
+    "ai": "^6.0.68",
+    "dotenv": "^16.5.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

@@ -294,16 +294,13 @@ function CalendarTimeGrid({
     return marks
   }, [startHour, endHour])
 
-  if (dayEvents.length === 0) {
-    return (
-      <div className="x-cal-grid-empty">
-        {showingToday ? 'Nothing else on your calendar today.' : 'No events scheduled.'}
-      </div>
-    )
-  }
-
   return (
     <div className="x-cal-grid-wrap">
+      {dayEvents.length === 0 ? (
+        <p className="x-cal-grid-empty-hint">
+          {showingToday ? 'Nothing else on your calendar today.' : 'No events scheduled.'}
+        </p>
+      ) : null}
       <div className="x-cal-grid" style={{ height: gridHeight }}>
         <div className="x-cal-grid-hours" style={{ height: gridHeight }}>
           {hourMarks.map((hour) => (
@@ -552,8 +549,6 @@ export function CalendarPanel({
 
       {!calendarConnected ? (
         <p className="x-cal-empty">Connect Gmail or Cal.com in Apps to sync your schedule.</p>
-      ) : allEvents.length === 0 ? (
-        <p className="x-cal-empty">{calendarHint ?? 'Nothing scheduled.'}</p>
       ) : (
         <>
           <CalendarDayStrip days={stripDays} onSelect={selectDay} />

@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+// Inject the API base URL into the renderer so api.ts can read it without
+// hard-coding localhost. Set by main.ts based on PLUMB_API_URL env var.
+contextBridge.exposeInMainWorld('__PLUMB_API_URL__', process.env.PLUMB_API_URL ?? null)
+
 export type DropletPhase = 'hidden' | 'open'
 
 contextBridge.exposeInMainWorld('notch', {

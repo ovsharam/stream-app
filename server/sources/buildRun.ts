@@ -1,5 +1,6 @@
 import type { Server as SocketServer } from 'socket.io'
 import type { BuildExecutor, BuildAgentsStatus, BuildRunResult } from '../../shared/build-executor'
+import type { StreamItem } from '../../shared/types'
 import { normalizeAiAssist } from '../normalizer'
 import { upsertItem } from '../db'
 import {
@@ -34,16 +35,101 @@ export async function getBuildAgentsStatus(): Promise<BuildAgentsStatus> {
   }
 }
 
+function linkBuildRunToPipeline(input: {
+  executor: BuildExecutor
+  prompt: string
+  engagementId?: string
+  streamItemId: string
+  startedAt: number
+  io?: SocketServer
+}): void {
+  try {
+    const {
+      attachBuildRunToEngagement,
+      buildRunTrainingExecutor,
+      resolveEngagementForBuild
+    } = require('../fde/buildEngagement') as typeof import('../fde/buildEngagement')
+    const engagement = resolveEngagementForBuild({
+      engagementId: input.engagementId,
+      prompt: input.prompt
+    })
+    if (!engagement) return
+
+    attachBuildRunToEngagement({
+      engagementId: engagement.id,
+      streamItemId: input.streamItemId
+    })
+
+    const { captureBuildRun } = require('../fde/trainingLog') as typeof import('../fde/trainingLog')
+    captureBuildRun({
+      engagementId: engagement.id,
+      executor: buildRunTrainingExecutor(input.executor),
+      prompt: input.prompt,
+      ok: true,
+      trace: { streamItemId: input.streamItemId, executor: input.executor },
+      startedAt: input.startedAt
+    })
+
+    input.io?.emit('cluster:refresh', { reason: 'fde-engagement' })
+  } catch (err) {
+    console.warn(
+      '[fde] build engagement link skipped:',
+      err instanceof Error ? err.message : err
+    )
+  }
+}
+
+function publishBuildStreamItem(
+  item: StreamItem,
+  input: {
+    executor: BuildExecutor
+    prompt: string
+    engagementId?: string
+    startedAt: number
+    io?: SocketServer
+  }
+): StreamItem {
+  try {
+    const { resolveEngagementForBuild, withEngagementMetadata } =
+      require('../fde/buildEngagement') as typeof import('../fde/buildEngagement')
+    const engagement = resolveEngagementForBuild({
+      engagementId: input.engagementId,
+      prompt: input.prompt
+    })
+    const published = engagement ? withEngagementMetadata(item, engagement.id) : item
+    upsertItem(published)
+    input.io?.emit('stream:item', published)
+    if (engagement) {
+      linkBuildRunToPipeline({
+        executor: input.executor,
+        prompt: input.prompt,
+        engagementId: engagement.id,
+        streamItemId: item.id,
+        startedAt: input.startedAt,
+        io: input.io
+      })
+    }
+    return published
+  } catch {
+    upsertItem(item)
+    input.io?.emit('stream:item', item)
+    return item
+  }
+}
+
 export async function runBuildAgent(input: {
   executor: BuildExecutor
   prompt: string
   projectId?: string
+  engagementId?: string
   io?: SocketServer
 }): Promise<BuildRunResult> {
   const prompt = input.prompt.trim()
   if (!prompt) {
     return { ok: false, message: 'Prompt is required', executor: input.executor }
   }
+
+  const startedAt = Date.now()
 
   const config = getCursorBuildConfig()
   const projectId = input.projectId ?? config.activeLocalProjectId
@@ -54,12 +140,14 @@ export async function runBuildAgent(input: {
   if (input.executor === 'claude-code') {
     const cc = getClaudeCodeBuildStatus()
     if (!cc.ready) {
+      const message = !cc.cliPath
+        ? cc.accountLabel
+          ? 'Claude Code CLI not on server PATH — restart Notch from Terminal (`npm run dev:notch:live`) or set CLAUDE_CLI_PATH.'
+          : 'Install Claude Code: npm i -g @anthropic-ai/claude-code && claude login'
+        : 'Run claude login in Terminal, then retry.'
       return {
         ok: false,
-        message:
-          cc.cliPath
-            ? 'Run claude login in Terminal, then retry.'
-            : 'Install Claude Code: npm i -g @anthropic-ai/claude-code && claude login',
+        message,
         executor: input.executor
       }
     }
@@ -67,7 +155,7 @@ export async function runBuildAgent(input: {
       return { ok: false, message: 'Add a local project folder first.', executor: input.executor }
     }
 
-    const startedAt = new Date().toISOString()
+    const startedAtIso = new Date().toISOString()
     const item = normalizeAiAssist({
       source: 'claude',
       query: prompt,
@@ -76,15 +164,20 @@ export async function runBuildAgent(input: {
       handle: 'claude',
       metadata: {
         agentStatus: 'running',
-        startedAt,
+        startedAt: startedAtIso,
         runtime: 'local',
         executor: 'claude-code',
         projectPath: localProject.path,
         projectName: localProject.name
       }
     })
-    upsertItem(item)
-    input.io?.emit('stream:item', item)
+    publishBuildStreamItem(item, {
+      executor: input.executor,
+      prompt,
+      engagementId: input.engagementId,
+      startedAt,
+      io: input.io
+    })
 
     const fullPrompt = `${BUILD_SYSTEM}\n\n${prompt}`
     const launched = await launchClaudeCodeBuild({
@@ -122,6 +215,13 @@ export async function runBuildAgent(input: {
     if (!item.metadata?.agentId || agentStatus === 'error') {
       return { ok: false, message: item.body, executor: input.executor, itemId: item.id }
     }
+    publishBuildStreamItem(item, {
+      executor: input.executor,
+      prompt,
+      engagementId: input.engagementId,
+      startedAt,
+      io: input.io
+    })
     return { ok: true, message: item.body, executor: input.executor, itemId: item.id }
   }
 
@@ -134,6 +234,13 @@ export async function runBuildAgent(input: {
   if (!item.metadata?.agentId || agentStatus === 'error') {
     return { ok: false, message: item.body, executor: input.executor, itemId: item.id }
   }
+  publishBuildStreamItem(item, {
+    executor: input.executor,
+    prompt,
+    engagementId: input.engagementId,
+    startedAt,
+    io: input.io
+  })
   return { ok: true, message: item.body, executor: input.executor, itemId: item.id }
 }
 

@@ -971,6 +971,51 @@ export function listRequirementsForSession(sessionId: string): FdeRequirement[] 
   }))
 }
 
+export function listRequirementsForEngagement(engagementId: string): FdeRequirement[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM fde_requirements WHERE engagement_id = ? ORDER BY updated_at ASC`
+    )
+    .all(engagementId) as Record<string, unknown>[]
+  return rows.map((r) => ({
+    id: String(r.id),
+    engagementId: String(r.engagement_id),
+    sessionId: r.session_id ? String(r.session_id) : undefined,
+    field: String(r.field) as RequirementField,
+    value: String(r.value),
+    status: String(r.status) as FdeRequirement['status'],
+    source: String(r.source) as FdeRequirement['source'],
+    createdAt: Number(r.created_at),
+    updatedAt: Number(r.updated_at)
+  }))
+}
+
+export function updateRequirementStatus(
+  id: string,
+  status: FdeRequirement['status']
+): FdeRequirement | null {
+  const now = Date.now()
+  const result = getDb()
+    .prepare(`UPDATE fde_requirements SET status = ?, updated_at = ? WHERE id = ?`)
+    .run(status, now, id)
+  if (!result.changes) return null
+  const row = getDb().prepare(`SELECT * FROM fde_requirements WHERE id = ?`).get(id) as
+    | Record<string, unknown>
+    | undefined
+  if (!row) return null
+  return {
+    id: String(row.id),
+    engagementId: String(row.engagement_id),
+    sessionId: row.session_id ? String(row.session_id) : undefined,
+    field: String(row.field) as RequirementField,
+    value: String(row.value),
+    status: String(row.status) as FdeRequirement['status'],
+    source: String(row.source) as FdeRequirement['source'],
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at)
+  }
+}
+
 export type FdeMeetingCorpusExport = {
   sessionId: string
   operatorId: string
@@ -1018,7 +1063,12 @@ export function logEngagementStageChange(input: {
 }): void {
   insertDecisionEvent({
     engagementId: input.engagementId,
-    phase: input.toStage === 'maintenance' ? 'maintenance' : input.toStage === 'build' ? 'build' : 'post_call',
+    phase:
+      input.toStage === 'deploy'
+        ? 'deploy'
+        : input.toStage === 'build'
+          ? 'build'
+          : 'post_call',
     type: 'stage_change',
     humanAction: `${input.fromStage} → ${input.toStage}`,
     metadata: input.scope ? { scope: input.scope } : undefined

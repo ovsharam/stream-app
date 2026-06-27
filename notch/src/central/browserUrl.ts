@@ -23,9 +23,7 @@ export function workspaceTabFromInput(input: string, opts?: { id?: string; uniqu
 }
 
 export const BROWSER_QUICK_LINKS = [
-  { label: 'Google', url: 'https://www.google.com' },
   { label: 'Gmail', url: 'https://mail.google.com' },
-  { label: 'YouTube', url: 'https://www.youtube.com' },
   { label: 'Google Docs', url: 'https://docs.google.com/document/u/0/' },
   { label: 'LinkedIn', url: 'https://www.linkedin.com/feed/' },
   { label: 'Monday', url: 'https://monday.com' }

@@ -430,6 +430,62 @@ body,
   font-family: inherit;
 }
 
+/* Primary actions — accent fill; must beat .x-app button color for readable labels */
+.x-app button.x-btn-primary,
+.x-app button[class*='-primary-btn'],
+.x-app button[class*='-btn-primary'],
+.x-app button.x-post-btn,
+.x-app button.x-join-btn,
+.x-app button.x-settings-action,
+.x-app button.x-int-btn:not(.x-int-btn-ghost) {
+  background: var(--x-accent);
+  border-color: var(--x-accent);
+  color: #fff;
+}
+
+.x-app button.x-btn-primary:hover:not(:disabled),
+.x-app button[class*='-primary-btn']:hover:not(:disabled),
+.x-app button[class*='-btn-primary']:hover:not(:disabled),
+.x-app button.x-post-btn:hover:not(:disabled),
+.x-app button.x-join-btn:hover:not(:disabled),
+.x-app button.x-settings-action:hover:not(:disabled),
+.x-app button.x-int-btn:not(.x-int-btn-ghost):hover:not(:disabled) {
+  background: var(--x-accent-hover);
+  border-color: var(--x-accent-hover);
+  color: #fff;
+}
+
+.x-app button.x-btn-secondary,
+.x-app button[class*='-btn-secondary'] {
+  background: var(--x-surface);
+  border: 1px solid var(--x-border-strong);
+  color: var(--x-fg);
+}
+
+.x-app button.x-int-btn-ghost {
+  background: transparent;
+  border: 1px solid var(--x-border);
+  color: var(--x-fg);
+}
+
+.x-app button.x-btn-secondary:hover:not(:disabled),
+.x-app button[class*='-btn-secondary']:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--x-fg) 5%, var(--x-surface));
+  border-color: color-mix(in srgb, var(--x-fg) 14%, var(--x-border-strong));
+  color: var(--x-fg);
+}
+
+.x-app button.x-int-btn-ghost:hover:not(:disabled) {
+  background: var(--x-hover);
+  border-color: color-mix(in srgb, var(--x-fg) 14%, var(--x-border-strong));
+  color: var(--x-fg);
+}
+
+.x-app button.x-rail-empty-btn {
+  color: var(--x-accent);
+  background: none;
+}
+
 .x-app input,
 .x-app textarea,
 .x-app select {
@@ -859,15 +915,9 @@ html.x-electron .x-app-utility .x-main.x-main-utility {
   padding: 16px 32px;
   border: none;
   border-radius: 9999px;
-  background: var(--x-btn);
-  color: var(--x-btn-fg);
   font-size: 17px;
   font-weight: 700;
   cursor: pointer;
-}
-
-.x-post-btn:hover {
-  background: var(--x-btn-hover);
 }
 
 .x-nav-user {
@@ -1490,11 +1540,6 @@ html.x-electron .x-nav-blade-toggle {
   color: var(--x-muted);
 }
 
-.x-browser-sidebar-primary-btn {
-  background: var(--x-accent);
-  color: #fff;
-}
-
 .x-browser-sidebar-new-compact {
   margin: 6px auto;
 }
@@ -1810,11 +1855,6 @@ html.x-electron .x-nav-blade-toggle {
 .x-home-rail-link-btn {
   background: transparent;
   color: var(--x-muted);
-}
-
-.x-home-rail-primary-btn {
-  background: var(--x-accent);
-  color: #fff;
 }
 
 .x-home-workspace-branch-head {
@@ -4119,17 +4159,11 @@ html.x-electron .x-nav-blade-toggle {
 .x-join-btn {
   border: none;
   border-radius: 9999px;
-  background: var(--x-btn);
-  color: var(--x-btn-fg);
   font-weight: 700;
   font-size: 15px;
   padding: 10px 20px;
   cursor: pointer;
   flex-shrink: 0;
-}
-
-.x-join-btn:hover {
-  background: var(--x-btn-hover);
 }
 
 .x-prompt {
@@ -12515,16 +12549,10 @@ button.x-home-running-row:hover {
 .x-settings-action {
   border: none;
   border-radius: 9999px;
-  background: var(--x-accent);
-  color: #fff;
   font-weight: 700;
   font-size: 13px;
   padding: 9px 14px;
   cursor: pointer;
-}
-
-.x-settings-action:hover {
-  background: var(--x-accent-hover);
 }
 
 /* Workspace chrome — unified tab + URL bar */
@@ -14548,6 +14576,21 @@ button.x-home-running-row:hover {
   background: color-mix(in srgb, var(--x-accent) 14%, var(--x-bg));
 }
 
+.x-pipeline-build-pill {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--x-accent) 45%, var(--x-border));
+  background: color-mix(in srgb, var(--x-accent) 10%, var(--x-bg));
+  color: var(--x-accent);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.x-pipeline-build-pill:hover {
+  background: color-mix(in srgb, var(--x-accent) 16%, var(--x-bg));
+}
+
 .x-pipeline-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -14739,6 +14782,30 @@ button.x-home-running-row:hover {
 
 .x-pipeline-card.alert {
   border-color: color-mix(in srgb, #e65100 35%, var(--x-border));
+}
+
+.x-pipeline-card.x-pipeline-build-run {
+  border-color: color-mix(in srgb, var(--x-accent) 55%, var(--x-border));
+  background: color-mix(in srgb, var(--x-accent) 6%, var(--x-bg));
+}
+
+.x-pipeline-card.x-pipeline-card-building {
+  border-color: color-mix(in srgb, var(--x-accent) 45%, var(--x-border));
+}
+
+.x-pipeline-build-live {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--x-accent);
+}
+
+.x-pipeline-build-step {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--x-muted);
+  line-height: 1.35;
 }
 
 .x-pipeline-card-top {
@@ -16004,17 +16071,6 @@ button.x-home-running-row:hover {
 .x-toast-pill:hover {
   background: var(--x-hover);
   border-color: var(--x-border-strong);
-}
-
-.x-toast-pill-primary {
-  background: var(--x-btn);
-  border-color: var(--x-btn);
-  color: var(--x-btn-fg);
-}
-
-.x-toast-pill-primary:hover {
-  background: var(--x-btn-hover);
-  border-color: var(--x-btn-hover);
 }
 
 .x-toast-meeting .x-toast-pill-primary {

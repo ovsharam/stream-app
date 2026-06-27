@@ -4,6 +4,7 @@ import { normalizeSlackMessage } from '../normalizer'
 import { upsertItem, itemExists } from '../db'
 import { getToken, setToken, setConnection } from '../store'
 import type { StreamItem } from '../../shared/types'
+import { FEED_HISTORY_DAYS } from '../../shared/feed'
 
 let boltApp: App | null = null
 
@@ -154,7 +155,7 @@ export async function syncSlack(io?: SocketServer): Promise<StreamItem[]> {
   if (!getToken('slack')) return []
 
   try {
-    const items = await fetchSlackMessages(24)
+    const items = await fetchSlackMessages(FEED_HISTORY_DAYS * 24)
     const newItems = items.filter((i) => !itemExists(i.id))
 
     for (const item of items) upsertItem(item)

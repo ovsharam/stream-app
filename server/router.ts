@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import { randomBytes } from 'crypto'
 import type { Server as SocketServer } from 'socket.io'
+import { authMiddleware } from './auth-middleware'
+import { inviteOrgMember } from './supabase-db'
 import { getRecentItems, updateItemFlags } from './db'
 import { getConnections, setConnection, setNested, getNested, getToken } from './store'
 import { streamItemToApi } from '../shared/serialize'
@@ -202,6 +204,9 @@ function serializeContext(ctx: ReturnType<typeof getActiveContext>) {
 export function createRouter(io?: SocketServer): Router {
   registerIntegrationExecutors()
   const router = Router()
+
+  // Auth middleware applied globally; public routes bypass it inside authMiddleware
+  router.use(authMiddleware)
 
   router.get('/health', (_req, res) => {
     res.json({ ok: true, ts: Date.now() })
@@ -830,10 +835,11 @@ export function createRouter(io?: SocketServer): Router {
   })
 
   router.post('/build/run', async (req, res) => {
-    const { executor, prompt, projectId } = req.body as {
+    const { executor, prompt, projectId, engagementId } = req.body as {
       executor?: import('../shared/build-executor').BuildExecutor
       prompt?: string
       projectId?: string
+      engagementId?: string
     }
     const picked =
       executor === 'cursor-cloud' || executor === 'cursor-local' || executor === 'claude-code'
@@ -844,6 +850,7 @@ export function createRouter(io?: SocketServer): Router {
         executor: picked,
         prompt: String(prompt ?? ''),
         projectId: projectId ? String(projectId) : undefined,
+        engagementId: engagementId ? String(engagementId) : undefined,
         io
       })
       if (!result.ok) {
@@ -2040,6 +2047,35 @@ export function createRouter(io?: SocketServer): Router {
     res.json({ engagements: listEngagements() })
   })
 
+  router.get('/fde/clients', (_req, res) => {
+    const { listEngagementsByClient } =
+      require('./fde/engagementStore') as typeof import('./fde/engagementStore')
+    res.json({ clients: listEngagementsByClient() })
+  })
+
+  router.get('/fde/engagements/by-feed-item/:itemId', (req, res) => {
+    const { resolveEngagementByFeedItem } =
+      require('./kb/dealContext') as typeof import('./kb/dealContext')
+    const engagement = resolveEngagementByFeedItem(String(req.params.itemId))
+    if (!engagement) {
+      res.status(404).json({ error: 'not found' })
+      return
+    }
+    res.json({ engagement })
+  })
+
+  router.get('/fde/engagements/:id/requirements', (req, res) => {
+    const { getEngagement } = require('./fde/engagementStore') as typeof import('./fde/engagementStore')
+    const { listRequirementsForEngagement } =
+      require('./fde/trainingStore') as typeof import('./fde/trainingStore')
+    const engagement = getEngagement(req.params.id)
+    if (!engagement) {
+      res.status(404).json({ error: 'not found' })
+      return
+    }
+    res.json({ requirements: listRequirementsForEngagement(engagement.id) })
+  })
+
   router.get('/fde/engagements/:id', (req, res) => {
     const { getEngagement } = require('./fde/engagementStore') as typeof import('./fde/engagementStore')
     const engagement = getEngagement(req.params.id)
@@ -2068,12 +2104,100 @@ export function createRouter(io?: SocketServer): Router {
     res.json({ engagement })
   })
 
+  router.post('/fde/flow/run', async (req, res) => {
+    const intakeText = String(req.body?.intakeText ?? '').trim()
+    if (!intakeText) {
+      res.status(400).json({ error: 'intakeText required' })
+      return
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-cache, no-transform')
+    res.setHeader('Connection', 'keep-alive')
+    res.setHeader('X-Accel-Buffering', 'no')
+    res.flushHeaders?.()
+
+    req.setTimeout(600_000)
+    res.setTimeout(600_000)
+
+    const skipExecute = req.body?.skipExecute === true
+    const engagementId = req.body?.engagementId ? String(req.body.engagementId) : undefined
+    const { runFdeFlow } = require('./fde/flowPipeline') as typeof import('./fde/flowPipeline')
+
+    const send = (event: import('../shared/fde-flow').FlowStageEvent) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`)
+    }
+
+    try {
+      await runFdeFlow({
+        intakeText,
+        skipExecute,
+        engagementId,
+        onEvent: send
+      })
+      io?.emit('cluster:refresh', { reason: 'fde-flow' })
+    } catch (err) {
+      send({
+        stage: 'error',
+        message: err instanceof Error ? err.message : String(err)
+      })
+    } finally {
+      res.end()
+    }
+  })
+
+  router.post('/fde/engagements/from-feed-item', (req, res) => {
+    const { createEngagementFromFeedItem } =
+      require('./fde/engagementStore') as typeof import('./fde/engagementStore')
+    const feedItemId = String(req.body?.feedItemId ?? '').trim()
+    if (!feedItemId) {
+      res.status(400).json({ error: 'feedItemId required' })
+      return
+    }
+    const engagement = createEngagementFromFeedItem({
+      feedItemId,
+      clientName: req.body?.clientName ? String(req.body.clientName) : undefined,
+      company: req.body?.company ? String(req.body.company) : undefined
+    })
+    io?.emit('cluster:refresh', { reason: 'fde-engagement' })
+    res.json({ engagement })
+  })
+
+  router.post('/fde/engagements/:id/link-feed-item', (req, res) => {
+    const { linkFeedItemToEngagement } =
+      require('./fde/engagementStore') as typeof import('./fde/engagementStore')
+    const feedItemId = String(req.body?.feedItemId ?? '').trim()
+    if (!feedItemId) {
+      res.status(400).json({ error: 'feedItemId required' })
+      return
+    }
+    const engagement = linkFeedItemToEngagement(req.params.id, feedItemId)
+    if (!engagement) {
+      res.status(404).json({ error: 'not found' })
+      return
+    }
+    io?.emit('cluster:refresh', { reason: 'fde-engagement' })
+    res.json({ engagement })
+  })
+
   router.patch('/fde/engagements/:id', (req, res) => {
     const { getEngagement, upsertEngagement } = require('./fde/engagementStore') as typeof import('./fde/engagementStore')
+    const { computeContextScore, canAdvanceFromContext, CONTEXT_GATE } =
+      require('../shared/fde-context') as typeof import('../shared/fde-context')
     const existing = getEngagement(req.params.id)
     if (!existing) {
       res.status(404).json({ error: 'not found' })
       return
+    }
+    const nextStage = req.body?.stage ?? existing.stage
+    if (nextStage === 'build' && existing.stage === 'context') {
+      const score = existing.contextScore ?? computeContextScore(existing)
+      if (!canAdvanceFromContext(score)) {
+        res.status(409).json({
+          error: `Context score ${score} is below the ${CONTEXT_GATE} gate — complete requirements before build.`
+        })
+        return
+      }
     }
     const engagement = upsertEngagement({
       ...existing,
@@ -2109,6 +2233,35 @@ export function createRouter(io?: SocketServer): Router {
     }
     io?.emit('cluster:refresh', { reason: 'fde-engagement' })
     res.json({ engagement })
+  })
+
+  router.delete('/fde/engagements/:id', (req, res) => {
+    const { deleteEngagement, getEngagement } =
+      require('./fde/engagementStore') as typeof import('./fde/engagementStore')
+    const existing = getEngagement(req.params.id)
+    if (!existing) {
+      res.status(404).json({ error: 'not found' })
+      return
+    }
+    deleteEngagement(existing.id)
+    io?.emit('cluster:refresh', { reason: 'fde-engagement' })
+    res.json({ ok: true })
+  })
+
+  router.patch('/fde/requirements/:id', (req, res) => {
+    const status = req.body?.status
+    if (!status || typeof status !== 'string') {
+      res.status(400).json({ error: 'status required' })
+      return
+    }
+    const { updateRequirementStatus } =
+      require('./fde/trainingStore') as typeof import('./fde/trainingStore')
+    const updated = updateRequirementStatus(String(req.params.id), status)
+    if (!updated) {
+      res.status(404).json({ error: 'not found' })
+      return
+    }
+    res.json({ requirement: updated })
   })
 
   router.get('/fde/training/summary', (_req, res) => {
@@ -2467,6 +2620,40 @@ export function createRouter(io?: SocketServer): Router {
   router.post('/sim/end-call', (_req, res) => {
     stopSimCall()
     res.json({ ok: true, phase: 'post_call' })
+  })
+
+  // ─── Org / team management ─────────────────────────────────────────────────
+
+  router.post('/fde/org/invite', async (req, res) => {
+    const orgId = req.orgId
+    const userId = req.userId
+    if (!orgId || !userId) {
+      res.status(401).json({ error: 'Authentication required' })
+      return
+    }
+    const email = String(req.body?.email ?? '').trim()
+    const role = (req.body?.role as string) || 'fde'
+    if (!email || !email.includes('@')) {
+      res.status(400).json({ error: 'Valid email required' })
+      return
+    }
+    const validRoles = ['fde', 'ae', 'am', 'admin']
+    if (!validRoles.includes(role)) {
+      res.status(400).json({ error: `role must be one of: ${validRoles.join(', ')}` })
+      return
+    }
+    try {
+      const result = await inviteOrgMember({
+        orgId,
+        email,
+        role: role as 'fde' | 'ae' | 'am' | 'admin',
+        inviterUserId: userId
+      })
+      res.json(result)
+    } catch (err) {
+      console.error('[invite] failed:', err)
+      res.status(500).json({ error: 'Something went wrong' })
+    }
   })
 
   return router

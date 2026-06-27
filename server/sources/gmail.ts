@@ -21,6 +21,7 @@ import {
   effectiveGoogleSyncError,
   assertGoogleApiAllowed
 } from './googleRateLimit'
+import { FEED_HISTORY_DAYS } from '../../shared/feed'
 
 export function getGmailAuthUrl(sessionId: string, addAccount = false): string {
   const oauth2 = getOAuth2Client()
@@ -81,7 +82,7 @@ async function fetchGmailThreadsForAccount(
       {
         userId: 'me',
         maxResults: limit,
-        q: 'in:inbox -category:promotions -category:social'
+        q: `in:inbox -category:promotions -category:social newer_than:${FEED_HISTORY_DAYS}d`
       },
       GOOGLE_REQUEST_OPTS
     )
@@ -199,7 +200,7 @@ export async function syncGmail(io?: SocketServer): Promise<StreamItem[]> {
 
   for (const account of accounts) {
     try {
-      const { items, threadErrors } = await fetchGmailThreadsForAccount(account, 15)
+      const { items, threadErrors } = await fetchGmailThreadsForAccount(account, 50)
       allItems.push(...items)
       if (threadErrors.length > 0) {
         errors.push(`${account.email}: ${threadErrors.length} thread(s) skipped`)

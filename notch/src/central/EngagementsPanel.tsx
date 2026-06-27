@@ -1,10 +1,13 @@
 import type { FdeEngagement, EngagementStage, ScopeBucket } from '@shared/fde-engagement'
+import { canAdvanceFromContext, computeContextScore, CONTEXT_GATE } from '@shared/fde-context'
 import { useEngagements } from './useEngagements'
 
 const STAGE_LABEL: Record<EngagementStage, string> = {
   intake: 'Intake',
+  context: 'Context',
   build: 'Build',
-  maintenance: 'Maintenance',
+  test: 'Test',
+  deploy: 'Deploy',
   paused: 'Paused'
 }
 
@@ -42,7 +45,11 @@ export function EngagementsPanel({ onOpenMeeting, onSelect, compact }: Props) {
 
   return (
     <ul className={`x-eng-list ${refreshing ? 'x-eng-list-refreshing' : ''}`}>
-      {list.map((e) => (
+      {list.map((e) => {
+        const contextScore = e.contextScore ?? computeContextScore(e)
+        const canStartBuild = canAdvanceFromContext(contextScore)
+
+        return (
         <li
           key={e.id}
           className={`x-eng-card ${e.escalationLevel > 0 ? 'x-eng-card-alert' : ''} ${pendingIds.has(e.id) ? 'x-eng-card-pending' : ''}`}
@@ -67,6 +74,7 @@ export function EngagementsPanel({ onOpenMeeting, onSelect, compact }: Props) {
               {STAGE_LABEL[e.stage]}
               {e.company ? ` · ${e.company}` : ''}
               {e.escalationLevel > 0 ? ` · ⚠ ${e.escalationLevel === 2 ? 'Escalated' : 'Attention'}` : ''}
+              {e.stage === 'context' ? ` · Context ${contextScore}` : ''}
             </p>
             {e.summary && !compact ? (
               <p className="x-eng-card-summary">{e.summary.slice(0, 140)}{e.summary.length > 140 ? '…' : ''}</p>
@@ -87,14 +95,23 @@ export function EngagementsPanel({ onOpenMeeting, onSelect, compact }: Props) {
                 <button
                   type="button"
                   className="x-eng-action"
+                  onClick={() => void patch(e.id, { stage: 'context', scopeApproved: true } as Partial<FdeEngagement> & { scopeApproved?: boolean })}
+                >
+                  Move to context
+                </button>
+              ) : null}
+              {e.stage === 'context' && canStartBuild ? (
+                <button
+                  type="button"
+                  className="x-eng-action"
                   onClick={() => void patch(e.id, { stage: 'build', scopeApproved: true } as Partial<FdeEngagement> & { scopeApproved?: boolean })}
                 >
                   Start build
                 </button>
               ) : null}
               {e.stage === 'build' ? (
-                <button type="button" className="x-eng-action" onClick={() => void patch(e.id, { stage: 'maintenance' })}>
-                  → Maintenance
+                <button type="button" className="x-eng-action" onClick={() => void patch(e.id, { stage: 'deploy' })}>
+                  → Deploy
                 </button>
               ) : null}
               <button
@@ -111,7 +128,8 @@ export function EngagementsPanel({ onOpenMeeting, onSelect, compact }: Props) {
             </div>
           ) : null}
         </li>
-      ))}
+        )
+      })}
     </ul>
   )
 }

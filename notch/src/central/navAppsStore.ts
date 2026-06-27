@@ -27,17 +27,11 @@ export type NavAppCatalogEntry = {
 
 const STORAGE_KEY = 'notch.navApps'
 
-/** Apps you can pin from sidebar / Apps — no manual URLs. */
+/** Consumer / entertainment apps — not offered in the deployment workspace. */
+export const DEPRECATED_NAV_APP_IDS = new Set(['youtube'])
+
+/** Apps you can pin from sidebar / Apps — work integrations only. */
 export const PINNABLE_APPS: NavAppCatalogEntry[] = [
-  {
-    id: 'youtube',
-    label: 'YouTube',
-    url: 'https://www.youtube.com',
-    surface: 'workspace',
-    miniPlayer: true,
-    description: 'YouTube in an in-app tab.',
-    brandClass: 'x-int-card-youtube'
-  },
   {
     id: 'linkedin',
     label: 'LinkedIn',
@@ -135,7 +129,9 @@ export function loadNavApps(): NavApp[] {
 /** Drop legacy Cursor browser pins and unknown custom URL pins. */
 function syncCatalogNavAppUrls(apps: NavApp[]): NavApp[] {
   const allowed = new Set(PINNABLE_APPS.map((p) => p.id))
-  const withoutCursor = apps.filter((a) => a.id !== 'cursor' && allowed.has(a.id))
+  const withoutCursor = apps.filter(
+    (a) => a.id !== 'cursor' && allowed.has(a.id) && !DEPRECATED_NAV_APP_IDS.has(a.id)
+  )
   let changed = withoutCursor.length !== apps.length
   const next = withoutCursor.map((app) => {
     const entry = PINNABLE_APPS.find((c) => c.id === app.id)

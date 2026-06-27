@@ -4,6 +4,7 @@ import { upsertItem, itemExists } from '../db'
 import { getToken, setToken, setConnection } from '../store'
 import type { StreamItem } from '../../shared/types'
 import type { MondayAccount } from '../../shared/cluster'
+import { FEED_HISTORY_MS } from '../../shared/feed'
 
 type MondayToken = {
   apiToken: string
@@ -11,6 +12,8 @@ type MondayToken = {
   userName?: string
   userEmail?: string
   lastSyncMs?: number
+  /** One-time 7-day feed backfill completed for this connection. */
+  feedBackfilledAt?: number
   defaultBoardId?: string
   defaultBoardName?: string
   defaultGroupId?: string
@@ -154,19 +157,23 @@ export async function connectMondayWithToken(apiToken: string): Promise<void> {
     userId: me.me.id,
     userName: me.me.name ?? '',
     userEmail: me.me.email ?? '',
-    lastSyncMs: Date.now() - 1000 * 60 * 60 * 12,
+    lastSyncMs: Date.now() - FEED_HISTORY_MS,
     writeAccess
   })
   setConnection('monday', true)
 }
 
-export async function fetchMondayUpdates(limit = 30): Promise<StreamItem[]> {
+export async function fetchMondayUpdates(
+  limit = 30,
+  sinceMs?: number,
+  backfill = false
+): Promise<StreamItem[]> {
   const auth = getMondayToken()
   if (!auth) return []
   const viewerId = auth.userId ?? ''
   const viewerName = auth.userName ?? ''
   const viewerEmail = auth.userEmail ?? ''
-  const lastSyncMs = auth.lastSyncMs ?? Date.now() - 1000 * 60 * 60 * 6
+  const lastSyncMs = sinceMs ?? auth.lastSyncMs ?? Date.now() - FEED_HISTORY_MS
 
   const data = await mondayApi<{
     boards: {
@@ -227,8 +234,8 @@ export async function fetchMondayUpdates(limit = 30): Promise<StreamItem[]> {
     `,
     {
       boards: 8,
-      items: 30,
-      updates: 8
+      items: backfill ? 50 : 30,
+      updates: backfill ? 20 : 8
     }
   )
 
@@ -403,12 +410,21 @@ export async function fetchMondayUpdates(limit = 30): Promise<StreamItem[]> {
 export async function syncMonday(io?: SocketServer): Promise<StreamItem[]> {
   if (!getMondayToken()) return []
   try {
-    const items = await fetchMondayUpdates(30)
+    const auth = getMondayToken()!
+    const needsBackfill = auth.feedBackfilledAt == null
+    const sinceMs = needsBackfill
+      ? Date.now() - FEED_HISTORY_MS
+      : (auth.lastSyncMs ?? Date.now() - FEED_HISTORY_MS)
+    const items = await fetchMondayUpdates(needsBackfill ? 80 : 30, sinceMs, needsBackfill)
     const newItems = items.filter((i) => !itemExists(i.id))
     for (const item of items) upsertItem(item)
     for (const item of newItems) io?.emit('stream:item', item)
     const existing = getToken('monday') ?? {}
-    setToken('monday', { ...existing, lastSyncMs: Date.now() })
+    setToken('monday', {
+      ...existing,
+      lastSyncMs: Date.now(),
+      ...(needsBackfill ? { feedBackfilledAt: Date.now() } : {})
+    })
     return items
   } catch (err) {
     console.error('[monday] sync failed:', err)

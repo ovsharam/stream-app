@@ -42,6 +42,16 @@ export function getRecentItems(limit = 100, source?: StreamSource): StreamItem[]
   return mod.getRecentItems(limit, source)
 }
 
+export function getItemsSince(
+  sinceMs: number,
+  limit = 800,
+  source?: StreamSource
+): StreamItem[] {
+  if (useMemory()) return memoryStore.getItemsSince(sinceMs, limit, source)
+  const mod = require('./db-sqlite') as typeof import('./db-sqlite')
+  return mod.getItemsSince(sinceMs, limit, source)
+}
+
 export function updateItemFlags(
   id: string,
   flags: { isUnread?: boolean; isStarred?: boolean }

@@ -26,6 +26,18 @@ export const memoryStore = {
       .slice(0, limit)
   },
 
+  getItemsSince(sinceMs: number, limit = 800, source?: StreamSource): StreamItem[] {
+    const all = [...items.values()].map((r) => streamItemFromJSON(r))
+    const filtered = all.filter((i) => {
+      if (i.timestamp.getTime() < sinceMs) return false
+      if (source && i.source !== source) return false
+      return true
+    })
+    return filtered
+      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+      .slice(0, limit)
+  },
+
   updateItemFlags(
     id: string,
     flags: { isUnread?: boolean; isStarred?: boolean }

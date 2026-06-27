@@ -9,6 +9,7 @@ import type {
   EngagementStage,
   ScopeBucket
 } from '../../shared/fde-engagement'
+import { computeContextScore, normalizeEngagementStage } from '../../shared/fde-context'
 import type { MeetingExtraction } from '../cluster/meetingPipeline'
 
 const SCHEMA = `
@@ -56,14 +57,18 @@ function migrateEngagementColumns(database: Database.Database): void {
   if (!names.has('signal_sources_json')) {
     database.exec(`ALTER TABLE fde_engagements ADD COLUMN signal_sources_json TEXT NOT NULL DEFAULT '[]'`)
   }
+  if (!names.has('context_score')) {
+    database.exec(`ALTER TABLE fde_engagements ADD COLUMN context_score INTEGER`)
+  }
+  database.exec(`UPDATE fde_engagements SET stage='deploy' WHERE stage='maintenance'`)
 }
 
 function rowToEngagement(r: Record<string, unknown>): FdeEngagement {
-  return {
+  const engagement: FdeEngagement = {
     id: String(r.id),
     clientName: String(r.client_name),
     company: r.company ? String(r.company) : undefined,
-    stage: String(r.stage) as EngagementStage,
+    stage: normalizeEngagementStage(String(r.stage)),
     scope: String(r.scope) as ScopeBucket,
     summary: r.summary ? String(r.summary) : undefined,
     buildPrompt: r.build_prompt ? String(r.build_prompt) : undefined,
@@ -76,9 +81,19 @@ function rowToEngagement(r: Record<string, unknown>): FdeEngagement {
     signalSources: JSON.parse(String(r.signal_sources_json ?? '[]')) as FdeEngagement['signalSources'],
     googleDocUrl: r.google_doc_url ? String(r.google_doc_url) : undefined,
     escalationLevel: Number(r.escalation_level) as EscalationLevel,
+    contextScore: r.context_score != null ? Number(r.context_score) : undefined,
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at)
   }
+  if (engagement.contextScore == null) {
+    engagement.contextScore = computeContextScore(engagement)
+  }
+  return engagement
+}
+
+export function deleteEngagement(id: string): boolean {
+  const result = getDb().prepare(`DELETE FROM fde_engagements WHERE id = ?`).run(id)
+  return result.changes > 0
 }
 
 export function listEngagements(limit = 50): FdeEngagement[] {
@@ -86,6 +101,27 @@ export function listEngagements(limit = 50): FdeEngagement[] {
     .prepare(`SELECT * FROM fde_engagements ORDER BY updated_at DESC LIMIT ?`)
     .all(limit) as Record<string, unknown>[]
   return rows.map(rowToEngagement)
+}
+
+export function listEngagementsByClient(): { clientName: string; engagements: FdeEngagement[] }[] {
+  const all = listEngagements(500)
+  const map = new Map<string, FdeEngagement[]>()
+  for (const e of all) {
+    const key = e.clientName.trim()
+    const list = map.get(key) ?? []
+    list.push(e)
+    map.set(key, list)
+  }
+  return [...map.entries()]
+    .map(([clientName, engagements]) => ({
+      clientName,
+      engagements: engagements.sort((a, b) => b.updatedAt - a.updatedAt)
+    }))
+    .sort((a, b) => {
+      const ta = a.engagements[0]?.updatedAt ?? 0
+      const tb = b.engagements[0]?.updatedAt ?? 0
+      return tb - ta
+    })
 }
 
 export function countEngagements(): number {
@@ -112,7 +148,7 @@ export function upsertEngagement(
     id,
     clientName: input.clientName,
     company: input.company ?? existing?.company,
-    stage: input.stage ?? existing?.stage ?? 'intake',
+    stage: normalizeEngagementStage(input.stage ?? existing?.stage ?? 'intake'),
     scope: input.scope ?? existing?.scope ?? 'unknown',
     summary: input.summary ?? existing?.summary,
     buildPrompt: input.buildPrompt ?? existing?.buildPrompt,
@@ -125,8 +161,13 @@ export function upsertEngagement(
     signalSources: input.signalSources ?? existing?.signalSources ?? [],
     googleDocUrl: input.googleDocUrl ?? existing?.googleDocUrl,
     escalationLevel: input.escalationLevel ?? existing?.escalationLevel ?? 0,
+    contextScore: input.contextScore ?? existing?.contextScore,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now
+  }
+
+  if (input.contextScore === undefined) {
+    engagement.contextScore = computeContextScore(engagement)
   }
 
   getDb()
@@ -135,11 +176,11 @@ export function upsertEngagement(
        (id, client_name, company, stage, scope, summary, build_prompt,
         next_steps_json, flags_json, open_questions_json, meeting_ids_json, feed_item_ids_json,
         proposal_ids_json, signal_sources_json,
-        google_doc_url, escalation_level, created_at, updated_at)
+        google_doc_url, escalation_level, context_score, created_at, updated_at)
        VALUES (@id, @client_name, @company, @stage, @scope, @summary, @build_prompt,
         @next_steps_json, @flags_json, @open_questions_json, @meeting_ids_json, @feed_item_ids_json,
         @proposal_ids_json, @signal_sources_json,
-        @google_doc_url, @escalation_level, @created_at, @updated_at)
+        @google_doc_url, @escalation_level, @context_score, @created_at, @updated_at)
        ON CONFLICT(id) DO UPDATE SET
         client_name=excluded.client_name, company=excluded.company, stage=excluded.stage,
         scope=excluded.scope, summary=excluded.summary, build_prompt=excluded.build_prompt,
@@ -148,7 +189,8 @@ export function upsertEngagement(
         feed_item_ids_json=excluded.feed_item_ids_json,
         proposal_ids_json=excluded.proposal_ids_json, signal_sources_json=excluded.signal_sources_json,
         google_doc_url=excluded.google_doc_url,
-        escalation_level=excluded.escalation_level, updated_at=excluded.updated_at`
+        escalation_level=excluded.escalation_level, context_score=excluded.context_score,
+        updated_at=excluded.updated_at`
     )
     .run({
       id: engagement.id,
@@ -167,6 +209,7 @@ export function upsertEngagement(
       signal_sources_json: JSON.stringify(engagement.signalSources ?? []),
       google_doc_url: engagement.googleDocUrl ?? null,
       escalation_level: engagement.escalationLevel,
+      context_score: engagement.contextScore ?? null,
       created_at: engagement.createdAt,
       updated_at: engagement.updatedAt
     })
@@ -198,6 +241,13 @@ export function upsertEngagement(
     /* training capture optional */
   }
 
+  try {
+    const { syncEngagementKbLinks } = require('../kb/dealContext') as typeof import('../kb/dealContext')
+    syncEngagementKbLinks(engagement.id)
+  } catch (err) {
+    console.warn('[kb] engagement link sync skipped:', err instanceof Error ? err.message : err)
+  }
+
   return engagement
 }
 
@@ -221,12 +271,42 @@ export function upsertEngagementFromMeeting(input: {
   )
 
   const scope = input.extraction.scopeDecision
-  const stage: EngagementStage =
-    existing?.stage === 'maintenance'
-      ? 'maintenance'
-      : scope === 'unknown'
-        ? 'intake'
-        : 'build'
+  const normalizedExistingStage = existing ? normalizeEngagementStage(existing.stage) : undefined
+  const hasBuildPrompt = Boolean(input.extraction.buildPrompt?.trim())
+  let stage: EngagementStage
+  if (normalizedExistingStage === 'deploy' || normalizedExistingStage === 'paused') {
+    stage = normalizedExistingStage
+  } else if (scope === 'unknown') {
+    stage = 'intake'
+  } else if (normalizedExistingStage === 'build' || normalizedExistingStage === 'test') {
+    stage = normalizedExistingStage
+  } else if (hasBuildPrompt) {
+    const draft: FdeEngagement = {
+      ...(existing ?? {
+        id: 'draft',
+        clientName,
+        scope,
+        stage: 'context',
+        nextSteps: input.extraction.nextSteps,
+        flags: input.extraction.flags,
+        openQuestions: input.extraction.questions,
+        meetingIds: [],
+        feedItemIds: [],
+        escalationLevel: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }),
+      summary: input.extraction.summary,
+      buildPrompt: input.extraction.buildPrompt,
+      nextSteps: input.extraction.nextSteps,
+      flags: input.extraction.flags,
+      openQuestions: input.extraction.questions,
+      scope
+    }
+    stage = computeContextScore(draft) >= 60 ? 'build' : 'context'
+  } else {
+    stage = 'context'
+  }
 
   const meetingIds = [...new Set([...(existing?.meetingIds ?? []), input.sessionId])]
   const feedItemIds = [...new Set([...(existing?.feedItemIds ?? []), input.feedItemId])]
@@ -244,9 +324,58 @@ export function upsertEngagementFromMeeting(input: {
     openQuestions: input.extraction.questions,
     meetingIds,
     feedItemIds,
-    signalSources: [...new Set([...(existing?.signalSources ?? []), 'meeting'])],
+    signalSources: [...new Set([...(existing?.signalSources ?? []), 'meeting'])] as FdeEngagement['signalSources'],
     googleDocUrl: input.googleDocUrl ?? existing?.googleDocUrl,
     escalationLevel:
       input.extraction.flags.length > 2 ? 1 : (existing?.escalationLevel ?? 0)
   }, { sessionId: input.sessionId, extraction: input.extraction })
+}
+
+function normalizeFeedItemId(feedItemId: string): string {
+  return feedItemId.replace(/^ext-/, '')
+}
+
+function feedItemAlreadyLinked(engagement: FdeEngagement, feedItemId: string): boolean {
+  const normalized = normalizeFeedItemId(feedItemId)
+  return engagement.feedItemIds.some((id) => normalizeFeedItemId(id) === normalized)
+}
+
+function canonicalFeedItemId(feedItemId: string): string {
+  const normalized = normalizeFeedItemId(feedItemId)
+  return feedItemId.startsWith('ext-') ? feedItemId : `ext-${normalized}`
+}
+
+export function linkFeedItemToEngagement(engagementId: string, feedItemId: string): FdeEngagement | null {
+  const existing = getEngagement(engagementId)
+  if (!existing) return null
+  if (feedItemAlreadyLinked(existing, feedItemId)) return existing
+
+  return upsertEngagement({
+    id: existing.id,
+    clientName: existing.clientName,
+    feedItemIds: [...existing.feedItemIds, canonicalFeedItemId(feedItemId)]
+  })
+}
+
+export function createEngagementFromFeedItem(input: {
+  feedItemId: string
+  clientName?: string
+  company?: string
+}): FdeEngagement {
+  const normalized = normalizeFeedItemId(input.feedItemId)
+  const linked = listEngagements(500).find((e) => feedItemAlreadyLinked(e, input.feedItemId))
+  if (linked) {
+    return linkFeedItemToEngagement(linked.id, input.feedItemId)!
+  }
+
+  const clientName =
+    input.clientName?.trim() || `Inbound · ${normalized.slice(0, 8).toUpperCase()}`
+
+  return upsertEngagement({
+    clientName,
+    company: input.company?.trim() || undefined,
+    stage: 'intake',
+    scope: 'unknown',
+    feedItemIds: [canonicalFeedItemId(input.feedItemId)]
+  })
 }

@@ -28,6 +28,7 @@ import { executeApprovedProposal } from './execute'
 import { emitServerEvent } from '../telemetry/service'
 import { recordComposeAction } from '../kb/telemetry'
 import { upsertEngagementFromAgentProposal } from '../fde/engagementFromProposal'
+import { ingestAgentProposal } from '../kb/pipeline'
 
 function normalizeLinkedInSenderName(name: string): string {
   return cleanLinkedInSenderName(name)
@@ -218,7 +219,8 @@ export async function ingestLinkedInMessage(
   insertProposal(proposal)
 
   try {
-    upsertEngagementFromAgentProposal(proposal, { stage: 'intake' })
+    const engagement = upsertEngagementFromAgentProposal(proposal, { stage: 'intake' })
+    ingestAgentProposal(proposal, engagement)
     io?.emit('cluster:refresh', { reason: 'fde-engagement' })
   } catch (err) {
     console.warn('[fde] engagement from agent ingest skipped:', err instanceof Error ? err.message : err)

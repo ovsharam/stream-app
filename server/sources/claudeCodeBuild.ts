@@ -1,6 +1,7 @@
 import { spawn, execSync } from 'child_process'
 import { existsSync } from 'fs'
-import { join } from 'path'
+import { dirname, join } from 'path'
+import { homedir } from 'os'
 import type { Server as SocketServer } from 'socket.io'
 import { getRecentItems, upsertItem } from '../db'
 import { detectLocalClaudeAccount } from './claudeOAuth'
@@ -8,13 +9,50 @@ import type { ClaudeCodeBuildStatus } from '../../shared/build-executor'
 
 const activeRuns = new Map<string, { child: ReturnType<typeof spawn> }>()
 
+function claudeCliCandidates(): string[] {
+  const home = homedir()
+  const nodeBin = dirname(process.execPath)
+  const nvmDir = process.env.NVM_DIR ?? join(home, '.nvm')
+  return [
+    join(nodeBin, 'claude'),
+    process.env.CLAUDE_CLI_PATH,
+    join(home, '.local', 'bin', 'claude'),
+    join(home, '.npm-global', 'bin', 'claude'),
+    join(nvmDir, 'versions', 'node', process.version, 'bin', 'claude')
+  ].filter((p): p is string => Boolean(p))
+}
+
 function findClaudeCli(): string | null {
-  try {
-    const path = execSync('which claude', { encoding: 'utf-8', timeout: 3000 }).trim()
-    return path || null
-  } catch {
-    return null
+  for (const candidate of claudeCliCandidates()) {
+    if (existsSync(candidate)) return candidate
   }
+
+  const home = homedir()
+  const nvmDir = process.env.NVM_DIR ?? join(home, '.nvm')
+  const augmentedPath = [
+    dirname(process.execPath),
+    process.env.NVM_BIN,
+    join(home, '.local', 'bin'),
+    join(nvmDir, 'versions', 'node', process.version, 'bin'),
+    '/usr/local/bin',
+    '/opt/homebrew/bin',
+    process.env.PATH
+  ]
+    .filter(Boolean)
+    .join(':')
+
+  try {
+    const path = execSync('which claude', {
+      encoding: 'utf-8',
+      timeout: 3000,
+      env: { ...process.env, PATH: augmentedPath }
+    }).trim()
+    if (path && existsSync(path)) return path
+  } catch {
+    /* fall through */
+  }
+
+  return null
 }
 
 export function getClaudeCodeBuildStatus(): ClaudeCodeBuildStatus {

@@ -43,6 +43,8 @@ import {
 type Props = {
   events: CentralStreamEvent[]
   onOpenIntegrations?: () => void
+  engagementId?: string | null
+  initialPrompt?: string | null
 }
 
 function streamItemIdFromEvent(event: CentralStreamEvent): string {
@@ -66,7 +68,7 @@ function agentStatusFromEvent(event: CentralStreamEvent | undefined): 'running' 
   return 'running'
 }
 
-export function BuildDojo({ events, onOpenIntegrations }: Props) {
+export function BuildDojo({ events, onOpenIntegrations, engagementId, initialPrompt }: Props) {
   const [view, setView] = useState<BuildDojoView>(() => loadDojoView())
   const [buildPane, setBuildPane] = useState<BuildPane>(() => loadBuildPane())
   const [executor, setExecutor] = useState<BuildExecutor>(() => loadDojoExecutor())
@@ -76,7 +78,7 @@ export function BuildDojo({ events, onOpenIntegrations }: Props) {
   const [activeAgentTabId, setActiveAgentTabId] = useState<string | null>(() => loadActiveAgentTabId())
   const [railCollapsed, setRailCollapsed] = useState(() => loadBuildRailCollapsed())
   const [buildStatus, setBuildStatus] = useState<BuildAgentsStatus | null>(null)
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState(initialPrompt ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -106,6 +108,10 @@ export function BuildDojo({ events, onOpenIntegrations }: Props) {
   useEffect(() => {
     void refreshStatus()
   }, [refreshStatus])
+
+  useEffect(() => {
+    if (initialPrompt) setInput(initialPrompt)
+  }, [initialPrompt, engagementId])
 
   useEffect(() => {
     saveBuildThreads(threads)
@@ -308,7 +314,8 @@ export function BuildDojo({ events, onOpenIntegrations }: Props) {
       const result = await integrationApi.buildRun({
         executor,
         prompt: text,
-        projectId: buildStatus?.activeLocalProjectId ?? activeProject?.id
+        projectId: buildStatus?.activeLocalProjectId ?? activeProject?.id,
+        engagementId: engagementId ?? undefined
       })
       if (!result.ok || !result.itemId) {
         setError(result.message)

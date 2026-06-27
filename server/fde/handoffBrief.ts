@@ -41,12 +41,12 @@ export function buildHandoffBrief(engagement: FdeEngagement): HandoffBrief {
   const aeActions: string[] = []
   const fdeActions: string[] = []
 
-  if (engagement.stage === 'intake') {
+  if (engagement.stage === 'intake' || engagement.stage === 'context') {
     aeActions.push('Confirm champion, budget band, and decision timeline with the buyer.')
     aeActions.push('Socialize the scope bucket (quick win vs big bet) with leadership.')
     fdeActions.push('Validate technical fit — integrations, data residency, eval environment.')
     fdeActions.push('Propose a concrete next session or POC scope in writing.')
-  } else if (engagement.stage === 'build') {
+  } else if (engagement.stage === 'build' || engagement.stage === 'test') {
     aeActions.push('Keep commercial thread warm — contract path and procurement contacts.')
     fdeActions.push('Execute build brief and publish weekly proof points to the buyer.')
   } else {

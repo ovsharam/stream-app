@@ -66,7 +66,7 @@
 .x-mind-graph-mode-btn {
   padding: 7px 10px;
   border: none;
-  background: var(--x-bg);
+  background: var(--x-surface);
   font-size: 11px;
   font-weight: 600;
   color: var(--x-muted);
@@ -151,7 +151,7 @@
   padding: 8px 14px;
   border-radius: 8px;
   border: 1px solid var(--x-border-strong);
-  background: var(--x-bg);
+  background: var(--x-surface);
   font-size: 12px;
   font-weight: 600;
   color: var(--x-fg);
@@ -159,18 +159,13 @@
 }
 
 .x-mind-graph-btn:hover {
-  background: var(--x-hover);
+  background: color-mix(in srgb, var(--x-fg) 5%, var(--x-surface));
+  border-color: color-mix(in srgb, var(--x-fg) 12%, var(--x-border-strong));
+  color: var(--x-fg);
 }
 
 .x-mind-graph-btn-primary {
-  background: var(--x-btn);
-  border-color: var(--x-btn);
-  color: var(--x-btn-fg);
-}
-
-.x-mind-graph-btn-primary:hover {
-  background: var(--x-btn-hover);
-  border-color: var(--x-btn-hover);
+  border: 1px solid var(--x-accent);
 }
 
 .x-mind-graph-error {
@@ -238,7 +233,7 @@
   transform: translateX(-50%);
   padding: 6px 12px;
   border-radius: 8px;
-  background: rgb(20 20 19 / 0.85);
+  background: color-mix(in srgb, var(--x-bg) 88%, var(--x-fg));
   border: 1px solid var(--x-border-strong);
   font-size: 12px;
   font-weight: 600;

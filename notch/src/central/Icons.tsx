@@ -209,6 +209,17 @@ export function IconStream({ className }: IconProps) {
   )
 }
 
+export function IconPipeline({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <path
+        fill="currentColor"
+        d="M5 5h3.5v14H5V5zm5.25 0H14v9h-3.75V5zm5.25 4H19v10h-3.5V9z"
+      />
+    </svg>
+  )
+}
+
 export function IconRadar({ className }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden>

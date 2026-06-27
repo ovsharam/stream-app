@@ -1,14 +1,16 @@
 import { useState, useRef, useEffect, type MouseEvent } from 'react'
 import type { CentralStreamEvent } from '@shared/cluster'
+import type { FdeEngagement } from '@shared/fde-engagement'
 import { parseMeetingActionsMeta } from '@shared/meeting-actions'
 import { parseAgentProposalFeedMeta } from '@shared/agent-proposal-ui'
-import { openBrowserLink, openMeeting } from '../lib/api'
+import { clusterApi, openBrowserLink, openMeeting } from '../lib/api'
 import { trackOperatorEvent } from '../lib/operatorTelemetry'
 import { feedEventBrowseUrl } from './workspace'
 import { getFeedVote, setFeedVote } from './feedFeedbackStore'
 import { AgentProposalFeedCard } from './AgentProposalFeedCard'
 import { GmailCalendarInviteCard, isCalendarInviteEvent } from './GmailCalendarInviteCard'
 import { IconGmail, IconLinkedin, IconMonday, IconReply, IconRepost, IconShare, IconViews } from './Icons'
+import { engagementRef } from './pipelineDisplay'
 
 const AVATAR: Record<string, { bg: string; color: string; label: string }> = {
   notch: { bg: '#181715', color: '#cc785c', label: 'N' },
@@ -473,6 +475,7 @@ type Props = {
   onOpenInWork?: (itemId: string) => void
   onOpenThread?: (itemId: string, day?: string) => void
   onSelectContext?: (itemId: string) => void
+  onOpenCase?: (engagementId: string) => void
   onRefresh?: () => void
 }
 
@@ -488,6 +491,130 @@ function isActionable(event: CentralStreamEvent): boolean {
       event.kind === 'action' ||
       parseAgentProposalFeedMeta(event.meta, event) ||
       event.highlight
+  )
+}
+
+function CaseEngagementBar({
+  itemId,
+  onOpenCase,
+  onRefresh
+}: {
+  itemId: string
+  onOpenCase?: (engagementId: string) => void
+  onRefresh?: () => void
+}) {
+  const [engagement, setEngagement] = useState<FdeEngagement | null | 'loading'>('loading')
+  const [linkOpen, setLinkOpen] = useState(false)
+  const [cases, setCases] = useState<FdeEngagement[]>([])
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    clusterApi
+      .engagementByFeedItem(itemId)
+      .then((res) => {
+        if (!cancelled) setEngagement(res.engagement)
+      })
+      .catch(() => {
+        if (!cancelled) setEngagement(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [itemId])
+
+  const createCase = async (e: MouseEvent) => {
+    e.stopPropagation()
+    if (busy) return
+    setBusy(true)
+    try {
+      const { engagement: created } = await clusterApi.createEngagementFromFeedItem({ feedItemId: itemId })
+      setEngagement(created)
+      onRefresh?.()
+      onOpenCase?.(created.id)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const openLinkPicker = async (e: MouseEvent) => {
+    e.stopPropagation()
+    if (busy) return
+    setBusy(true)
+    try {
+      const { engagements } = await clusterApi.engagements()
+      setCases(
+        engagements
+          .filter((row) => row.stage !== 'deploy' && row.stage !== 'paused')
+          .slice(0, 12)
+      )
+      setLinkOpen(true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const linkToCase = async (e: MouseEvent, engagementId: string) => {
+    e.stopPropagation()
+    if (busy) return
+    setBusy(true)
+    try {
+      const { engagement: linked } = await clusterApi.linkFeedItemToEngagement(engagementId, itemId)
+      setEngagement(linked)
+      setLinkOpen(false)
+      onRefresh?.()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (engagement === 'loading') return null
+
+  if (engagement) {
+    return (
+      <div className="x-feed-case-bar" onClick={(e) => e.stopPropagation()}>
+        <span className="x-feed-case-badge">{engagementRef(engagement)}</span>
+        <button
+          type="button"
+          className="x-feed-case-btn x-feed-case-btn-primary"
+          onClick={(e) => {
+            e.stopPropagation()
+            onOpenCase?.(engagement.id)
+          }}
+        >
+          Open in case
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="x-feed-case-bar" onClick={(e) => e.stopPropagation()}>
+      <button type="button" className="x-feed-case-btn" disabled={busy} onClick={createCase}>
+        Create case
+      </button>
+      <button type="button" className="x-feed-case-btn x-feed-case-btn-muted" disabled={busy} onClick={openLinkPicker}>
+        Link to case
+      </button>
+      {linkOpen ? (
+        <select
+          className="x-feed-case-link-select"
+          defaultValue=""
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            const id = e.target.value
+            if (id) void linkToCase(e as unknown as MouseEvent, id)
+          }}
+        >
+          <option value="">Choose case…</option>
+          {cases.map((row) => (
+            <option key={row.id} value={row.id}>
+              {engagementRef(row)} · {row.clientName}
+            </option>
+          ))}
+        </select>
+      ) : null}
+    </div>
   )
 }
 
@@ -605,6 +732,7 @@ export function FeedPost({
   onOpenInWork,
   onOpenThread,
   onSelectContext,
+  onOpenCase,
   onRefresh
 }: Props) {
   const surface = surfaceProp ?? (variant === 'rail' ? 'stream_rail' : 'feed')
@@ -857,6 +985,8 @@ export function FeedPost({
         {parseAgentProposalFeedMeta(event.meta, event) ? (
           <AgentProposalFeedCard event={event} onRefresh={onRefresh} />
         ) : null}
+
+        <CaseEngagementBar itemId={threadItemId} onOpenCase={onOpenCase} onRefresh={onRefresh} />
 
         <PostActions
           event={event}

@@ -97,6 +97,22 @@ export function getRecentItems(limit = 100, source?: StreamSource): StreamItem[]
   return rows.map((r) => streamItemFromJSON(r.raw_json))
 }
 
+export function getItemsSince(
+  sinceMs: number,
+  limit = 800,
+  source?: StreamSource
+): StreamItem[] {
+  const database = getDb()
+  const query = source
+    ? `SELECT raw_json FROM stream_items WHERE source = ? AND timestamp >= ? ORDER BY timestamp DESC LIMIT ?`
+    : `SELECT raw_json FROM stream_items WHERE timestamp >= ? ORDER BY timestamp DESC LIMIT ?`
+  const rows = source
+    ? (database.prepare(query).all(source, sinceMs, limit) as { raw_json: string }[])
+    : (database.prepare(query).all(sinceMs, limit) as { raw_json: string }[])
+
+  return rows.map((r) => streamItemFromJSON(r.raw_json))
+}
+
 export function updateItemFlags(
   id: string,
   flags: { isUnread?: boolean; isStarred?: boolean }

@@ -12,6 +12,8 @@ import { DEFAULT_ONTOLOGY } from '../../shared/kb-ontology'
 import { linkEntities, upsertEntity } from './store'
 
 export type ExtractContext = {
+  /** Pipeline engagement id — stable deal vertex in KB/graph. */
+  engagementId?: string
   dealHint?: string
   meetingTitle?: string
   senderName?: string
@@ -96,11 +98,24 @@ function resolveAnchor(
 ): KbEntity | undefined {
   switch (anchor) {
     case 'deal':
+      if (ctx.engagementId) {
+        const { getEngagement } = require('../fde/engagementStore') as typeof import('../fde/engagementStore')
+        const { ensureEngagementDealEntity } = require('./dealContext') as typeof import('./dealContext')
+        const eng = getEngagement(ctx.engagementId)
+        if (eng) return ensureEngagementDealEntity(eng)
+      }
       if (ctx.dealHint) return upsertOntologyEntity('deal', ctx.dealHint)
       return extracted.find((e) => e.ontologyType === 'deal' || e.ontologyType === 'customer')
     case 'meeting':
+      if (ctx.sessionId) {
+        const { ensureEngagementMeetingEntity } = require('./dealContext') as typeof import('./dealContext')
+        return ensureEngagementMeetingEntity({
+          sessionId: ctx.sessionId,
+          title: ctx.meetingTitle,
+          dealHint: ctx.dealHint
+        })
+      }
       if (ctx.meetingTitle) return upsertOntologyEntity('meeting', ctx.meetingTitle)
-      if (ctx.sessionId) return upsertOntologyEntity('meeting', ctx.meetingTitle ?? `Meeting ${ctx.sessionId.slice(5, 12)}`)
       return extracted.find((e) => e.ontologyType === 'meeting')
     case 'company':
     case 'customer':

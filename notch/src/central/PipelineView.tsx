@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { HandoffBrief } from '@shared/handoff'
-import type { FdeEngagement, EngagementStage, ScopeBucket } from '@shared/fde-engagement'
+import type { CentralStreamEvent } from '@shared/cluster'
+import { NewCaseModal } from './NewCaseModal'
+import type { FdeEngagement, ScopeBucket, EngagementStage } from '@shared/fde-engagement'
 import { PIPELINE_STAGES } from '@shared/pipeline'
 import type { AgentProposal } from '@shared/agent-proposal'
-import { cleanLinkedInSenderName, summarizeInboundMessage } from '@shared/agent-proposal-ui'
-import { agentApi, clusterApi } from '../lib/api'
+import {
+  buildEventItemId,
+  buildEventPrompt,
+  buildEventStartedAt,
+  buildExecutorFromEvent,
+  buildRunStatus,
+  isBuildStreamEvent,
+  BUILD_AGENTS
+} from '@shared/build-dojo'
+import { agentApi } from '../lib/api'
 import { trackOperatorEvent } from '../lib/operatorTelemetry'
-import { openLinkedInProposalSource } from './openAgentProposalSource'
 import { useEngagements } from './useEngagements'
+import { IconSearch } from './Icons'
+import { engagementRef } from './pipelineDisplay'
+import { engagementsByPipelineStage, pipelineBuildActivity } from './pipelineBuildActivity'
 
 const SCOPE_LABEL: Record<ScopeBucket, string> = {
   quick_win: 'Quick win',
@@ -36,17 +47,20 @@ function formatRelative(ts: number, now = Date.now()): string {
 }
 
 type Props = {
+  buildEvents?: CentralStreamEvent[]
+  onOpenCase: (engagementId: string) => void
   onOpenMeeting?: (feedItemId: string) => void
   onOpenBuild?: () => void
   onOpenAgentQueue?: () => void
+  onOpenDemo?: () => void
 }
 
-export function PipelineView({ onOpenMeeting, onOpenBuild, onOpenAgentQueue }: Props) {
-  const { engagements, refreshing, pendingIds, patch, create, load: reloadEngagements } = useEngagements()
+export function PipelineView({ buildEvents, onOpenCase, onOpenMeeting, onOpenBuild, onOpenAgentQueue, onOpenDemo }: Props) {
+  const { engagements, refreshing, pendingIds, create, load: reloadEngagements } = useEngagements()
   const [proposals, setProposals] = useState<AgentProposal[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [handoff, setHandoff] = useState<HandoffBrief | null>(null)
   const [creating, setCreating] = useState(false)
+  const [newCaseOpen, setNewCaseOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   const loadProposals = useCallback(async () => {
     try {
@@ -71,34 +85,81 @@ export function PipelineView({ onOpenMeeting, onOpenBuild, onOpenAgentQueue }: P
     }
   }, [loadProposals, reloadEngagements])
 
-  useEffect(() => {
-    if (!selectedId) {
-      setHandoff(null)
-      return
-    }
-    trackOperatorEvent(
-      'feed_context_select',
-      { itemId: selectedId, via: 'pipeline_deal' },
-      { surface: 'pipeline', subjectType: 'engagement', subjectId: selectedId }
-    )
-    void clusterApi.engagementHandoff(selectedId).then((d) => setHandoff(d.handoff)).catch(() => setHandoff(null))
-  }, [selectedId])
+  const buildActivity = useMemo(
+    () => pipelineBuildActivity(buildEvents ?? [], engagements),
+    [buildEvents, engagements]
+  )
 
-  const byStage = useMemo(() => {
-    const map: Record<EngagementStage, FdeEngagement[]> = {
-      intake: [],
-      build: [],
-      maintenance: [],
-      paused: []
+  const filteredEngagements = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return engagements
+    return engagements.filter((e) => {
+      const haystack = [e.clientName, e.company, e.summary, engagementRef(e), ...(e.flags ?? []), ...(e.openQuestions ?? [])]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      return haystack.includes(q)
+    })
+  }, [engagements, searchQuery])
+
+  const kpis = useMemo(() => {
+    const open = engagements.filter((e) => e.stage !== 'deploy' && e.stage !== 'paused').length
+    const contextGaps = engagements.filter(
+      (e) => e.escalationLevel > 0 || e.openQuestions.length > 0 || e.scope === 'unknown'
+    ).length
+    const signals = engagements.reduce((n, e) => n + (e.signalSources?.length ?? 0), 0) + proposals.length
+    return {
+      open,
+      building: buildActivity.runningBuilds.length,
+      contextGaps,
+      signals
     }
-    for (const e of engagements) {
-      map[e.stage]?.push(e)
+  }, [engagements, proposals.length, buildActivity.runningBuilds.length])
+
+  const latestSignal = useMemo(() => {
+    if (engagements.length === 0) return null
+    const sorted = [...engagements].sort((a, b) => b.updatedAt - a.updatedAt)
+    const latest = sorted[0]!
+    return {
+      kind: latest.stage === 'build' ? 'build' : 'deal',
+      detail: `${latest.clientName}${latest.summary ? ` — ${latest.summary.slice(0, 80)}` : ''}`,
+      at: latest.updatedAt
     }
-    for (const stage of Object.keys(map) as EngagementStage[]) {
-      map[stage].sort((a, b) => b.updatedAt - a.updatedAt)
-    }
-    return map
   }, [engagements])
+
+  const byStage = useMemo(
+    () => engagementsByPipelineStage(filteredEngagements, buildActivity.displayStage),
+    [filteredEngagements, buildActivity]
+  )
+
+  const linkedBuildIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const engagement of engagements) {
+      for (const feedItemId of engagement.feedItemIds) {
+        ids.add(feedItemId.replace(/^ext-/, ''))
+      }
+    }
+    return ids
+  }, [engagements])
+
+  const activeBuilds = useMemo(() => {
+    const seen = new Set<string>()
+    const rows: CentralStreamEvent[] = []
+    for (const event of (buildEvents ?? []).filter(isBuildStreamEvent)) {
+      if (buildRunStatus(event) !== 'running') continue
+      const id = buildEventItemId(event)
+      if (seen.has(id) || linkedBuildIds.has(id)) continue
+      seen.add(id)
+      rows.push(event)
+    }
+    return rows.sort((a, b) => buildEventStartedAt(b) - buildEventStartedAt(a))
+  }, [buildEvents, linkedBuildIds])
+
+  const stageCount = useCallback(
+    (stage: EngagementStage) =>
+      byStage[stage].length + (stage === 'build' ? activeBuilds.length : 0),
+    [byStage, activeBuilds.length]
+  )
 
   const proposalById = useMemo(() => {
     const map = new Map<string, AgentProposal>()
@@ -106,28 +167,19 @@ export function PipelineView({ onOpenMeeting, onOpenBuild, onOpenAgentQueue }: P
     return map
   }, [proposals])
 
-  const selected = selectedId ? engagements.find((e) => e.id === selectedId) ?? null : null
-  const linkedProposals = useMemo(() => {
-    if (!selected?.proposalIds?.length) return []
-    return selected.proposalIds
-      .map((id) => proposalById.get(id))
-      .filter((p): p is AgentProposal => p != null)
-  }, [selected, proposalById])
-
-  const handleNewClient = async () => {
-    const name = window.prompt('Client or company name')
-    if (!name?.trim()) return
+  const handleNewClient = async (input: {
+    clientName: string
+    company?: string
+    summary?: string
+  }) => {
     setCreating(true)
     try {
-      const engagement = await create({ clientName: name.trim() })
-      setSelectedId(engagement.id)
+      const engagement = await create(input)
+      setNewCaseOpen(false)
+      onOpenCase(engagement.id)
     } finally {
       setCreating(false)
     }
-  }
-
-  const moveStage = (id: string, stage: EngagementStage) => {
-    void patch(id, { stage })
   }
 
   const openAgentQueue = () => {
@@ -135,33 +187,33 @@ export function PipelineView({ onOpenMeeting, onOpenBuild, onOpenAgentQueue }: P
     onOpenAgentQueue?.()
   }
 
-  const openLinkedProposal = (proposal: AgentProposal, via: 'pipeline_deal_detail' | 'pipeline_go_to') => {
-    if (via === 'pipeline_go_to') {
-      openLinkedInProposalSource({
-        threadId: proposal.threadId,
-        senderName: proposal.senderName,
-        proposalId: proposal.id
-      })
-      return
-    }
-    trackOperatorEvent(
-      'agent_proposal_fork',
-      { proposalId: proposal.id, via: 'pipeline_deal_detail' },
-      { surface: 'pipeline', subjectType: 'agent_proposal', subjectId: proposal.id }
-    )
-    onOpenAgentQueue?.()
-  }
-
   return (
     <div className="x-pipeline">
       <header className="x-pipeline-toolbar">
         <div className="x-pipeline-toolbar-main">
-          <h1 className="x-pipeline-title">Pipeline</h1>
-          <span className="x-pipeline-toolbar-meta">
-            {engagements.length} deal{engagements.length === 1 ? '' : 's'}
-          </span>
+          <div className="x-pipeline-breadcrumb">
+            <span>Workspace</span>
+            <span className="x-pipeline-breadcrumb-sep">/</span>
+            <span>Pipeline</span>
+          </div>
+          <h1 className="x-pipeline-title">Deployment pipeline</h1>
         </div>
+        <label className="x-pipeline-search">
+          <IconSearch className="x-pipeline-search-icon" />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search deals…"
+            aria-label="Search pipeline"
+          />
+        </label>
         <div className="x-pipeline-toolbar-actions">
+          {buildActivity.runningBuilds.length > 0 ? (
+            <button type="button" className="x-pipeline-build-pill" onClick={() => onOpenBuild?.()}>
+              {buildActivity.runningBuilds.length} building
+            </button>
+          ) : null}
           {proposals.length > 0 ? (
             <button type="button" className="x-pipeline-agent-pill" onClick={openAgentQueue}>
               {proposals.length} agent draft{proposals.length === 1 ? '' : 's'}
@@ -172,52 +224,112 @@ export function PipelineView({ onOpenMeeting, onOpenBuild, onOpenAgentQueue }: P
               Build Dojo
             </button>
           ) : null}
+          {onOpenDemo ? (
+            <button type="button" className="x-pipeline-btn x-pipeline-btn-muted" onClick={onOpenDemo}>
+              Live demo
+            </button>
+          ) : null}
           <button
             type="button"
             className="x-pipeline-btn x-pipeline-btn-primary"
             disabled={creating}
-            onClick={() => void handleNewClient()}
+            onClick={() => setNewCaseOpen(true)}
           >
-            + New deal
+            New engagement
           </button>
         </div>
       </header>
 
-      <div className="x-pipeline-metrics" aria-label="Pipeline summary">
-        {PIPELINE_STAGES.map((col) => (
-          <div key={col.id} className="x-pipeline-metric">
-            <span className="x-pipeline-metric-value">{byStage[col.id].length}</span>
-            <span className="x-pipeline-metric-label">{col.label}</span>
-          </div>
-        ))}
+      {latestSignal ? (
+        <div className="x-pipeline-sensor" aria-live="polite">
+          <span className="x-pipeline-sensor-kind">{latestSignal.kind}</span>
+          <span className="x-pipeline-sensor-detail">{latestSignal.detail}</span>
+          <span className="x-pipeline-sensor-time">{formatRelative(latestSignal.at)}</span>
+        </div>
+      ) : null}
+
+      <div className="x-pipeline-kpis" aria-label="Pipeline metrics">
+        <div className="x-pipeline-kpi">
+          <span className="x-pipeline-kpi-value">{kpis.open}</span>
+          <span className="x-pipeline-kpi-label">Open</span>
+        </div>
+        <div className="x-pipeline-kpi">
+          <span className="x-pipeline-kpi-value">{kpis.building}</span>
+          <span className="x-pipeline-kpi-label">Building</span>
+        </div>
+        <div className="x-pipeline-kpi">
+          <span className="x-pipeline-kpi-value">{kpis.contextGaps}</span>
+          <span className="x-pipeline-kpi-label">Gaps</span>
+        </div>
+        <div className="x-pipeline-kpi">
+          <span className="x-pipeline-kpi-value">{kpis.signals}</span>
+          <span className="x-pipeline-kpi-label">Signals</span>
+        </div>
       </div>
 
-      <div className={`x-pipeline-body${selected ? ' x-pipeline-body-detail' : ''}`}>
+      <div className="x-pipeline-body">
         <div className={`x-pipeline-board${refreshing ? ' x-pipeline-board-refreshing' : ''}`}>
           {PIPELINE_STAGES.map((col) => (
             <section key={col.id} className="x-pipeline-col">
               <header className="x-pipeline-col-head">
                 <div className="x-pipeline-col-head-row">
                   <h3>{col.label}</h3>
-                  <span className="x-pipeline-col-count">{byStage[col.id].length}</span>
+                  <span className="x-pipeline-col-count">{stageCount(col.id)}</span>
                 </div>
                 <p className="x-pipeline-col-hint">{col.hint}</p>
               </header>
               <ul className="x-pipeline-col-list">
-                {byStage[col.id].length === 0 ? (
+                {col.id === 'build'
+                  ? activeBuilds.map((event) => {
+                      const executor = buildExecutorFromEvent(event) ?? 'unknown'
+                      const agent = BUILD_AGENTS.find((a) => a.id === executor)
+                      const prompt = buildEventPrompt(event)
+                      const step = String(event.meta?.currentStep ?? '').trim()
+                      return (
+                        <li key={buildEventItemId(event)}>
+                          <button
+                            type="button"
+                            className="x-pipeline-card x-pipeline-build-run"
+                            onClick={() => onOpenBuild?.()}
+                          >
+                            <div className="x-pipeline-card-top">
+                              <strong>{agent?.name ?? 'Build agent'}</strong>
+                              <span className="x-pipeline-build-live">Running</span>
+                            </div>
+                            <p className="x-pipeline-card-summary">
+                              {prompt.slice(0, 120)}
+                              {prompt.length > 120 ? '…' : ''}
+                            </p>
+                            {step ? <p className="x-pipeline-build-step">{step.slice(0, 100)}</p> : null}
+                            <div className="x-pipeline-card-foot">
+                              <span className="x-pipeline-card-time">
+                                {formatRelative(buildEventStartedAt(event))}
+                              </span>
+                              <span className="x-pipeline-signal">{agent?.short ?? 'build'}</span>
+                            </div>
+                          </button>
+                        </li>
+                      )
+                    })
+                  : null}
+                {byStage[col.id].length === 0 && !(col.id === 'build' && activeBuilds.length > 0) ? (
                   <li className="x-pipeline-col-empty">No deals</li>
                 ) : (
                   byStage[col.id].map((e) => {
+                    const isBuilding = buildActivity.buildingEngagementIds.has(e.id)
                     const linkedPending = (e.proposalIds ?? []).some((id) => proposalById.has(id))
                     return (
                       <li key={e.id}>
                         <button
                           type="button"
-                          className={`x-pipeline-card${selectedId === e.id ? ' active' : ''}${e.escalationLevel > 0 ? ' alert' : ''}${pendingIds.has(e.id) ? ' pending' : ''}`}
-                          onClick={() => setSelectedId(e.id)}
+                          className={`x-pipeline-card${e.escalationLevel > 0 ? ' alert' : ''}${pendingIds.has(e.id) ? ' pending' : ''}${isBuilding ? ' x-pipeline-card-building' : ''}`}
+                          onClick={() => onOpenCase(e.id)}
                         >
                           <div className="x-pipeline-card-top">
-                            <strong>{e.clientName}</strong>
+                            <div className="x-pipeline-card-head-main">
+                              <span className="x-pipeline-card-id">{engagementRef(e)}</span>
+                              <strong>{e.clientName}</strong>
+                            </div>
                             <span className={`x-eng-scope x-eng-scope-${e.scope}`}>
                               {SCOPE_LABEL[e.scope]}
                             </span>
@@ -232,6 +344,9 @@ export function PipelineView({ onOpenMeeting, onOpenBuild, onOpenAgentQueue }: P
                           <div className="x-pipeline-card-foot">
                             <span className="x-pipeline-card-time">{formatRelative(e.updatedAt)}</span>
                             <div className="x-pipeline-card-foot-tags">
+                              {isBuilding ? (
+                                <span className="x-pipeline-build-live">Building</span>
+                              ) : null}
                               {linkedPending ? (
                                 <span className="x-pipeline-agent-dot" title="Agent draft linked">
                                   agent
@@ -256,195 +371,23 @@ export function PipelineView({ onOpenMeeting, onOpenBuild, onOpenAgentQueue }: P
             </section>
           ))}
         </div>
-
-        {selected ? (
-          <aside className="x-pipeline-detail" aria-label="Deal detail">
-            <header className="x-pipeline-detail-head">
-              <div>
-                <h2>{selected.clientName}</h2>
-                {selected.company ? <p className="x-pipeline-detail-co">{selected.company}</p> : null}
-              </div>
-              <button
-                type="button"
-                className="x-pipeline-detail-close"
-                aria-label="Close detail"
-                onClick={() => setSelectedId(null)}
-              >
-                ×
-              </button>
-            </header>
-
-            <div className="x-pipeline-detail-meta">
-              <span className={`x-eng-scope x-eng-scope-${selected.scope}`}>
-                {SCOPE_LABEL[selected.scope]}
-              </span>
-              <span className="x-pipeline-detail-stage">{selected.stage}</span>
-              {selected.escalationLevel > 0 ? (
-                <span className="x-pipeline-escalation">
-                  {selected.escalationLevel === 2 ? 'Escalated' : 'Needs attention'}
-                </span>
-              ) : null}
-            </div>
-
-            {selected.summary ? <p className="x-pipeline-detail-summary">{selected.summary}</p> : null}
-
-            {linkedProposals.length > 0 ? (
-              <section className="x-pipeline-detail-block x-pipeline-agent-signals">
-                <h3>Agent signals</h3>
-                <p className="x-pipeline-agent-signals-hint">
-                  Drafts stay in Agent — open to review, edit, or fork from the LLM path.
-                </p>
-                <ul className="x-pipeline-agent-signals-list">
-                  {linkedProposals.map((p) => (
-                    <li key={p.id}>
-                      <div className="x-pipeline-agent-signal-row">
-                        <button
-                          type="button"
-                          className="x-pipeline-agent-signal-main"
-                          onClick={() => openLinkedProposal(p, 'pipeline_deal_detail')}
-                        >
-                          <span className="x-pipeline-agent-signal-source">LinkedIn</span>
-                          <span className="x-pipeline-agent-signal-who">
-                            {cleanLinkedInSenderName(p.senderName)}
-                          </span>
-                          <span className="x-pipeline-agent-signal-preview">
-                            {summarizeInboundMessage({
-                              rawMessage: p.rawMessage,
-                              senderName: p.senderName,
-                              brief: p.brief,
-                              threadMessages: p.threadMessages
-                            })}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          className="x-pipeline-agent-signal-goto"
-                          onClick={() => openLinkedProposal(p, 'pipeline_go_to')}
-                        >
-                          Go to
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-
-            {handoff ? (
-              <section className="x-pipeline-detail-block x-pipeline-handoff">
-                <h3>AE ↔ FDE handoff</h3>
-                <p className="x-pipeline-handoff-gap">{handoff.gapSummary}</p>
-                <p className="x-pipeline-handoff-motion">{handoff.fdeMotion}</p>
-                {handoff.aeActions.length > 0 ? (
-                  <>
-                    <h4>AE</h4>
-                    <ul>
-                      {handoff.aeActions.map((a) => (
-                        <li key={a}>{a}</li>
-                      ))}
-                    </ul>
-                  </>
-                ) : null}
-                {handoff.fdeActions.length > 0 ? (
-                  <>
-                    <h4>FDE</h4>
-                    <ul>
-                      {handoff.fdeActions.map((a) => (
-                        <li key={a}>{a}</li>
-                      ))}
-                    </ul>
-                  </>
-                ) : null}
-              </section>
-            ) : null}
-
-            {selected.nextSteps.length > 0 ? (
-              <section className="x-pipeline-detail-block">
-                <h3>Next steps</h3>
-                <ul>
-                  {selected.nextSteps.map((step) => (
-                    <li key={step}>{step}</li>
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-
-            {selected.openQuestions.length > 0 ? (
-              <section className="x-pipeline-detail-block">
-                <h3>Open questions</h3>
-                <ul>
-                  {selected.openQuestions.map((q) => (
-                    <li key={q}>{q}</li>
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-
-            {selected.buildPrompt ? (
-              <section className="x-pipeline-detail-block">
-                <h3>Build brief</h3>
-                <pre className="x-pipeline-build-prompt">{selected.buildPrompt}</pre>
-              </section>
-            ) : null}
-
-            <div className="x-pipeline-detail-actions">
-              {selected.feedItemIds.length > 0 && onOpenMeeting ? (
-                <button
-                  type="button"
-                  className="x-pipeline-detail-btn"
-                  onClick={() =>
-                    onOpenMeeting(selected.feedItemIds[selected.feedItemIds.length - 1]!.replace(/^ext-/, ''))
-                  }
-                >
-                  Review call
-                </button>
-              ) : null}
-              {selected.stage === 'intake' ? (
-                <button
-                  type="button"
-                  className="x-pipeline-detail-btn x-pipeline-detail-btn-primary"
-                  onClick={() => moveStage(selected.id, 'build')}
-                >
-                  FDE → Build
-                </button>
-              ) : null}
-              {selected.stage === 'build' ? (
-                <button
-                  type="button"
-                  className="x-pipeline-detail-btn x-pipeline-detail-btn-primary"
-                  onClick={() => moveStage(selected.id, 'maintenance')}
-                >
-                  Mark live
-                </button>
-              ) : null}
-              {selected.stage !== 'paused' ? (
-                <button
-                  type="button"
-                  className="x-pipeline-detail-btn x-pipeline-detail-btn-muted"
-                  onClick={() => moveStage(selected.id, 'paused')}
-                >
-                  Pause
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="x-pipeline-detail-btn"
-                  onClick={() => moveStage(selected.id, 'intake')}
-                >
-                  Reopen intake
-                </button>
-              )}
-            </div>
-          </aside>
-        ) : null}
       </div>
 
       {engagements.length === 0 && !refreshing ? (
         <p className="x-pipeline-empty">
-          Deals populate from calls, inbound signals, and agent routing. Add one manually or finish a discovery
-          call with ⌘⇧K.
+          Engagements appear from calls, inbound signals, and agent routing — or create one with{' '}
+          <strong>New engagement</strong>.
         </p>
+      ) : filteredEngagements.length === 0 && searchQuery.trim() ? (
+        <p className="x-pipeline-empty">No engagements match &ldquo;{searchQuery.trim()}&rdquo;.</p>
       ) : null}
+
+      <NewCaseModal
+        open={newCaseOpen}
+        busy={creating}
+        onClose={() => setNewCaseOpen(false)}
+        onCreate={handleNewClient}
+      />
     </div>
   )
 }

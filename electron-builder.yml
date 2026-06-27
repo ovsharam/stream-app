@@ -39,3 +39,5 @@ dmg:
       path: /Applications
 
 publish: null
+
+afterPack: scripts/notch-after-pack.mjs

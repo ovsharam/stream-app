@@ -107,6 +107,7 @@ export function buildFeedOperatorContext(now = Date.now()): FeedOperatorContext 
   const activeDeal =
     engagements.find((e) => e.escalationLevel > 0) ??
     engagements.find((e) => e.stage === 'build') ??
+    engagements.find((e) => e.stage === 'context') ??
     engagements.find((e) => e.stage === 'intake') ??
     engagements[0]
 

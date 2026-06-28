@@ -1,18 +1,26 @@
 import Link from 'next/link'
 import { PlumbLogo } from './plumb-logo'
+import { NavMenu } from './nav-menu'
 import { ExtractionTree } from './extraction-tree'
 import { CallPrepMockup, PipelineMockup } from './app-mockup'
+import { PipeFlow } from './pipe-flow'
+import { OrbField } from './orb-field'
+import { FeatureCards, BuiltTicker } from './feature-cards'
+import { PlumberWorld } from './plumber-world'
 
-// ── Exact locomotive.ca color tokens ──────────────────────────────────────
+// ── Color tokens — key ones use CSS vars for light/dark theming ───────────
 
-const BG       = '#0d0d0d'      // near-black background
-const BG2      = '#151515'      // slightly lifted surface
-const BLUE     = '#202ded'      // locomotive primary blue (exact)
-const BLUE_MID = '#898fe9'      // locomotive mid blue
-const BLUE_PAL = '#cacdff'      // locomotive pale blue / highlight
-const INK      = '#ffffff'      // primary text
-const DIM      = 'rgba(255,255,255,0.48)'
-const LINE     = 'rgba(255,255,255,0.08)'
+const BG       = 'var(--lp-bg)'       // switches dark ↔ light
+const BG2      = 'var(--lp-bg2)'
+const BLUE     = '#202ded'            // always blue
+const BLUE_MID = '#898fe9'
+const BLUE_PAL = '#cacdff'
+const INK      = 'var(--lp-ink)'      // switches white ↔ dark
+const DIM      = 'var(--lp-dim)'      // switches dim-white ↔ dim-black
+const LINE     = 'var(--lp-line)'     // switches dim-border
+const DIM2     = 'var(--lp-dim2)'     // medium opacity
+const DIM3     = 'var(--lp-dim3)'     // low opacity
+const NAVBG    = 'var(--lp-nav-bg)'   // nav blur tint
 
 // ── Typography ─────────────────────────────────────────────────────────────
 
@@ -97,17 +105,20 @@ export default function LandingPage() {
       {/* Scroll progress bar */}
       <div className="scroll-bar" />
 
+      {/* ══ Wandering plumbers — fixed overlay, depth-layered lanes ═══ */}
+      <PlumberWorld />
+
       {/* ══ Nav ═══════════════════════════════════════════════════════ */}
       <nav style={{
         position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '0 36px', height: 52,
-        background: 'rgba(13,13,13,0.88)',
+        background: NAVBG,
         backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
         borderBottom: `1px solid ${LINE}`,
       }}>
-        <PlumbLogo size={18} light />
-        <div style={{ display: 'flex', gap: 28 }}>
+        <NavMenu />
+        <div className="lp-nav-links">
           {['Problem', 'Plumb', 'Compare'].map(l => (
             <a key={l} href={`#${l.toLowerCase()}`}
               className="loco-nav-link"
@@ -117,14 +128,17 @@ export default function LandingPage() {
         <Link href="/login" className="loco-btn-ghost" style={{
           fontSize: 11, fontWeight: 700, letterSpacing: '0.05em',
           textTransform: 'uppercase', color: INK,
-          border: `1.5px solid rgba(255,255,255,0.24)`,
+          border: `1.5px solid ${DIM2}`,
           borderRadius: 4, padding: '7px 18px',
           textDecoration: 'none',
         }}>Get access</Link>
       </nav>
 
       {/* ══ Hero ══════════════════════════════════════════════════════ */}
-      <section style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '0 36px 64px', paddingTop: 52 }}>
+      <section style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '0 36px 64px', paddingTop: 52, position: 'relative' }}>
+
+        {/* Floating light orbs — mouse-parallax driven, reformcollective aesthetic */}
+        <OrbField />
 
         {/* Big ghost number top-right */}
         <div aria-hidden data-parallax="-0.04" style={{
@@ -155,20 +169,21 @@ export default function LandingPage() {
           <ML d="mask-d1" style={HERO}>Build deploys.</ML>
         </div>
 
+        {/* Animated pipe flow — CALL → PLUMB → BUILD */}
+        <div style={{ marginTop: 52, marginBottom: 4 }}>
+          <PipeFlow />
+        </div>
+
         {/* Bottom row: copy + CTA */}
-        <div style={{
-          marginTop: 52, paddingTop: 24,
-          borderTop: `1px solid ${LINE}`,
-          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32,
-        }}>
+        <div className="hero-bottom-grid">
           <p style={{ fontSize: 'clamp(14px,1.4vw,17px)', color: DIM, lineHeight: 1.74, letterSpacing: '-0.01em' }}>
             Plumb sits inside your sales calls. It pulls the spec, scores complexity,
-            and ships a build prompt to engineering — before your AE types the first Slack.
+            and ships a build prompt to engineering — before your AE engages an FDE.
           </p>
           <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
             <Link href="/login" className="loco-btn-blue" style={{
               fontSize: 13, fontWeight: 700, letterSpacing: '0.03em',
-              color: INK, background: BLUE,
+              color: '#fff', background: BLUE,
               borderRadius: 4, padding: '11px 28px',
               textDecoration: 'none', textTransform: 'uppercase',
             }}>Request early access</Link>
@@ -189,6 +204,12 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* ══ Feature cards — reformcollective 3-card style ═════════════ */}
+      <FeatureCards />
+
+      {/* ══ Built Different ticker ════════════════════════════════════ */}
+      <BuiltTicker />
 
       {/* ══ Band 1 ════════════════════════════════════════════════════ */}
       <Band items="The FDE Pipeline" bg={BLUE} dur="20" />
@@ -243,27 +264,27 @@ export default function LandingPage() {
       {/* ══ Extract ═══════════════════════════════════════════════════ */}
       <section style={{ padding: 'clamp(80px,10vw,160px) 36px', background: BG2 }}>
         <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 'clamp(40px,6vw,80px)', alignItems: 'start' }}>
 
-          <div style={{ marginBottom: 64 }}>
-            <No n="02" />
-            <div data-skew>
-              <ML style={SECT}>Surfaces what</ML>
-              <ML d="mask-d1" style={{ ...SECT, color: BLUE }}>AEs miss.</ML>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 64, alignItems: 'start' }}>
-            <div style={{ position: 'sticky', top: 80 }}>
-              <p className="reveal-up" style={{ fontSize: 'clamp(14px,1.4vw,17px)', color: DIM, lineHeight: 1.75, marginBottom: 28 }}>
+            {/* Sticky left: heading + description */}
+            <div style={{ position: 'sticky', top: 88 }}>
+              <No n="02" />
+              <div data-skew>
+                <ML style={SECT}>Surfaces what</ML>
+                <ML d="mask-d1" style={{ ...SECT, color: BLUE }}>AEs miss.</ML>
+              </div>
+              <p className="reveal-up" style={{ fontSize: 'clamp(14px,1.4vw,17px)', color: DIM, lineHeight: 1.78, marginTop: 32 }}>
                 Plumb listens to your Gong or Zoom call and extracts every technical requirement,
                 latency constraint, auth gap, and integration mismatch — while you talk.
               </p>
-              <p className="reveal-up stagger-1" style={{ fontSize: 'clamp(14px,1.4vw,17px)', color: DIM, lineHeight: 1.75 }}>
+              <p className="reveal-up stagger-1" style={{ fontSize: 'clamp(14px,1.4vw,17px)', color: DIM, lineHeight: 1.78, marginTop: 20 }}>
                 What AEs write: <em style={{ color: BLUE_PAL }}>&ldquo;CRM lookup.&rdquo;</em><br />
                 What engineers need: OAuth scope, p95 gate, Salesforce REST v57, Redis layer.
               </p>
             </div>
-            <div className="reveal-scale">
+
+            {/* Right: extraction tree */}
+            <div className="reveal-scale extraction-tree-wrap">
               <ExtractionTree />
             </div>
           </div>
@@ -331,7 +352,7 @@ export default function LandingPage() {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: LINE, borderRadius: 10, overflow: 'hidden' }}>
             <div className="reveal-left" style={{ background: BG2, padding: 'clamp(32px,4vw,52px)' }}>
-              <p style={{ ...MONO, color: 'rgba(255,255,255,0.24)', marginBottom: 24 }}>Before Plumb</p>
+              <p style={{ ...MONO, color: DIM2, marginBottom: 24 }}>Before Plumb</p>
               {[
                 'Call ends. AE writes a Slack.',
                 'FDE asks six clarifying questions.',
@@ -424,14 +445,14 @@ export default function LandingPage() {
           <div className="reveal-up stagger-2" style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
             <Link href="/login" className="loco-btn-blue" style={{
               fontSize: 13, fontWeight: 700, letterSpacing: '0.04em',
-              textTransform: 'uppercase', color: INK,
+              textTransform: 'uppercase', color: '#fff',
               background: BLUE, borderRadius: 4, padding: '13px 34px',
               textDecoration: 'none',
             }}>Request early access</Link>
             <a href="mailto:hello@useplumb.ai" className="loco-btn-ghost" style={{
               fontSize: 13, fontWeight: 600, letterSpacing: '0.04em',
               textTransform: 'uppercase', color: DIM,
-              border: `1.5px solid rgba(255,255,255,0.16)`,
+              border: `1.5px solid ${DIM3}`,
               borderRadius: 4, padding: '13px 34px', textDecoration: 'none',
             }}>hello@useplumb.ai</a>
           </div>
@@ -439,7 +460,7 @@ export default function LandingPage() {
       </section>
 
       {/* ══ Footer nav ════════════════════════════════════════════════ */}
-      <footer style={{ background: '#0c0c0c' }}>
+      <footer style={{ background: '#0e0f14' }}>
         <div style={{
           display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
           padding: '48px 48px 40px', borderBottom: `1px solid ${LINE}`,
@@ -526,7 +547,7 @@ export default function LandingPage() {
         {/* Gradient fade from footer into PLUMB field */}
         <div aria-hidden style={{
           position: 'absolute', top: 0, left: 0, right: 0, height: 64, zIndex: 2,
-          background: 'linear-gradient(to bottom, #0c0c0c 0%, transparent 100%)',
+          background: 'linear-gradient(to bottom, #0e0f14 0%, transparent 100%)',
           pointerEvents: 'none',
         }} />
         {[

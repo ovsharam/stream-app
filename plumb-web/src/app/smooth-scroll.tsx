@@ -5,9 +5,34 @@ import { useEffect } from 'react'
 
 export function SmoothScroll({ children }: { children: React.ReactNode }) {
   useEffect(() => {
-    const lenis = new Lenis({ lerp: 0.08, smoothWheel: true, syncTouch: false })
+    // Defensive init — don't crash non-landing pages
+    const lenis = (() => {
+      try { return new Lenis({ lerp: 0.08, smoothWheel: true, syncTouch: false }) }
+      catch { return null }
+    })()
+    if (!lenis) return
 
-    // ── Scroll-driven effects ─────────────────────────────────────────
+    // ── Cache DOM element sets once (avoids querySelectorAll every frame) ──
+    type EL = HTMLElement
+    const $ = {
+      parallax:  [] as EL[],
+      skew:      [] as EL[],
+      parallaxX: [] as EL[],
+      rows:      [] as EL[],
+    }
+
+    const populate = () => {
+      $.parallax  = [...document.querySelectorAll<EL>('[data-parallax]')]
+      $.skew      = [...document.querySelectorAll<EL>('[data-skew]')]
+      $.parallaxX = [...document.querySelectorAll<EL>('[data-parallax-x]')]
+      $.rows      = [...document.querySelectorAll<EL>('.plumb-inf-row')]
+    }
+
+    // Populate after first paint, then keep a lazy refresh every 2s
+    requestAnimationFrame(() => requestAnimationFrame(populate))
+    const refreshId = setInterval(populate, 2000)
+
+    // ── Scroll-driven effects ─────────────────────────────────────────────
     lenis.on('scroll', ({ scroll, velocity }: { scroll: number; velocity: number }) => {
       const root = document.documentElement
       const abs  = Math.abs(velocity)
@@ -16,77 +41,66 @@ export function SmoothScroll({ children }: { children: React.ReactNode }) {
       root.style.setProperty('--sy', `${scroll}`)
       root.style.setProperty('--sv', `${abs.toFixed(3)}`)
 
-      // Progress bar width
+      // Progress bar
       const maxScroll = document.body.scrollHeight - window.innerHeight
-      root.style.setProperty('--scroll-pct', `${(scroll / maxScroll * 100).toFixed(2)}%`)
+      root.style.setProperty('--scroll-pct', `${((scroll / maxScroll) * 100).toFixed(2)}%`)
 
-      // Parallax: data-parallax="0.12"
-      document.querySelectorAll<HTMLElement>('[data-parallax]').forEach(el => {
+      // Parallax — data-parallax="0.12"
+      $.parallax.forEach(el => {
         const speed = parseFloat(el.dataset.parallax ?? '0.1')
         const rect  = el.getBoundingClientRect()
         const cy    = rect.top + rect.height / 2 - window.innerHeight / 2
         el.style.transform = `translateY(${(cy * speed).toFixed(2)}px)`
       })
 
-      // Skew on velocity: data-skew — locomotive signature distortion, capped ±2.4°
-      const skewRaw = velocity * 0.55
-      const skew    = Math.min(Math.max(skewRaw, -2.4), 2.4).toFixed(3)
-      document.querySelectorAll<HTMLElement>('[data-skew]').forEach(el => {
-        el.style.transform = `skewY(${skew}deg)`
-      })
+      // Skew — capped at ±1.0° (subtle, not jarring)
+      const skew = Math.min(Math.max(velocity * 0.22, -1.0), 1.0).toFixed(3)
+      $.skew.forEach(el => { el.style.transform = `skewY(${skew}deg)` })
 
-      // Horizontal parallax: data-parallax-x="0.1"
-      document.querySelectorAll<HTMLElement>('[data-parallax-x]').forEach(el => {
+      // Horizontal parallax — data-parallax-x="0.08"
+      $.parallaxX.forEach(el => {
         const speed = parseFloat(el.dataset.parallaxX ?? '0.08')
         el.style.transform = `translateX(${(scroll * speed * dir).toFixed(2)}px)`
       })
 
-      // Marquee velocity — CSS animation speed reacts to scroll
-      document.querySelectorAll<HTMLElement>('.marquee-track').forEach(el => {
-        const base = parseFloat(el.dataset.dur ?? '20')
-        const fast = Math.max(base * 0.12, base / (1 + abs * 3.5))
-        el.style.animationDuration = `${fast.toFixed(2)}s`
-      })
+      // Marquee runs at fixed CSS animation speed — no per-frame animationDuration
+      // change here because that restarts the animation and causes visible jitter.
 
-      // Infinite PLUMB footer — each row is scroll-driven
-      document.querySelectorAll<HTMLElement>('.plumb-inf-row').forEach((el, i) => {
-        const d     = i % 2 === 0 ? 1 : -1
-        const spd   = (1 + i * 0.25) * 18
-        const curr  = parseFloat(el.dataset.x ?? '0')
-        const next  = curr + velocity * d * spd
+      // Infinite PLUMB rows — velocity accumulates per row
+      $.rows.forEach((el, i) => {
+        const d    = i % 2 === 0 ? 1 : -1
+        const spd  = (1 + i * 0.25) * 18
+        const curr = parseFloat(el.dataset.x ?? '0')
+        const next = curr + velocity * d * spd
         el.dataset.x = String(next)
-        // wrap so it never drifts too far (content is doubled)
-        const wrap  = el.scrollWidth / 2
-        const safe  = wrap ? ((next % wrap) + wrap) % wrap : 0
+        const wrap = el.scrollWidth / 2
+        const safe = wrap ? ((next % wrap) + wrap) % wrap : 0
         el.style.transform = `translateX(${d > 0 ? -safe : safe}px)`
       })
     })
 
-    // ── Intersection observer (mask + reveals) ────────────────────────
+    // ── IntersectionObserver — mask reveals & scroll-ins ─────────────────
     const obs = new IntersectionObserver(
       entries => {
         entries.forEach(e => {
-          if (e.isIntersecting) {
-            e.target.classList.add('in-view')
-            obs.unobserve(e.target)
-          }
+          if (e.isIntersecting) { e.target.classList.add('in-view'); obs.unobserve(e.target) }
         })
       },
       { rootMargin: '0px 0px -48px 0px', threshold: 0.06 },
     )
 
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      document.querySelectorAll<HTMLElement>(
+      document.querySelectorAll<EL>(
         '.reveal-up,.reveal-left,.reveal-scale,.mask-wrap,.clip-reveal'
       ).forEach(el => obs.observe(el))
     }))
 
-    // ── Counter animation ─────────────────────────────────────────────
+    // ── Counter animation — data-count-to="730%" ─────────────────────────
     const counters = new IntersectionObserver(
       entries => {
         entries.forEach(e => {
           if (!e.isIntersecting) return
-          const el  = e.target as HTMLElement
+          const el  = e.target as EL
           const raw = el.dataset.countTo ?? '0'
           const num = parseFloat(raw.replace(/[^0-9.]/g, ''))
           const pre = raw.match(/^[^0-9.]*/)?.[0] ?? ''
@@ -107,21 +121,30 @@ export function SmoothScroll({ children }: { children: React.ReactNode }) {
     )
 
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      document.querySelectorAll<HTMLElement>('[data-count-to]').forEach(el =>
-        counters.observe(el)
-      )
+      document.querySelectorAll<EL>('[data-count-to]').forEach(el => counters.observe(el))
     }))
 
-    // ── RAF loop ──────────────────────────────────────────────────────
-    let id: number
-    const raf = (t: number) => { lenis.raf(t); id = requestAnimationFrame(raf) }
-    id = requestAnimationFrame(raf)
+    // ── Theme transition helper — brief transition class on toggle ────────
+    //    NavMenu sets this attribute; we remove it after the CSS transition ends
+    const onThemeTrans = () => {
+      const root = document.documentElement
+      root.setAttribute('data-theme-trans', '')
+      setTimeout(() => root.removeAttribute('data-theme-trans'), 380)
+    }
+    document.addEventListener('plumb:theme-toggle', onThemeTrans)
+
+    // ── RAF loop ──────────────────────────────────────────────────────────
+    let raf: number
+    const tick = (t: number) => { lenis.raf(t); raf = requestAnimationFrame(tick) }
+    raf = requestAnimationFrame(tick)
 
     return () => {
-      cancelAnimationFrame(id)
+      cancelAnimationFrame(raf)
+      clearInterval(refreshId)
       lenis.destroy()
       obs.disconnect()
       counters.disconnect()
+      document.removeEventListener('plumb:theme-toggle', onThemeTrans)
     }
   }, [])
 

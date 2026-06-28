@@ -6,7 +6,7 @@ import { SmoothScroll } from "./smooth-scroll";
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500", "600", "700", "800", "900"],
 });
 
 const lora = Lora({
@@ -39,7 +39,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} ${lora.variable} ${jetbrains.variable} antialiased`}>
         <SmoothScroll>{children}</SmoothScroll>
       </body>

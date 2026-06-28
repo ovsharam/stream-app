@@ -68,6 +68,38 @@ body {
 .stream { animation: stream-tick 28s linear infinite; }
 .blink  { animation: dot-blink   2s  ease-in-out infinite; }
 
+@keyframes feed-slide-in {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes flash-new {
+  0%   { background: rgba(29,181,132,0.12); }
+  100% { background: transparent; }
+}
+@keyframes typing-dot {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
+  40%           { transform: scale(1);   opacity: 1; }
+}
+@keyframes cursor-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(204,120,92,0.5); }
+  50%       { box-shadow: 0 0 0 6px rgba(204,120,92,0); }
+}
+@keyframes rating-pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.5); }
+  100% { transform: scale(1); }
+}
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.feed-new    { animation: feed-slide-in 0.4s cubic-bezier(0.16,1,0.3,1) both, flash-new 1.8s 0.4s ease-out both; }
+.typing-dot  { animation: typing-dot 1.2s ease-in-out infinite; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,0.4); }
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+.msg-in      { animation: msg-in 0.35s cubic-bezier(0.16,1,0.3,1) both; }
+.rating-pop  { animation: rating-pop 0.3s cubic-bezier(0.34,1.56,0.64,1) both; }
+
 /* ── Typography ─────────────────────────────────────────────────────── */
 
 .serif {
@@ -249,6 +281,165 @@ body {
 .tree-in .tn6  { animation-delay: 1000ms; }
 .tree-in .tn7  { animation-delay: 1110ms; }
 .tree-in .tn8  { animation-delay: 1220ms; }
+
+/* ── Pipe footer ─────────────────────────────────────────────────────── */
+@keyframes pipe-drift-x {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-480px); }
+}
+
+/* ── Scroll progress bar ─────────────────────────────────────────────── */
+.scroll-bar {
+  position: fixed;
+  top: 0; left: 0; z-index: 200;
+  height: 2px;
+  width: var(--scroll-pct, 0%);
+  background: #202ded;
+  transition: width 0.05s linear;
+  pointer-events: none;
+}
+
+/* ── Infinite PLUMB footer rows ──────────────────────────────────────── */
+/* JS drives transform; we just set up the flex row */
+.plumb-inf-row {
+  display: flex;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+/* ── Locomotive-style mask reveals ──────────────────────────────────── */
+
+/* Wrap any text in .mask-wrap; inner content slides up from below */
+.mask-wrap { overflow: hidden; display: block; }
+.mask-wrap .mask-inner {
+  display: block;
+  transform: translateY(108%);
+  transition: transform 1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.mask-wrap.in-view .mask-inner { transform: translateY(0); }
+
+/* Stagger delays for successive mask lines */
+.mask-d1 .mask-inner { transition-delay: 0.10s; }
+.mask-d2 .mask-inner { transition-delay: 0.20s; }
+.mask-d3 .mask-inner { transition-delay: 0.30s; }
+.mask-d4 .mask-inner { transition-delay: 0.42s; }
+.mask-d5 .mask-inner { transition-delay: 0.55s; }
+
+/* Clip-path wipe (left→right text reveal) */
+.clip-reveal {
+  clip-path: inset(0 102% 0 0);
+  transition: clip-path 1.1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.clip-reveal.in-view { clip-path: inset(0 0% 0 0); }
+.clip-d1 { transition-delay: 0.12s; }
+.clip-d2 { transition-delay: 0.24s; }
+.clip-d3 { transition-delay: 0.36s; }
+
+/* ── Marquee ─────────────────────────────────────────────────────────── */
+@keyframes marquee-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.marquee-track {
+  display: flex;
+  white-space: nowrap;
+  animation: marquee-scroll 22s linear infinite;
+  will-change: transform;
+}
+.marquee-track-rev {
+  animation-direction: reverse;
+}
+
+/* ── Lenis scroll reveals ────────────────────────────────────────────── */
+
+.reveal-up,
+.reveal-left,
+.reveal-scale {
+  opacity: 0;
+  will-change: transform, opacity;
+  transition:
+    opacity  0.72s cubic-bezier(0.16,1,0.3,1),
+    transform 0.72s cubic-bezier(0.16,1,0.3,1);
+}
+
+.reveal-up    { transform: translateY(48px); }
+.reveal-left  { transform: translateX(-48px); }
+.reveal-scale { transform: scale(0.94) translateY(28px); }
+
+.reveal-up.in-view,
+.reveal-left.in-view,
+.reveal-scale.in-view {
+  opacity: 1;
+  transform: none;
+}
+
+/* Stagger helpers (add alongside a reveal-* class) */
+.stagger-1 { transition-delay: 0.09s; }
+.stagger-2 { transition-delay: 0.18s; }
+.stagger-3 { transition-delay: 0.27s; }
+.stagger-4 { transition-delay: 0.36s; }
+.stagger-5 { transition-delay: 0.46s; }
+
+/* Velocity blur: opacity driven by --sv; used on hero text for speed feel */
+@property --sv { syntax: "<number>"; inherits: true; initial-value: 0; }
+
+/* ── Locomotive interactive elements ─────────────────────────────────── */
+
+/* Underline-sweep link */
+.loco-link {
+  position: relative;
+  display: inline-block;
+  text-decoration: none;
+  color: rgba(255,255,255,0.45);
+  transition: color 0.22s ease;
+}
+.loco-link::after {
+  content: '';
+  position: absolute;
+  bottom: -1px; left: 0; right: 100%;
+  height: 1px;
+  background: #202ded;
+  transition: right 0.38s cubic-bezier(0.16,1,0.3,1);
+}
+.loco-link:hover { color: rgba(255,255,255,0.9); }
+.loco-link:hover::after { right: 0; }
+
+/* Primary blue button */
+.loco-btn-blue {
+  display: inline-flex; align-items: center;
+  text-decoration: none;
+  transition: transform 0.18s cubic-bezier(0.16,1,0.3,1), box-shadow 0.18s ease;
+}
+.loco-btn-blue:hover {
+  transform: scale(1.035);
+  box-shadow: 0 0 0 4px rgba(32,45,237,0.28);
+}
+.loco-btn-blue:active { transform: scale(0.98); }
+
+/* Ghost border button */
+.loco-btn-ghost {
+  display: inline-flex; align-items: center;
+  text-decoration: none;
+  transition: border-color 0.18s ease, color 0.18s ease;
+}
+.loco-btn-ghost:hover {
+  border-color: rgba(255,255,255,0.52) !important;
+  color: #fff !important;
+}
+
+/* Nav link (top bar) */
+.loco-nav-link {
+  text-decoration: none;
+  transition: color 0.16s ease;
+}
+.loco-nav-link:hover { color: #fff !important; }
+
+/* Scroll indicator arrow */
+@keyframes loco-bounce {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(6px); }
+}
+.scroll-arrow { animation: loco-bounce 1.8s ease-in-out infinite; }
 
 /* ── Login page ─────────────────────────────────────────────────────── */
 @media (max-width: 720px) {

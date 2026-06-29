@@ -749,12 +749,15 @@ function QueryTab({ customerId }: { customerId: string }) {
         <div>
           <div style={{ fontSize: 12, color: "#444", marginBottom: 16 }}>
             Matched context across{" "}
-            {(Object.values(result) as ProductNode[][]).flat().length} nodes
+            {new Set((Object.values(result) as ProductNode[][]).flat().map(n => n.name)).size} unique nodes
           </div>
           {(["capability", "limitation", "integration", "constraint", "pattern", "workaround"] as const).map((label) => {
             const key = `${label}s` as keyof GraphQueryResult;
-            const nodes = result[key];
-            if (!nodes || nodes.length === 0) return null;
+            const raw = result[key];
+            if (!raw || raw.length === 0) return null;
+            // Deduplicate by name — keep first occurrence (highest relevance score)
+            const seen = new Set<string>();
+            const nodes = raw.filter(n => seen.has(n.name) ? false : (seen.add(n.name), true));
             return (
               <div key={label} style={{ marginBottom: 18 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>

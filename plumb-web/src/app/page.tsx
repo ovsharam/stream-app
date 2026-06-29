@@ -340,10 +340,10 @@ export default function LandingPage() {
       {/* ── 05 · The moat ──────────────────────────────────────────────── */}
       <section id="moat" style={{ background: '#0d1117', padding: '96px 32px' }}>
         <div style={W}>
-          <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 80, alignItems: 'start', marginBottom: 64 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 80, alignItems: 'start', marginBottom: 64 }}>
             <div className="reveal">
               <p className="section-no" style={{ color: 'rgba(255,255,255,0.2)', marginBottom: 10 }}>05 · The moat</p>
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', lineHeight: 1.65, marginBottom: 32 }}>A graph that compounds.</p>
+              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', lineHeight: 1.65, marginBottom: 28 }}>A graph that compounds.</p>
               <ProductGraphViz />
             </div>
             <div>
@@ -390,7 +390,7 @@ export default function LandingPage() {
         borderTop: '1px solid #e8e8e8',
         position: 'relative',
       }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'flex-start', gap: 64 }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 64 }}>
 
           {/* Text */}
           <div style={{ flex: '1 1 0' }}>

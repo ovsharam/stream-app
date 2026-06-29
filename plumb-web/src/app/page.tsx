@@ -384,15 +384,14 @@ export default function LandingPage() {
       {/* ── CTA ─────────────────────────────────────────────────────────── */}
       <section style={{
         background: '#fff',
-        padding: '100px 32px 0',
-        overflow: 'hidden',
+        padding: '80px 32px 60px',
         borderTop: '1px solid #e8e8e8',
         position: 'relative',
       }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'flex-end', gap: 48 }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 64 }}>
 
           {/* Text */}
-          <div style={{ flex: '1 1 0', paddingBottom: 96 }}>
+          <div style={{ flex: '1 1 0' }}>
             <p className="reveal eyebrow" style={{ marginBottom: 20 }}>Plumb · useplumb.ai</p>
             <h2 className="display reveal" style={{ marginBottom: 24 }}>
               Map the product.<br />Ship the right build.
@@ -413,11 +412,11 @@ export default function LandingPage() {
           </div>
 
           {/* Character image */}
-          <div style={{ flexShrink: 0, alignSelf: 'flex-end' }}>
+          <div style={{ flexShrink: 0, flex: '0 0 auto' }}>
             <img
               src="/plumb-footer-img.jpg"
               alt=""
-              style={{ display: 'block', height: 420, width: 'auto', objectFit: 'contain' }}
+              style={{ display: 'block', height: 560, width: 'auto', objectFit: 'contain' }}
             />
           </div>
         </div>

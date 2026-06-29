@@ -412,11 +412,11 @@ export default function LandingPage() {
           </div>
 
           {/* Character image */}
-          <div style={{ flexShrink: 0, flex: '0 0 auto' }}>
+          <div style={{ flex: '0 0 540px' }}>
             <img
               src="/plumb-footer-img.jpg"
               alt=""
-              style={{ display: 'block', height: 680, width: 'auto', objectFit: 'contain' }}
+              style={{ display: 'block', width: '100%', height: 'auto' }}
             />
           </div>
         </div>

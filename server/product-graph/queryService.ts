@@ -37,17 +37,28 @@ export async function queryProductGraph(
   const terms = await extractQueryTerms(dealDescription)
   const query = terms.join(' ')
 
-  // FTS search across all node types
-  const matchedNodes = searchProductNodes(customerId, query, 30)
+  // FTS search across all node types — higher limit so limitations/constraints surface via relevance
+  const matchedNodes = searchProductNodes(customerId, query, 60)
   const matchedIds = new Set(matchedNodes.map((n) => n.id))
 
-  // Always include ALL limitations and constraints (FDE must know every constraint)
+  // Scope blanket limitation/constraint include to the source documents that FTS matched.
+  // Without this, a multi-product customer (e.g. Lenis + Stripe) returns all limitations from
+  // every product regardless of query relevance.
+  const matchedSourceDocs = new Set(matchedNodes.map((n) => n.sourceDocId))
+
   const allLimitations = listProductNodes(customerId, 'limitation')
   const allConstraints = listProductNodes(customerId, 'constraint')
 
+  const scopedLimitations = matchedSourceDocs.size > 0
+    ? allLimitations.filter((n) => matchedSourceDocs.has(n.sourceDocId))
+    : allLimitations
+  const scopedConstraints = matchedSourceDocs.size > 0
+    ? allConstraints.filter((n) => matchedSourceDocs.has(n.sourceDocId))
+    : allConstraints
+
   // Merge without duplication
   const nodeMap = new Map<string, ProductNode>()
-  for (const n of [...matchedNodes, ...allLimitations, ...allConstraints]) {
+  for (const n of [...matchedNodes, ...scopedLimitations, ...scopedConstraints]) {
     nodeMap.set(n.id, n)
   }
 

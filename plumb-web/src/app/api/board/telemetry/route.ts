@@ -76,8 +76,7 @@ export async function GET(request: Request) {
     }
     const topPages = Object.entries(pageCounts)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([page, count]) => ({ page, count }));
+      .slice(0, 5);
 
     return NextResponse.json({
       sessions,

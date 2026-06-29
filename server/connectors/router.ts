@@ -20,82 +20,104 @@ export function connectorRouter(): Router {
   })
 
   // GET /api/stream/connectors?customerId=... — list customer's connectors
-  router.get('/', (req, res) => {
+  router.get('/', async (req, res) => {
     const customerId = String(req.query.customerId ?? '')
     if (!customerId) return res.status(400).json({ error: 'customerId required' })
-    const connectors = listConnectors(customerId).map(c => ({
-      ...c,
-      credentials: undefined,  // never expose credentials to frontend
-    }))
-    res.json({ connectors })
+    try {
+      const all = await listConnectors(customerId)
+      const connectors = all.map(c => ({ ...c, credentials: undefined }))
+      res.json({ connectors })
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message })
+    }
   })
 
   // POST /api/stream/connectors — create connector
-  router.post('/', (req, res) => {
+  router.post('/', async (req, res) => {
     const { customerId, type, label, credentials = {}, settings = {} } = req.body as {
       customerId: string; type: ConnectorType; label?: string
       credentials?: ConnectorCredentials; settings?: ConnectorSettings
     }
     if (!customerId || !type) return res.status(400).json({ error: 'customerId and type required' })
-
-    const impl = getConnectorImpl(type)
-    const connector = createConnector({
-      customerId, type,
-      label: label ?? impl.label,
-      credentials,
-      settings,
-    })
-    res.json({ connector: { ...connector, credentials: undefined } })
+    try {
+      const impl = getConnectorImpl(type)
+      const connector = await createConnector({
+        customerId, type,
+        label: label ?? impl.label,
+        credentials,
+        settings,
+      })
+      res.json({ connector: { ...connector, credentials: undefined } })
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message })
+    }
   })
 
   // DELETE /api/stream/connectors/:id
-  router.delete('/:id', (req, res) => {
-    deleteConnector(req.params.id)
-    res.json({ ok: true })
+  router.delete('/:id', async (req, res) => {
+    try {
+      await deleteConnector(req.params.id)
+      res.json({ ok: true })
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message })
+    }
   })
 
   // GET /api/stream/connectors/:id/runs — sync run history
-  router.get('/:id/runs', (req, res) => {
-    const runs = listSyncRuns(req.params.id)
-    res.json({ runs })
+  router.get('/:id/runs', async (req, res) => {
+    try {
+      const runs = await listSyncRuns(req.params.id)
+      res.json({ runs })
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message })
+    }
   })
 
   // POST /api/stream/connectors/:id/sync — trigger manual sync
   router.post('/:id/sync', async (req, res) => {
-    const connector = getConnector(req.params.id)
-    if (!connector) return res.status(404).json({ error: 'Connector not found' })
-
-    // Start sync async — return immediately
-    res.json({ ok: true, message: 'Sync started' })
-    syncConnector(connector).catch(e => {
-      console.error('[connectors] manual sync error:', (e as Error).message)
-    })
+    try {
+      const connector = await getConnector(req.params.id)
+      if (!connector) return res.status(404).json({ error: 'Connector not found' })
+      res.json({ ok: true, message: 'Sync started' })
+      syncConnector(connector).catch(e => {
+        console.error('[connectors] manual sync error:', (e as Error).message)
+      })
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message })
+    }
   })
 
   // POST /api/stream/connectors/:id/validate — validate credentials
   router.post('/:id/validate', async (req, res) => {
-    const connector = getConnector(req.params.id)
-    if (!connector) return res.status(404).json({ error: 'Connector not found' })
-    const impl = getConnectorImpl(connector.type)
-    const result = await impl.validate(connector.credentials, connector.settings)
-    res.json(result)
+    try {
+      const connector = await getConnector(req.params.id)
+      if (!connector) return res.status(404).json({ error: 'Connector not found' })
+      const impl = getConnectorImpl(connector.type)
+      const result = await impl.validate(connector.credentials, connector.settings)
+      res.json(result)
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message })
+    }
   })
 
   // ── OAuth flows ───────────────────────────────────────────────────────────────
 
   // GET /api/stream/connectors/oauth/authorize?type=slack&customerId=...&connectorId=...
-  router.get('/oauth/authorize', (req, res) => {
+  router.get('/oauth/authorize', async (req, res) => {
     const { type, customerId, connectorId } = req.query as Record<string, string>
     if (!type || !customerId) return res.status(400).json({ error: 'type and customerId required' })
+    try {
+      const impl = getConnectorImpl(type as ConnectorType)
+      if (!impl.getAuthUrl) return res.status(400).json({ error: `${type} does not use OAuth` })
 
-    const impl = getConnectorImpl(type as ConnectorType)
-    if (!impl.getAuthUrl) return res.status(400).json({ error: `${type} does not use OAuth` })
+      const clientId = process.env[`${type.toUpperCase()}_CLIENT_ID`] ?? ''
+      const redirectUri = `${process.env.API_BASE_URL ?? ''}/api/stream/connectors/oauth/callback`
+      const state = JSON.stringify({ type, customerId, connectorId })
 
-    const clientId = process.env[`${type.toUpperCase()}_CLIENT_ID`] ?? ''
-    const redirectUri = `${process.env.API_BASE_URL ?? ''}/api/stream/connectors/oauth/callback`
-    const state = JSON.stringify({ type, customerId, connectorId })
-
-    res.redirect(impl.getAuthUrl(clientId, redirectUri, state))
+      res.redirect(impl.getAuthUrl(clientId, redirectUri, state))
+    } catch (e) {
+      res.status(400).json({ error: (e as Error).message })
+    }
   })
 
   // GET /api/stream/connectors/oauth/callback?code=...&state=...
@@ -112,10 +134,10 @@ export function connectorRouter(): Router {
     }
 
     const { type, customerId, connectorId } = stateObj
-    const impl = getConnectorImpl(type)
-    if (!impl.exchangeCode) return res.status(400).send(`${type} does not support code exchange`)
-
     try {
+      const impl = getConnectorImpl(type)
+      if (!impl.exchangeCode) return res.status(400).send(`${type} does not support code exchange`)
+
       const clientId = process.env[`${type.toUpperCase()}_CLIENT_ID`] ?? ''
       const clientSecret = process.env[`${type.toUpperCase()}_CLIENT_SECRET`] ?? ''
       const redirectUri = `${process.env.API_BASE_URL ?? ''}/api/stream/connectors/oauth/callback`
@@ -123,15 +145,12 @@ export function connectorRouter(): Router {
 
       let id = connectorId
       if (id) {
-        // Update existing connector credentials
-        updateConnectorCredentials(id, creds)
+        await updateConnectorCredentials(id, creds)
       } else {
-        // Create new connector
-        const connector = createConnector({ customerId, type, label: impl.label, credentials: creds, settings: {} })
+        const connector = await createConnector({ customerId, type, label: impl.label, credentials: creds, settings: {} })
         id = connector.id
       }
 
-      // Redirect to integrations page on success
       const dashboardUrl = process.env.DASHBOARD_URL ?? 'http://localhost:3000'
       res.redirect(`${dashboardUrl}/dashboard/integrations?connected=${type}&connectorId=${id}`)
     } catch (e) {

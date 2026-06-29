@@ -19,10 +19,10 @@ const SYNC_INTERVAL = '0 */6 * * *'  // every 6 hours
 
 export async function syncConnector(connector: ConnectorConfig): Promise<void> {
   const impl = getConnectorImpl(connector.type)
-  const run = createSyncRun(connector.id, connector.customerId)
+  const run = await createSyncRun(connector.id, connector.customerId)
 
   console.log(`[connectors] starting sync: ${connector.label} (${connector.id})`)
-  updateConnectorStatus(connector.id, 'active')
+  await updateConnectorStatus(connector.id, 'active')
 
   try {
     let creds = connector.credentials
@@ -37,28 +37,28 @@ export async function syncConnector(connector: ConnectorConfig): Promise<void> {
       const clientSecret = process.env[`${connector.type.toUpperCase()}_CLIENT_SECRET`] ?? ''
       const refreshed = await impl.refreshAccessToken(creds, clientId, clientSecret)
       creds = { ...creds, ...refreshed }
-      updateConnectorCredentials(connector.id, creds)
+      await updateConnectorCredentials(connector.id, creds)
     }
 
     const chunks = impl.fetchChunks(creds, connector.settings, connector.lastSyncAt)
     const result = await runConnectorPipeline(connector.customerId, connector.label, chunks)
 
-    completeSyncRun(run.id, {
+    await completeSyncRun(run.id, {
       chunksProcessed: result.chunksProcessed,
       nodesExtracted: result.nodesExtracted,
     })
-    updateConnectorStatus(connector.id, 'active', { lastSyncAt: Date.now() })
+    await updateConnectorStatus(connector.id, 'active', { lastSyncAt: Date.now() })
     console.log(`[connectors] done: ${connector.label} — ${result.chunksProcessed} chunks, ${result.nodesExtracted} nodes`)
   } catch (err) {
     const errorMsg = (err as Error).message
     console.error(`[connectors] error syncing ${connector.label}:`, errorMsg)
-    completeSyncRun(run.id, { chunksProcessed: 0, nodesExtracted: 0, error: errorMsg })
-    updateConnectorStatus(connector.id, 'error', { errorMsg })
+    await completeSyncRun(run.id, { chunksProcessed: 0, nodesExtracted: 0, error: errorMsg })
+    await updateConnectorStatus(connector.id, 'error', { errorMsg })
   }
 }
 
 async function runAllActive(): Promise<void> {
-  const connectors = listActiveConnectors()
+  const connectors = await listActiveConnectors()
   if (connectors.length === 0) return
   console.log(`[connectors] scheduled sync: ${connectors.length} active connector(s)`)
   await Promise.allSettled(connectors.map(syncConnector))

@@ -388,7 +388,7 @@ export default function LandingPage() {
         borderTop: '1px solid #e8e8e8',
         position: 'relative',
       }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 64 }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'flex-start', gap: 64 }}>
 
           {/* Text */}
           <div style={{ flex: '1 1 0' }}>
@@ -416,7 +416,7 @@ export default function LandingPage() {
             <img
               src="/plumb-footer-img.jpg"
               alt=""
-              style={{ display: 'block', height: 560, width: 'auto', objectFit: 'contain' }}
+              style={{ display: 'block', height: 680, width: 'auto', objectFit: 'contain' }}
             />
           </div>
         </div>

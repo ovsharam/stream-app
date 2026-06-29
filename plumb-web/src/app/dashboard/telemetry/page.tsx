@@ -76,7 +76,7 @@ export default function TelemetryPage() {
   const eventTypes = ["all", ...Array.from(new Set(events.map((e) => e.event))).sort()];
   const filtered = filter === "all" ? events : events.filter((e) => e.event === filter);
 
-  const plumbConnected = !stats?._error;
+  const plumbConnected = stats !== null && !stats._error;
 
   return (
     <div>

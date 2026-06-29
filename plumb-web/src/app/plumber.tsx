@@ -3,9 +3,10 @@
 import type React from 'react'
 
 // ── Single walking plumber character ──────────────────────────────────────────
-// viewBox 80×120. Hat is a proper yellow construction hard hat (dome + brim).
-// Eyes have white sclera + dark iris + specular dot. Eyebrows + cheek blush.
-// Walk cycle: legs ±26° from hip, arms counter-phase, body double-bounce bob.
+// Cute comic/flat-illustration style (ponpon-mania sheep aesthetic):
+// Bold black outlines, chibi proportions, big dot eyes, simple shapes.
+// viewBox 80×120. Hard hat dome, coveralls with hi-vis stripe,
+// pipe resting on left shoulder. Walk cycle: legs ±22°, arms counter-phase.
 
 export function PlumberWalker({
   size = 90,
@@ -40,128 +41,131 @@ export function PlumberWalker({
         .${pfx}-body { animation: ${pfx}-bob ${dur} ease-in-out ${d} infinite; }
       `}</style>
 
-      {/* ── LEGS (rendered first so body sits on top) ─────────────── */}
+      {/* ── LEGS (behind body) ─────────────────────────────────────────── */}
 
-      {/* Left leg — pivot at hip (30, 91) */}
+      {/* Left leg — pivot at hip (30, 90) */}
       <g>
-        <rect x="24" y="91" width="12" height="22" rx="5" fill="#2535d8"/>
-        {/* Knee highlight */}
-        <rect x="25" y="100" width="10" height="4" rx="2" fill="#fff" opacity="0.07"/>
-        {/* Boot */}
-        <rect x="19" y="106" width="18" height="9" rx="4" fill="#1c1c3a"/>
-        {/* Boot highlight */}
-        <rect x="21" y="107" width="14" height="3" rx="1.5" fill="#fff" opacity="0.10"/>
+        <rect x="22" y="90" width="14" height="22" rx="7" fill="#2535d8" stroke="#111" strokeWidth="2"/>
+        <ellipse cx="29" cy="113" rx="10" ry="6" fill="#111"/>
+        <ellipse cx="27" cy="111" rx="6" ry="3" fill="#333"/>
         <animateTransform attributeName="transform" type="rotate"
-          values={`-26,30,91; 26,30,91; -26,30,91`}
+          values={`-22,29,90; 22,29,90; -22,29,90`}
           dur={dur} begin={d} repeatCount="indefinite"/>
       </g>
 
-      {/* Right leg — pivot at hip (50, 91), opposite phase */}
+      {/* Right leg — pivot at hip (51, 90), opposite phase */}
       <g>
-        <rect x="44" y="91" width="12" height="22" rx="5" fill="#2535d8"/>
-        {/* Knee highlight */}
-        <rect x="45" y="100" width="10" height="4" rx="2" fill="#fff" opacity="0.07"/>
-        {/* Boot */}
-        <rect x="43" y="106" width="18" height="9" rx="4" fill="#1c1c3a"/>
-        {/* Boot highlight */}
-        <rect x="45" y="107" width="14" height="3" rx="1.5" fill="#fff" opacity="0.10"/>
+        <rect x="44" y="90" width="14" height="22" rx="7" fill="#2535d8" stroke="#111" strokeWidth="2"/>
+        <ellipse cx="51" cy="113" rx="10" ry="6" fill="#111"/>
+        <ellipse cx="53" cy="111" rx="6" ry="3" fill="#333"/>
         <animateTransform attributeName="transform" type="rotate"
-          values={`26,50,91; -26,50,91; 26,50,91`}
+          values={`22,51,90; -22,51,90; 22,51,90`}
           dur={dur} begin={d} repeatCount="indefinite"/>
       </g>
 
-      {/* ── BODY GROUP (bobs) ──────────────────────────────────────── */}
+      {/* ── BODY GROUP (bobs with walk) ───────────────────────────────── */}
       <g className={`${pfx}-body`}>
 
-        {/* ── YELLOW CONSTRUCTION HARD HAT ──────────────────── */}
-        {/* Dome — proper rounded construction hat shape */}
-        <path d="M17 31 Q17 9 40 7 Q63 9 63 31Z" fill="#FFD000"/>
-        {/* Dome highlight (top-left specular) */}
-        <path d="M24 22 Q30 9 40 7 Q52 9 55 15 Q46 9 30 13Z" fill="#fff" opacity="0.13"/>
-        {/* Brim — flat all-around, slightly wider than head */}
-        <ellipse cx="40" cy="31" rx="26"  ry="6"   fill="#FFD000"/>
-        {/* Brim underside (shadow) */}
-        <ellipse cx="40" cy="33" rx="23.5" ry="4.5" fill="#B89000" opacity="0.55"/>
-        {/* Front bill sticking forward */}
-        <path d="M14 30 Q16 24 25 24 L25 32 Q16 33 12 32Z" fill="#C9A800"/>
-        {/* Top brim edge highlight */}
-        <ellipse cx="40" cy="29" rx="26"  ry="2" fill="#fff" opacity="0.07"/>
+        {/* ── HARD HAT ─────────────────────────────── */}
+        {/* Dome */}
+        <path d="M14 34 Q14 6 40 4 Q66 6 66 34 Z"
+          fill="#FFD600" stroke="#111" strokeWidth="2.4" strokeLinejoin="round"/>
+        {/* Brim */}
+        <rect x="8" y="30" width="64" height="11" rx="5.5" fill="#FFD600" stroke="#111" strokeWidth="2.2"/>
+        {/* Under-brim shadow */}
+        <rect x="10" y="35" width="60" height="6" rx="4" fill="#C9A400"/>
+        {/* Hat band stripe */}
+        <rect x="18" y="27" width="44" height="7" rx="3" fill="#E0A800"/>
+        {/* Dome highlight */}
+        <path d="M22 24 Q32 10 40 8 Q50 9 54 14 Q44 9 28 16 Z" fill="white" opacity="0.15"/>
 
-        {/* ── HEAD ────────────────────────────────────────────── */}
+        {/* ── HEAD ─────────────────────────────────── */}
         {/* Ears */}
-        <ellipse cx="23" cy="44" rx="3.5" ry="5" fill="#f5c49a"/>
-        <ellipse cx="57" cy="44" rx="3.5" ry="5" fill="#f5c49a"/>
-        {/* Head */}
-        <circle cx="40" cy="44" r="17" fill="#f5c49a"/>
+        <ellipse cx="20" cy="52" rx="4.5" ry="6" fill="#FFE4B5" stroke="#111" strokeWidth="1.8"/>
+        <ellipse cx="60" cy="52" rx="4.5" ry="6" fill="#FFE4B5" stroke="#111" strokeWidth="1.8"/>
+        {/* Inner ear */}
+        <ellipse cx="20" cy="52" rx="2.5" ry="3.5" fill="#f5c4a0"/>
+        <ellipse cx="60" cy="52" rx="2.5" ry="3.5" fill="#f5c4a0"/>
+        {/* Head circle */}
+        <circle cx="40" cy="51" r="21" fill="#FFE4B5" stroke="#111" strokeWidth="2.4"/>
 
-        {/* Eyes — white sclera + dark iris + pupil highlight */}
-        <circle cx="33" cy="42" r="5"   fill="white"/>
-        <circle cx="33" cy="43" r="3.2" fill="#1a1a2e"/>
-        <circle cx="31.6" cy="41" r="1.2" fill="#fff" opacity="0.82"/>
+        {/* Eyes — big cute dot style (ponpon aesthetic) */}
+        <circle cx="31" cy="49" r="5.5" fill="#111"/>
+        <circle cx="49" cy="49" r="5.5" fill="#111"/>
+        {/* Eye shines — two dots each for extra cute */}
+        <circle cx="29" cy="46.5" r="2.2" fill="white"/>
+        <circle cx="32.5" cy="50" r="1" fill="white" opacity="0.7"/>
+        <circle cx="47" cy="46.5" r="2.2" fill="white"/>
+        <circle cx="50.5" cy="50" r="1" fill="white" opacity="0.7"/>
 
-        <circle cx="47" cy="42" r="5"   fill="white"/>
-        <circle cx="47" cy="43" r="3.2" fill="#1a1a2e"/>
-        <circle cx="45.6" cy="41" r="1.2" fill="#fff" opacity="0.82"/>
+        {/* Eyebrows — thick, expressive arches */}
+        <path d="M26 41 Q31 37.5 36 41"
+          stroke="#111" strokeWidth="2.4" strokeLinecap="round" fill="none"/>
+        <path d="M44 41 Q49 37.5 54 41"
+          stroke="#111" strokeWidth="2.4" strokeLinecap="round" fill="none"/>
 
-        {/* Eyebrows — cheerful upward-arc (happy brows) */}
-        <path d="M29 37 Q33 34.5 37 37"
-          stroke="#c07840" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
-        <path d="M43 37 Q47 34.5 51 37"
-          stroke="#c07840" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+        {/* Nose — tiny round dot */}
+        <circle cx="40" cy="55" r="2.2" fill="#c07840"/>
 
-        {/* Nose — small rounded triangle */}
-        <path d="M39 48 Q40 50.5 41 48" stroke="#c48a58" strokeWidth="1.2" strokeLinecap="round" fill="none"/>
+        {/* Smile — wide curved grin */}
+        <path d="M32 60 Q40 68 48 60"
+          stroke="#111" strokeWidth="2.4" strokeLinecap="round" fill="none"/>
 
-        {/* Smile — wide friendly grin */}
-        <path d="M33 52 Q40 59 47 52"
-          stroke="#c48a58" strokeWidth="1.8" strokeLinecap="round" fill="none"/>
+        {/* Cheek blush — big soft circles */}
+        <ellipse cx="23" cy="57" rx="6.5" ry="4.5" fill="#ff8888" opacity="0.38"/>
+        <ellipse cx="57" cy="57" rx="6.5" ry="4.5" fill="#ff8888" opacity="0.38"/>
 
-        {/* Cheek blush */}
-        <ellipse cx="26" cy="49" rx="4.5" ry="3" fill="#f08050" opacity="0.28"/>
-        <ellipse cx="54" cy="49" rx="4.5" ry="3" fill="#f08050" opacity="0.28"/>
+        {/* ── COVERALLS (body) ─────────────────────── */}
+        <rect x="16" y="70" width="48" height="26" rx="13" fill="#2535d8" stroke="#111" strokeWidth="2.2"/>
 
-        {/* ── NECK ────────────────────────────────────────────── */}
-        <rect x="36" y="59" width="8" height="8" rx="3" fill="#f5c49a"/>
+        {/* Overall suspender straps */}
+        <rect x="32" y="68" width="7" height="15" rx="3.5" fill="#FFE4B5" stroke="#111" strokeWidth="1.6"/>
+        <rect x="41" y="68" width="7" height="15" rx="3.5" fill="#FFE4B5" stroke="#111" strokeWidth="1.6"/>
 
-        {/* ── COVERALLS ───────────────────────────────────────── */}
-        <rect x="18" y="65" width="44" height="29" rx="8" fill="#202ded"/>
-        {/* Hi-vis yellow stripe */}
-        <rect x="18" y="77" width="44" height="9" fill="#FFD000" opacity="0.95"/>
-        {/* Centre zip */}
-        <rect x="38" y="65" width="4"  height="29" rx="2" fill="#1620c0"/>
-        {/* Pocket */}
-        <rect x="50" y="69" width="9" height="6" rx="2"
-          stroke="#fff" strokeWidth="0.6" fill="none" opacity="0.12"/>
-        {/* Shoulder seams */}
-        <line x1="18" y1="65" x2="18" y2="78" stroke="#1620c0" strokeWidth="0.5"/>
-        <line x1="62" y1="65" x2="62" y2="78" stroke="#1620c0" strokeWidth="0.5"/>
+        {/* Hi-vis yellow safety stripe */}
+        <rect x="16" y="81" width="48" height="9" fill="#FFD600"/>
+        <line x1="16" y1="81" x2="64" y2="81" stroke="#111" strokeWidth="0.8" opacity="0.35"/>
+        <line x1="16" y1="90" x2="64" y2="90" stroke="#111" strokeWidth="0.8" opacity="0.35"/>
 
-        {/* ── BELT ────────────────────────────────────────────── */}
-        <rect x="17" y="91" width="46" height="6" rx="3" fill="#1620c0"/>
-        {/* Buckle */}
-        <rect x="36" y="90" width="8"  height="8" rx="2" fill="#898fe9" opacity="0.85"/>
+        {/* Chest pocket */}
+        <rect x="47" y="72" width="12" height="8" rx="3" fill="none" stroke="#111" strokeWidth="1.3" opacity="0.45"/>
+        <rect x="52" y="70" width="2.5" height="4" rx="1.25" fill="none" stroke="#111" strokeWidth="1.2" opacity="0.4"/>
 
-        {/* ── LEFT ARM — swings forward (same phase as right leg) */}
+        {/* ── BELT ─────────────────────────────────── */}
+        <rect x="15" y="93" width="50" height="8" rx="4" fill="#1620c0" stroke="#111" strokeWidth="1.8"/>
+        {/* Belt buckle */}
+        <rect x="33" y="92" width="14" height="10" rx="3" fill="#8A94E8" stroke="#111" strokeWidth="1.6"/>
+        <rect x="35.5" y="94" width="9" height="6" rx="2" fill="none" stroke="#111" strokeWidth="1.2" opacity="0.5"/>
+
+        {/* ── LEFT ARM — raised, supporting pipe on shoulder ─── */}
         <g>
-          <rect x="3"  y="63" width="17" height="10" rx="5" fill="#202ded"/>
-          {/* Glove */}
-          <circle cx="2" cy="68" r="6" fill="#1620c0"/>
-          {/* Pipe segment */}
-          <rect x="-5" y="65" width="9" height="5" rx="2.5" fill="#202ded" opacity="0.7"/>
+          <rect x="0" y="63" width="18" height="12" rx="6" fill="#2535d8" stroke="#111" strokeWidth="1.8"/>
+          <circle cx="1" cy="69" r="7" fill="#1620c0" stroke="#111" strokeWidth="1.6"/>
           <animateTransform attributeName="transform" type="rotate"
-            values={`22,20,67; -22,20,67; 22,20,67`}
+            values={`-28,18,70; -8,18,70; -28,18,70`}
             dur={dur} begin={d} repeatCount="indefinite"/>
         </g>
 
-        {/* ── RIGHT ARM — opposite phase ───────────────────────── */}
+        {/* ── PIPE on left shoulder ─────────────────────────── */}
+        {/* Long pipe resting diagonally on shoulder, extending behind */}
+        <rect x="-14" y="56" width="40" height="9" rx="4.5" fill="#7A8FA8" stroke="#111" strokeWidth="1.6"/>
+        {/* Pipe end cap — left */}
+        <circle cx="-14" cy="60.5" r="5.5" fill="#5A7090" stroke="#111" strokeWidth="1.4"/>
+        {/* Pipe end cap — right */}
+        <circle cx="26" cy="60.5" r="5.5" fill="#5A7090" stroke="#111" strokeWidth="1.4"/>
+        {/* Pipe surface highlight */}
+        <rect x="-12" y="58" width="36" height="3" rx="1.5" fill="white" opacity="0.22"/>
+        {/* Pipe coupling ring in middle */}
+        <rect x="3" y="55.5" width="6" height="10" rx="2" fill="#4A6080" stroke="#111" strokeWidth="1.2"/>
+
+        {/* ── RIGHT ARM — swings freely, holds wrench ────────── */}
         <g>
-          <rect x="60" y="63" width="17" height="10" rx="5" fill="#202ded"/>
-          {/* Glove */}
-          <circle cx="78" cy="68" r="6" fill="#1620c0"/>
-          {/* Wrench */}
-          <rect x="75" y="65" width="10" height="5" rx="2" fill="#898fe9"/>
+          <rect x="62" y="63" width="18" height="12" rx="6" fill="#2535d8" stroke="#111" strokeWidth="1.8"/>
+          <circle cx="79" cy="69" r="7" fill="#1620c0" stroke="#111" strokeWidth="1.6"/>
+          {/* Wrench in right hand */}
+          <rect x="75" y="64" width="12" height="5" rx="2" fill="#8A94E8" stroke="#111" strokeWidth="1.2"/>
           <animateTransform attributeName="transform" type="rotate"
-            values={`-22,60,67; 22,60,67; -22,60,67`}
+            values={`20,62,70; -12,62,70; 20,62,70`}
             dur={dur} begin={d} repeatCount="indefinite"/>
         </g>
 
@@ -170,7 +174,7 @@ export function PlumberWalker({
   )
 }
 
-// ── PlumberParade — full-width scrolling marquee ───────────────────────────────
+// ── PlumberParade — full-width scrolling marquee (kept for reference) ─────────
 export function PlumberParade({ bg = 'transparent' }: { bg?: string }) {
   const walkers = Array.from({ length: 8 }, (_, i) => (
     <PlumberWalker
@@ -206,12 +210,10 @@ export function PlumberParade({ bg = 'transparent' }: { bg?: string }) {
   )
 }
 
-// ── PlumberHero — large single for the hero section ───────────────────────────
 export function PlumberHero({ size = 200, style }: { size?: number; style?: React.CSSProperties }) {
   return <PlumberWalker size={size} animDelay={0} style={style} />
 }
 
-// ── PlumberSmall — CTA accent ─────────────────────────────────────────────────
 export function PlumberSmall({ size = 70, style }: { size?: number; style?: React.CSSProperties }) {
   return <PlumberWalker size={size} animDelay={0.14} style={style} />
 }

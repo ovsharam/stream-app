@@ -33,7 +33,7 @@ const LABEL_ICONS: Record<string, string> = {
 type Tab = "ingest" | "review" | "query";
 
 export default function ProductGraphPage() {
-  const [customerId, setCustomerId] = useState("acme-ai");
+  const [customerId, setCustomerId] = useState("plumb-internal");
   const [tab, setTab] = useState<Tab>("ingest");
 
   return (

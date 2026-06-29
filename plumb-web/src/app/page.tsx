@@ -3,7 +3,7 @@ import { ExtractionTree } from './extraction-tree'
 import { PipelineMockup, BuildPromptMockup } from './app-mockup'
 import { PlumbLogo } from './plumb-logo'
 import { PlumberBob } from './plumber-bob'
-import { PlumbMechanic, PLUMB_CHARACTER_CSS } from './plumb-character'
+import { PLUMB_CHARACTER_CSS } from './plumb-character'
 
 const EVENTS = [
   { kind: 'graph.query',   detail: 'OAuth scope — 3 constraints surfaced',            ts: '09:14' },

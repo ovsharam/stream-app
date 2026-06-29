@@ -1,4 +1,3 @@
-'use client'
 // Flat illustration — strong adult male mechanic with pipe on shoulder.
 // No outlines. Bold flat fills + dual-tone depth.
 // Pipe rests across the back shoulder, extending up-right. Arm steadies it.

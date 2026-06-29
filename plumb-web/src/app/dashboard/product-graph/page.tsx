@@ -7,7 +7,7 @@ import type {
   ReviewQueueItem,
   ProductNode,
   ProductNodeLabel,
-} from "../../../../../shared/product-graph";
+} from "@/types/product-graph";
 
 // Routes through the Vercel → Railway proxy
 const API = "/api/stream";

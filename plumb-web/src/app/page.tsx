@@ -4,6 +4,7 @@ import { PipelineMockup, BuildPromptMockup } from './app-mockup'
 import { PlumbLogo } from './plumb-logo'
 import { PlumberBob } from './plumber-bob'
 import { PLUMB_CHARACTER_CSS } from './plumb-character'
+import { ProductGraphViz, GRAPH_VIZ_CSS } from './graph-viz'
 
 const EVENTS = [
   { kind: 'graph.query',   detail: 'OAuth scope — 3 constraints surfaced',            ts: '09:14' },
@@ -33,7 +34,7 @@ const NAV = [
 export default function LandingPage() {
   return (
     <div style={{ minHeight: '100vh', background: '#fff', color: '#0c0c0c' }}>
-      <style>{PLUMB_CHARACTER_CSS}</style>
+      <style>{PLUMB_CHARACTER_CSS}{GRAPH_VIZ_CSS}</style>
 
       {/* ── Nav ─────────────────────────────────────────────────────── */}
       <nav style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #e8e8e8' }}>
@@ -339,10 +340,11 @@ export default function LandingPage() {
       {/* ── 05 · The moat ──────────────────────────────────────────────── */}
       <section id="moat" style={{ background: '#0d1117', padding: '96px 32px' }}>
         <div style={W}>
-          <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 80, alignItems: 'start', marginBottom: 64 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 80, alignItems: 'start', marginBottom: 64 }}>
             <div className="reveal">
               <p className="section-no" style={{ color: 'rgba(255,255,255,0.2)', marginBottom: 10 }}>05 · The moat</p>
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', lineHeight: 1.65 }}>A graph that compounds.</p>
+              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', lineHeight: 1.65, marginBottom: 32 }}>A graph that compounds.</p>
+              <ProductGraphViz />
             </div>
             <div>
               <h2 className="display-md reveal" style={{ color: '#fff', marginBottom: 24, maxWidth: 520 }}>

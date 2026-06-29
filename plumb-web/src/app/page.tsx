@@ -1,591 +1,435 @@
 import Link from 'next/link'
-import { PlumbLogo } from './plumb-logo'
-import { NavMenu } from './nav-menu'
 import { ExtractionTree } from './extraction-tree'
-import { CallPrepMockup, PipelineMockup } from './app-mockup'
-import { PipeFlow } from './pipe-flow'
-import { OrbField } from './orb-field'
-import { FeatureCards, BuiltTicker } from './feature-cards'
-import { PlumberWorld } from './plumber-world'
+import { PipelineMockup, BuildPromptMockup } from './app-mockup'
+import { PlumbLogo } from './plumb-logo'
+import { PlumberBob } from './plumber-bob'
+import { PlumbMechanic, PLUMB_CHARACTER_CSS } from './plumb-character'
 
-// ── Color tokens — key ones use CSS vars for light/dark theming ───────────
+const EVENTS = [
+  { kind: 'intake',        detail: 'FDE-112 ingested — Vertex AI, Acme Corp',         ts: '09:14' },
+  { kind: 'context_score', detail: 'Scored 44/100 — OAuth scope not captured',         ts: '09:16' },
+  { kind: 'ae_sync',       detail: 'AE gap sync requested — 3 blockers flagged',       ts: '09:17' },
+  { kind: 'context_score', detail: 'Re-scored 78/100 — context gate cleared',          ts: '10:02' },
+  { kind: 'build_kickoff', detail: 'Build prompt dispatched → Claude Code',            ts: '10:03' },
+  { kind: 'stage_change',  detail: 'FDE-112 → build · Quick Win · 21d SLA',           ts: '10:04' },
+  { kind: 'deploy',        detail: 'FDE-109 shipped — Northwind, Atlas Freight',       ts: '10:31' },
+  { kind: 'ingest',        detail: 'FDE-113 ingested from Gong transcript',            ts: '11:04' },
+  { kind: 'classify',      detail: 'FDE-113 → Big Bet · custom middleware · 45d SLA', ts: '11:05' },
+  { kind: 'stage_change',  detail: 'FDE-112 → deploy · prod keys approved',           ts: '11:47' },
+]
 
-const BG       = 'var(--lp-bg)'       // switches dark ↔ light
-const BG2      = 'var(--lp-bg2)'
-const BLUE     = '#202ded'            // always blue
-const BLUE_MID = '#898fe9'
-const BLUE_PAL = '#cacdff'
-const INK      = 'var(--lp-ink)'      // switches white ↔ dark
-const DIM      = 'var(--lp-dim)'      // switches dim-white ↔ dim-black
-const LINE     = 'var(--lp-line)'     // switches dim-border
-const DIM2     = 'var(--lp-dim2)'     // medium opacity
-const DIM3     = 'var(--lp-dim3)'     // low opacity
-const NAVBG    = 'var(--lp-nav-bg)'   // nav blur tint
+const W    = { maxWidth: 1100, margin: '0 auto', padding: '0 32px' } as const
+const mono = { fontFamily: 'var(--font-jetbrains), monospace' } as const
+const teal = '#1db584'
 
-// ── Typography ─────────────────────────────────────────────────────────────
-
-const HERO: React.CSSProperties = {
-  fontFamily: 'var(--font-inter), system-ui, sans-serif',
-  fontSize:   'clamp(60px, 10.5vw, 144px)',
-  fontWeight: 900,
-  lineHeight: 0.94,
-  letterSpacing: '-0.04em',
-  color: INK,
-  textTransform: 'uppercase',
-}
-
-const SECT: React.CSSProperties = {
-  fontFamily: 'var(--font-inter), system-ui, sans-serif',
-  fontSize:   'clamp(42px, 7.5vw, 104px)',
-  fontWeight: 900,
-  lineHeight: 0.94,
-  letterSpacing: '-0.04em',
-  color: INK,
-  textTransform: 'uppercase',
-}
-
-const MONO: React.CSSProperties = {
-  fontFamily: 'var(--font-jetbrains), monospace',
-  fontSize: 10, letterSpacing: '0.1em',
-  textTransform: 'uppercase', color: DIM,
-}
-
-// ── MaskLine — locomotive slide-up reveal ─────────────────────────────────
-
-function ML({
-  children, d = '', style,
-}: { children: React.ReactNode; d?: string; style?: React.CSSProperties }) {
-  return (
-    <span className={`mask-wrap ${d}`} style={{ display: 'block', ...style }}>
-      <span className="mask-inner">{children}</span>
-    </span>
-  )
-}
-
-// ── Marquee band ───────────────────────────────────────────────────────────
-
-function Band({
-  items, bg = BLUE, color = '#fff', dur = '20', rev = false, py = 16,
-}: {
-  items: string; bg?: string; color?: string; dur?: string; rev?: boolean; py?: number
-}) {
-  const rpt = Array.from({ length: 14 }, (_, i) => (
-    <span key={i} style={{ paddingRight: '0.6em', display: 'inline-flex', alignItems: 'center', gap: '0.5em' }}>
-      {items}
-      <svg width="5" height="5" viewBox="0 0 5 5"><circle cx="2.5" cy="2.5" r="2.5" fill="currentColor" opacity={0.7}/></svg>
-    </span>
-  ))
-  return (
-    <div style={{ background: bg, overflow: 'hidden', padding: `${py}px 0` }}>
-      <div
-        className={`marquee-track${rev ? ' marquee-track-rev' : ''}`}
-        data-dur={dur}
-        style={{ color, fontSize: 'clamp(12px,1.3vw,15px)', fontWeight: 700, letterSpacing: '0.06em', display: 'flex', whiteSpace: 'nowrap' }}
-      >
-        {rpt}{rpt}
-      </div>
-    </div>
-  )
-}
-
-// ── Label ──────────────────────────────────────────────────────────────────
-
-function No({ n }: { n: string }) {
-  return <p style={{ ...MONO, marginBottom: 24, color: BLUE_MID }}><span style={{ color: BLUE }}>{n}</span> —</p>
-}
-
-// ── Page ───────────────────────────────────────────────────────────────────
-
-import type React from 'react'
+const NAV = [
+  { label: 'Problem',  href: '#problem' },
+  { label: 'Plumb',    href: '#plumb'   },
+  { label: 'The loop', href: '#loop'    },
+  { label: 'Compare',  href: '#compare' },
+  { label: 'Moat',     href: '#moat'    },
+]
 
 export default function LandingPage() {
   return (
-    <div style={{ background: BG, color: INK, overflowX: 'hidden' }}>
+    <div style={{ minHeight: '100vh', background: '#fff', color: '#0c0c0c' }}>
+      <style>{PLUMB_CHARACTER_CSS}</style>
 
-      {/* Scroll progress bar */}
-      <div className="scroll-bar" />
-
-      {/* ══ Wandering plumbers — fixed overlay, depth-layered lanes ═══ */}
-      <PlumberWorld />
-
-      {/* ══ Nav ═══════════════════════════════════════════════════════ */}
-      <nav style={{
-        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 36px', height: 52,
-        background: NAVBG,
-        backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
-        borderBottom: `1px solid ${LINE}`,
-      }}>
-        <NavMenu />
-        <div className="lp-nav-links">
-          {['Problem', 'Plumb', 'Compare'].map(l => (
-            <a key={l} href={`#${l.toLowerCase()}`}
-              className="loco-nav-link"
-              style={{ ...MONO, color: DIM, textDecoration: 'none' }}>{l}</a>
-          ))}
+      {/* ── Nav ─────────────────────────────────────────────────────── */}
+      <nav style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #e8e8e8' }}>
+        <div style={{ ...W, height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <PlumbLogo size={22} />
+          <div style={{ display: 'flex', gap: 28 }}>
+            {NAV.map(l => <a key={l.label} href={l.href} className="nav-a">{l.label}</a>)}
+          </div>
+          <Link href="/login" className="btn btn-solid" style={{ fontSize: 13.5 }}>Request early access</Link>
         </div>
-        <Link href="/login" className="loco-btn-ghost" style={{
-          fontSize: 11, fontWeight: 700, letterSpacing: '0.05em',
-          textTransform: 'uppercase', color: INK,
-          border: `1.5px solid ${DIM2}`,
-          borderRadius: 4, padding: '7px 18px',
-          textDecoration: 'none',
-        }}>Get access</Link>
       </nav>
 
-      {/* ══ Hero ══════════════════════════════════════════════════════ */}
-      <section style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '0 36px 64px', paddingTop: 52, position: 'relative' }}>
+      {/* ── Hero ─────────────────────────────────────────────────────── */}
+      <section style={{ padding: '80px 32px 60px' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
 
-        {/* Floating light orbs — mouse-parallax driven, reformcollective aesthetic */}
-        <OrbField />
-
-        {/* Big ghost number top-right */}
-        <div aria-hidden data-parallax="-0.04" style={{
-          position: 'absolute', top: '10vh', right: 32,
-          fontFamily: 'var(--font-inter), sans-serif',
-          fontSize: 'clamp(160px, 28vw, 380px)',
-          fontWeight: 900, letterSpacing: '-0.06em',
-          color: `${BLUE}0d`,
-          lineHeight: 1, userSelect: 'none', pointerEvents: 'none',
-        }}>01</div>
-
-        {/* Badge + eyebrow row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 52 }}>
-          <span style={{
-            fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
-            textTransform: 'uppercase', color: BLUE,
-            border: `1px solid ${BLUE}55`, borderRadius: 3,
-            padding: '3px 9px', fontFamily: 'var(--font-jetbrains), monospace',
-          }}>Early Access</span>
-          <ML style={{ ...MONO, color: DIM }}>
-            The FDE deployment workspace
-          </ML>
-        </div>
-
-        {/* Headline — data-skew gives it the locomotive distortion on scroll */}
-        <div data-skew style={{ lineHeight: 1 }}>
-          <ML style={HERO}>Meeting ends.</ML>
-          <ML d="mask-d1" style={HERO}>Build deploys.</ML>
-        </div>
-
-        {/* Animated pipe flow — CALL → PLUMB → BUILD */}
-        <div style={{ marginTop: 52, marginBottom: 4 }}>
-          <PipeFlow />
-        </div>
-
-        {/* Bottom row: copy + CTA */}
-        <div className="hero-bottom-grid">
-          <p style={{ fontSize: 'clamp(14px,1.4vw,17px)', color: DIM, lineHeight: 1.74, letterSpacing: '-0.01em' }}>
-            Plumb sits inside your sales calls. It pulls the spec, scores complexity,
-            and ships a build prompt to engineering — before your AE engages an FDE.
-          </p>
-          <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-            <Link href="/login" className="loco-btn-blue" style={{
-              fontSize: 13, fontWeight: 700, letterSpacing: '0.03em',
-              color: '#fff', background: BLUE,
-              borderRadius: 4, padding: '11px 28px',
-              textDecoration: 'none', textTransform: 'uppercase',
-            }}>Request early access</Link>
-            <a href="mailto:hello@useplumb.ai" className="loco-link" style={{ fontSize: 13.5, letterSpacing: '-0.01em' }}>hello@useplumb.ai</a>
+          {/* Text block */}
+          <div style={{ maxWidth: 640, marginBottom: 56 }}>
+            <p className="h0 eyebrow" style={{ marginBottom: 20 }}>Plumb · FDE workspace</p>
+            <h1 className="h1 display" style={{ marginBottom: 24 }}>
+              Meeting ends.<br />Build deploys.
+            </h1>
+            <p className="h2" style={{ fontSize: 17, color: '#6b6b6b', lineHeight: 1.72, maxWidth: 480, marginBottom: 32, letterSpacing: '-0.01em' }}>
+              Your AI sales agents fill the calendar. But every meeting that closes
+              needs a custom build — scoped, coded, and shipped to the customer&apos;s stack.
+              Plumb does that automatically. Same day.
+            </p>
+            <div className="h3" style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+              <Link href="/login" className="btn btn-solid" style={{ fontSize: 14 }}>Request early access</Link>
+              <a href="#plumb" className="access-link" style={{ fontSize: 14 }}>See how it works</a>
+            </div>
           </div>
 
-          {/* Scroll indicator */}
-          <div aria-hidden style={{
-            marginTop: 48,
-            display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8,
-          }}>
-            <span style={{ ...MONO, color: DIM, fontSize: 9 }}>Scroll to explore</span>
-            <div className="scroll-arrow" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {[0,1,2].map(i => (
-                <div key={i} style={{ width: 1, height: 8, background: DIM, opacity: 1 - i * 0.28, borderRadius: 1 }} />
-              ))}
-            </div>
+          {/* Full-width app mockup — light mode */}
+          <div className="h4">
+            <PipelineMockup />
           </div>
         </div>
       </section>
 
-      {/* ══ Feature cards — reformcollective 3-card style ═════════════ */}
-      <FeatureCards />
+      {/* Stats row */}
+      <div style={{ ...W, display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', borderTop: '1px solid #e8e8e8', borderBottom: '1px solid #e8e8e8', margin: '0 auto' }}>
+        {[
+          { v: '1 FDE',   d: 'does what used to take a full team' },
+          { v: '< 1 day', d: 'from call to customer going live' },
+          { v: '729%',    d: 'YoY growth in FDE job postings' },
+        ].map((s, i) => (
+          <div key={s.v} className={`reveal-up stagger-${i + 1}`} style={{ padding: '28px 0', paddingLeft: i > 0 ? 40 : 0, borderLeft: i > 0 ? '1px solid #e8e8e8' : 'none' }}>
+            <p style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.02em', marginBottom: 4 }}>{s.v}</p>
+            <p style={{ fontSize: 13, color: '#999' }}>{s.d}</p>
+          </div>
+        ))}
+      </div>
 
-      {/* ══ Built Different ticker ════════════════════════════════════ */}
-      <BuiltTicker />
-
-      {/* ══ Band 1 ════════════════════════════════════════════════════ */}
-      <Band items="The FDE Pipeline" bg={BLUE} dur="20" />
-
-      {/* ══ Problem ═══════════════════════════════════════════════════ */}
-      <section id="problem" style={{ padding: 'clamp(80px,10vw,160px) 36px' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'clamp(40px,6vw,96px)', alignItems: 'start' }}>
-
-            {/* Sticky left: heading */}
-            <div style={{ position: 'sticky', top: 80 }}>
-              <No n="01" />
-              <div data-skew>
-                <ML style={SECT}>AI closes</ML>
-                <ML d="mask-d1" style={SECT}>the meeting.</ML>
-                <ML d="mask-d2" style={{ ...SECT, color: BLUE }}>Nobody ships</ML>
-                <ML d="mask-d3" style={{ ...SECT, color: BLUE }}>the build.</ML>
-              </div>
+      {/* ── 01 · The clog ──────────────────────────────────────────────── */}
+      <section id="problem" style={{ padding: '96px 32px' }}>
+        <div style={W}>
+          <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 80, alignItems: 'start' }}>
+            <div className="reveal">
+              <p className="section-no" style={{ marginBottom: 10 }}>01 · The clog</p>
+              <p style={{ fontSize: 13, color: '#999', lineHeight: 1.65 }}>Why AI ROI is stuck.</p>
             </div>
-
-            {/* Right: copy + items */}
-            <div style={{ paddingTop: 48 }}>
-              <p className="reveal-up" style={{ fontSize: 'clamp(14px,1.4vw,17px)', color: DIM, lineHeight: 1.78, letterSpacing: '-0.01em', marginBottom: 56 }}>
-                The call ends. Gong records it. The AE writes a Slack. Engineering has
-                three other builds open. The spec lands in a Notion nobody reads.
-                Six weeks later, the customer asks where their build is.
+            <div>
+              <h2 className="display-md reveal" style={{ marginBottom: 24, maxWidth: 560 }}>
+                AI closes the meeting.<br />Nobody ships the build.
+              </h2>
+              <p className="reveal" style={{ fontSize: 15, color: '#6b6b6b', lineHeight: 1.78, maxWidth: 560, marginBottom: 20 }}>
+                AI agents have gotten really good at booking meetings. Your pipeline is growing.
+                But every deal that closes needs a real custom integration — built to that customer&apos;s
+                exact systems, by someone who understands both your product and their stack.
               </p>
+              <p className="reveal" style={{ fontSize: 15, color: '#6b6b6b', lineHeight: 1.78, maxWidth: 560 }}>
+                That person is the Forward Deployed Engineer. And right now they&apos;re buried — pulling
+                call recordings, writing specs from scratch, rebuilding the same context every time.
+                95% of AI deals never deliver real ROI. Not because the AI doesn&apos;t work.
+                Because the build never shipped.
+              </p>
+            </div>
+          </div>
+
+          {/* Pipeline diagram */}
+          <div style={{ marginTop: 72 }}>
+            <div className="reveal" style={{ display: 'flex', gap: 6 }}>
               {[
-                { n: '01', h: 'The spec disappears',       b: 'Call transcripts sit unread. Requirements get lost in Slack. Scope mismatches surface three weeks into the build.' },
-                { n: '02', h: 'Auth, latency — all guesses', b: 'OAuth scope, p95 latency requirements, concurrent user ceilings. Engineers guess. Deadlines slip.' },
-                { n: '03', h: 'The pipe is clogged',       b: 'Data went in one end and never came out the other. Every stalled deal is a plumbing problem.' },
-              ].map((item, i) => (
-                <div key={item.n} className={`reveal-up stagger-${i + 1}`}
-                  style={{ borderTop: `1px solid ${LINE}`, padding: '24px 0' }}>
-                  <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
-                    <span style={{ ...MONO, color: BLUE, flexShrink: 0, paddingTop: 3 }}>{item.n}</span>
-                    <div>
-                      <p style={{ fontSize: 'clamp(15px,1.5vw,18px)', fontWeight: 700, color: INK, letterSpacing: '-0.02em', marginBottom: 8 }}>{item.h}</p>
-                      <p style={{ fontSize: 14, color: DIM, lineHeight: 1.7, letterSpacing: '-0.005em' }}>{item.b}</p>
-                    </div>
+                { n: '01', label: 'AI Outbound',    sub: 'Pipeline fills fast',    owned: false },
+                { n: '02', label: 'Discovery call', sub: 'AE closes the meeting',  owned: false },
+                { n: '03', label: 'Scope & qualify', sub: 'What do they need?',    owned: true  },
+                { n: '04', label: 'Build it',       sub: '← stuck here',           owned: true, clog: true },
+                { n: '05', label: 'Ship & expand',  sub: 'Customer goes live',     owned: true  },
+              ].map((s, i) => (
+                <div key={s.n} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                  <div style={{
+                    flex: 1, padding: '20px 18px', borderRadius: 10,
+                    border: `1px solid ${s.owned ? (s.clog ? '#f59e0b' : teal) : '#e8e8e8'}`,
+                    background: s.owned ? (s.clog ? 'rgba(245,158,11,0.03)' : 'rgba(29,181,132,0.03)') : '#fafafa',
+                    position: 'relative',
+                  }}>
+                    {s.clog && (
+                      <div style={{ position: 'absolute', top: -22, left: '50%', transform: 'translateX(-50%)', fontSize: 9.5, fontWeight: 600, color: '#f59e0b', letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap', ...mono }}>↑ the clog</div>
+                    )}
+                    <p style={{ fontSize: 10, color: s.owned ? teal : '#ccc', fontWeight: 600, ...mono, marginBottom: 7 }}>{s.n}</p>
+                    <p style={{ fontSize: 12.5, fontWeight: 600, letterSpacing: '-0.01em', marginBottom: 4, color: s.owned ? '#0c0c0c' : '#888' }}>{s.label}</p>
+                    <p style={{ fontSize: 11, color: s.clog ? '#f59e0b' : '#bbb' }}>{s.sub}</p>
                   </div>
+                  {i < 4 && <span style={{ color: '#d0d0d0', fontSize: 14, flexShrink: 0 }}>→</span>}
                 </div>
               ))}
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ══ Band 2 — reversed dim ═════════════════════════════════════ */}
-      <Band items="Meeting ends · Build deploys" bg={BG2} color={BLUE_MID} dur="16" rev />
-
-      {/* ══ Extract ═══════════════════════════════════════════════════ */}
-      <section style={{ padding: 'clamp(80px,10vw,160px) 36px', background: BG2 }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 'clamp(40px,6vw,80px)', alignItems: 'start' }}>
-
-            {/* Sticky left: heading + description */}
-            <div style={{ position: 'sticky', top: 88 }}>
-              <No n="02" />
-              <div data-skew>
-                <ML style={SECT}>Surfaces what</ML>
-                <ML d="mask-d1" style={{ ...SECT, color: BLUE }}>AEs miss.</ML>
-              </div>
-              <p className="reveal-up" style={{ fontSize: 'clamp(14px,1.4vw,17px)', color: DIM, lineHeight: 1.78, marginTop: 32 }}>
-                Plumb listens to your Gong or Zoom call and extracts every technical requirement,
-                latency constraint, auth gap, and integration mismatch — while you talk.
-              </p>
-              <p className="reveal-up stagger-1" style={{ fontSize: 'clamp(14px,1.4vw,17px)', color: DIM, lineHeight: 1.78, marginTop: 20 }}>
-                What AEs write: <em style={{ color: BLUE_PAL }}>&ldquo;CRM lookup.&rdquo;</em><br />
-                What engineers need: OAuth scope, p95 gate, Salesforce REST v57, Redis layer.
-              </p>
-            </div>
-
-            {/* Right: extraction tree */}
-            <div className="reveal-scale extraction-tree-wrap">
-              <ExtractionTree />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ══ Plumb ═════════════════════════════════════════════════════ */}
-      <section id="plumb" style={{ padding: 'clamp(80px,10vw,160px) 36px' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-
-          <div style={{ marginBottom: 72 }}>
-            <No n="03" />
-            <div data-skew>
-              <ML style={SECT}>Sits in your call.</ML>
-              <ML d="mask-d1" style={{ ...SECT, color: BLUE }}>Ships the build.</ML>
+            <div className="reveal" style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: teal, display: 'block', flexShrink: 0 }} />
+              <span style={{ fontSize: 12.5, color: '#888' }}>Plumb handles steps <strong style={{ color: '#0c0c0c' }}>03 → 05</strong></span>
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 72, alignItems: 'start', marginBottom: 96 }}>
-            <div className="reveal-scale">
-              <CallPrepMockup />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-              {[
-                { t: 'Headless by default',  b: 'Sits silently in every Gong call. No new meeting. No prep doc. Just context, captured.' },
-                { t: 'Inside your calls',    b: 'Knows what was said, promised, and missing — before your AE types the first Slack.' },
-                { t: 'Connects the gaps',    b: 'Auth scope, latency requirements, platform constraints. Surfaces mismatches AEs miss every time.' },
-                { t: 'Ships the prompt',     b: 'A build brief lands in Claude Code. Engineering opens a repo, not a doc.' },
-              ].map((f, i) => (
-                <div key={f.t} className={`reveal-up stagger-${i + 1}`}
-                  style={{ borderTop: `1px solid ${LINE}`, padding: '22px 0' }}>
-                  <p style={{ fontSize: 'clamp(14px,1.4vw,17px)', fontWeight: 700, color: INK, letterSpacing: '-0.02em', marginBottom: 7 }}>{f.t}</p>
-                  <p style={{ fontSize: 13.5, color: DIM, lineHeight: 1.7, letterSpacing: '-0.005em' }}>{f.b}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Five steps + pipeline */}
-          <div style={{ borderTop: `1px solid ${LINE}`, paddingTop: 64 }}>
-            <No n="04" />
-            <div style={{ display: 'flex', gap: 'clamp(20px,4vw,56px)', marginBottom: 48, flexWrap: 'wrap' }}>
-              <ML style={{ ...SECT, flex: 1, minWidth: 240 }}>Five steps.</ML>
-              <ML d="mask-d1" style={{ ...SECT, flex: 1, minWidth: 240, color: DIM }}>One surface.</ML>
-            </div>
-            <div className="reveal-scale">
-              <PipelineMockup />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ══ Compare ═══════════════════════════════════════════════════ */}
-      <section id="compare" style={{ padding: 'clamp(80px,10vw,160px) 36px', background: BG2 }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-          <No n="05" />
-          <div style={{ marginBottom: 64 }}>
-            <div data-skew>
-              <ML style={SECT}>The AI hears</ML>
-              <ML d="mask-d1" style={SECT}>the deal.</ML>
-              <ML d="mask-d2" style={{ ...SECT, color: BLUE }}>Plumb hears</ML>
-              <ML d="mask-d3" style={{ ...SECT, color: BLUE }}>the build.</ML>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: LINE, borderRadius: 10, overflow: 'hidden' }}>
-            <div className="reveal-left" style={{ background: BG2, padding: 'clamp(32px,4vw,52px)' }}>
-              <p style={{ ...MONO, color: DIM2, marginBottom: 24 }}>Before Plumb</p>
-              {[
-                'Call ends. AE writes a Slack.',
-                'FDE asks six clarifying questions.',
-                'Three docs shared, none are current.',
-                'Spec goes into Notion. Nobody reads it.',
-                'Engineering rediscovers scope 2 weeks later.',
-              ].map(item => (
-                <div key={item} style={{ display: 'flex', gap: 14, padding: '14px 0', borderBottom: `1px solid ${LINE}` }}>
-                  <span style={{ color: '#e54545', fontSize: 13, flexShrink: 0 }}>✕</span>
-                  <p style={{ fontSize: 'clamp(13px,1.3vw,15px)', color: DIM, lineHeight: 1.6 }}>{item}</p>
-                </div>
-              ))}
-            </div>
-            <div className="reveal-left stagger-2" style={{ background: BG2, padding: 'clamp(32px,4vw,52px)' }}>
-              <p style={{ ...MONO, color: BLUE, marginBottom: 24 }}>With Plumb</p>
-              {[
-                'Plumb captures requirements mid-call.',
-                'Spec scored and gap-flagged in real time.',
-                'Build prompt in Claude Code before call ends.',
-                'FDE reviews, approves, repo is open.',
-                "Customer asks about their build. It's already live.",
-              ].map(item => (
-                <div key={item} style={{ display: 'flex', gap: 14, padding: '14px 0', borderBottom: `1px solid ${LINE}` }}>
-                  <span style={{ color: BLUE_MID, fontSize: 13, flexShrink: 0 }}>✓</span>
-                  <p style={{ fontSize: 'clamp(13px,1.3vw,15px)', color: INK, lineHeight: 1.6 }}>{item}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ══ Stats ═════════════════════════════════════════════════════ */}
-      <section style={{ padding: 'clamp(80px,10vw,140px) 36px', borderTop: `1px solid ${LINE}` }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-          <No n="06" />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1, background: LINE, borderRadius: 10, overflow: 'hidden' }}>
+          {/* Stats */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1, background: '#e8e8e8', border: '1px solid #e8e8e8', borderRadius: 14, overflow: 'hidden', marginTop: 64 }}>
             {[
-              { raw: '730', s: '%',  l: 'FDE pipeline growth',   sub: 'for early customers' },
-              { raw: '3',   s: '×',  l: 'faster first deploy',   sub: 'vs. manual handoff' },
-              { raw: '100', s: '%',  l: 'signal captured',       sub: 'nothing lost at handoff' },
+              { v: '729%',        label: 'YoY growth in FDE job postings', sub: '643 → 5,330 · Indeed Apr \'25→\'26' },
+              { v: '$190K–$385K', label: 'average FDE salary', sub: 'Senior roles hit $600K+' },
+              { v: 'No playbook', label: 'no shared process, no tools', sub: 'Every build starts from zero' },
             ].map((s, i) => (
-              <div key={s.l} className={`reveal-up stagger-${i + 1}`}
-                style={{ background: BG, padding: 'clamp(32px,4vw,52px)' }}>
-                <p style={{
-                  fontFamily: 'var(--font-inter), sans-serif',
-                  fontSize: 'clamp(52px,8.5vw,112px)',
-                  fontWeight: 900, letterSpacing: '-0.05em',
-                  color: BLUE, lineHeight: 1, marginBottom: 14,
-                }}>
-                  <span data-count-to={`${s.raw}${s.s}`}>{s.raw}{s.s}</span>
-                </p>
-                <p style={{ fontSize: 'clamp(14px,1.4vw,17px)', fontWeight: 600, color: INK, marginBottom: 4 }}>{s.l}</p>
-                <p style={{ ...MONO, color: DIM }}>{s.sub}</p>
+              <div key={s.v} className={`feat-cell reveal reveal-d${(i + 1) as 1|2|3}`}>
+                <p className="serif" style={{ fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', marginBottom: 8 }}>{s.v}</p>
+                <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{s.label}</p>
+                <p style={{ fontSize: 11, color: '#aaa', ...mono }}>{s.sub}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ══ Band 3 ════════════════════════════════════════════════════ */}
-      <Band items="Clear the clog · Ship the build" bg={BLUE} dur="18" />
+      <hr className="section-rule" />
 
-      {/* ══ CTA ═══════════════════════════════════════════════════════ */}
-      <section style={{
-        minHeight: '100vh', display: 'flex', flexDirection: 'column',
-        justifyContent: 'center', alignItems: 'center',
-        textAlign: 'center', padding: 'clamp(80px,10vw,140px) 36px',
-        position: 'relative',
-      }}>
-        <div aria-hidden data-parallax="0.05" style={{
-          position: 'absolute', bottom: '6vh', left: 32,
-          fontFamily: 'var(--font-inter), sans-serif',
-          fontSize: 'clamp(140px,26vw,360px)',
-          fontWeight: 900, letterSpacing: '-0.06em',
-          color: `${BLUE}0d`,
-          lineHeight: 1, userSelect: 'none', pointerEvents: 'none',
-        }}>07</div>
-
-        <div style={{ maxWidth: 900 }}>
-          <p style={{ ...MONO, color: BLUE, marginBottom: 40 }}>Get started</p>
-          <div data-skew>
-            <ML style={HERO}>Clear the clog.</ML>
-            <ML d="mask-d1" style={{ ...HERO, color: BLUE }}>Ship the build.</ML>
+      {/* ── 02 · Plumb ─────────────────────────────────────────────────── */}
+      <section id="plumb" style={{ padding: '96px 32px' }}>
+        <div style={W}>
+          <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 80, alignItems: 'start', marginBottom: 64 }}>
+            <div className="reveal">
+              <p className="section-no" style={{ marginBottom: 10 }}>02 · Plumb</p>
+              <p style={{ fontSize: 13, color: '#999', lineHeight: 1.65 }}>One surface. Replaces the whole chain.</p>
+            </div>
+            <div>
+              <h2 className="display-md reveal" style={{ marginBottom: 20, maxWidth: 520 }}>
+                Sits in your call. Ships the build.
+              </h2>
+              <p className="reveal" style={{ fontSize: 15, color: '#6b6b6b', lineHeight: 1.78, maxWidth: 540, marginBottom: 20 }}>
+                Plumb listens to your discovery calls in real time. It pulls out everything an engineer
+                needs — OAuth requirements, latency specs, the architecture decision the customer mentioned
+                once and nobody wrote down. When the call ends, the build prompt is ready.
+              </p>
+              <p className="reveal" style={{ fontSize: 15, color: '#6b6b6b', lineHeight: 1.78, maxWidth: 540, marginBottom: 28 }}>
+                The FDE reviews it, hits approve, and the build kicks off. The customer goes live
+                that day. No Gong scrubbing. No spec writing. No waiting on the next sprint.
+              </p>
+              <div className="reveal" style={{ padding: '18px 22px', borderLeft: '2px solid #e8e8e8', background: '#fafafa', borderRadius: '0 8px 8px 0' }}>
+                <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', color: '#bbb', textTransform: 'uppercase', marginBottom: 8 }}>Why live, not a form</p>
+                <p style={{ fontSize: 14, color: '#555', lineHeight: 1.72 }}>
+                  Post-call forms miss the detail. The latency target. The auth edge case.
+                  The scope fork the customer only said once. That information exists in the call
+                  and nowhere else. Plumb gets it there.
+                </p>
+              </div>
+            </div>
           </div>
-          <p className="reveal-up" style={{ fontSize: 'clamp(15px,1.5vw,18px)', color: DIM, lineHeight: 1.75, maxWidth: 520, margin: '48px auto', letterSpacing: '-0.01em' }}>
-            We&apos;re working with our first FDE teams now.
-            If your pipeline is growing faster than your team can ship, talk to us.
-          </p>
-          <div className="reveal-up stagger-2" style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <Link href="/login" className="loco-btn-blue" style={{
-              fontSize: 13, fontWeight: 700, letterSpacing: '0.04em',
-              textTransform: 'uppercase', color: '#fff',
-              background: BLUE, borderRadius: 4, padding: '13px 34px',
-              textDecoration: 'none',
-            }}>Request early access</Link>
-            <a href="mailto:hello@useplumb.ai" className="loco-btn-ghost" style={{
-              fontSize: 13, fontWeight: 600, letterSpacing: '0.04em',
-              textTransform: 'uppercase', color: DIM,
-              border: `1.5px solid ${DIM3}`,
-              borderRadius: 4, padding: '13px 34px', textDecoration: 'none',
-            }}>hello@useplumb.ai</a>
+
+          {/* Feature grid */}
+          <div className="feat-grid reveal">
+            {[
+              { n: '01', tag: 'Platform',    title: 'Headless by default',
+                body: 'Your platform exposed as an agent-native API. Builds run against your real product stack — no separate environment, no manual steps.' },
+              { n: '02', tag: 'Integration', title: 'Inside your calls',
+                body: 'Plugs into Gong and Zoom. Captures scope as it\'s being defined — not after the fact. The build prompt is ready before the AE closes the tab.' },
+              { n: '03', tag: 'Intelligence', title: 'Context gate',
+                body: 'Scores every call 0–100. Under 60? Build blocked, gaps listed. Over 60? Prompt generated. You never kick off a build on an incomplete spec again.' },
+              { n: '04', tag: 'Model',       title: 'Gets smarter every build',
+                body: 'Every deployment teaches the system how your best FDEs think. Which forks to take. Which questions to ask. The more you ship, the faster you ship.' },
+            ].map(f => (
+              <div key={f.title} className="feat-cell">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+                  <span style={{ fontSize: 10, color: teal, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{f.tag}</span>
+                  <span style={{ fontSize: 10, color: '#ccc', ...mono }}>{f.n}</span>
+                </div>
+                <h3 className="serif" style={{ fontSize: 18, fontWeight: 400, marginBottom: 12, letterSpacing: '-0.01em' }}>{f.title}</h3>
+                <p style={{ fontSize: 13.5, lineHeight: 1.72, color: '#6b6b6b' }}>{f.body}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Build prompt mockup */}
+          <div className="reveal" style={{ marginTop: 48 }}>
+            <p className="eyebrow" style={{ marginBottom: 16, textAlign: 'center' }}>What the FDE actually sees</p>
+            <BuildPromptMockup />
           </div>
         </div>
       </section>
 
-      {/* ══ Footer nav ════════════════════════════════════════════════ */}
-      <footer style={{ background: '#0e0f14' }}>
-        <div style={{
-          display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-          padding: '48px 48px 40px', borderBottom: `1px solid ${LINE}`,
-        }}>
-          <div className="reveal-up">
-            <div style={{ marginBottom: 18 }}><PlumbLogo size={20} light /></div>
-            <p style={{
-              fontFamily: 'var(--font-inter), sans-serif',
-              fontSize: 'clamp(20px,2.2vw,28px)', fontWeight: 900,
-              letterSpacing: '-0.03em', lineHeight: 1.2, color: INK,
-              textTransform: 'uppercase', maxWidth: 400,
-            }}>
-              For Forward-Deployed<br />Engineering Teams.
-            </p>
-          </div>
-          <div className="reveal-up stagger-2" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 14 }}>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {[
-                { l: 'X',  href: 'https://x.com/useplumb' },
-                { l: 'in', href: 'https://linkedin.com/company/useplumb' },
-                { l: '✉',  href: 'mailto:hello@useplumb.ai' },
-              ].map(s => (
-                <a key={s.l} href={s.href}
-                  target={s.href.startsWith('http') ? '_blank' : undefined}
-                  rel="noopener noreferrer"
-                  style={{
-                    width: 32, height: 32, borderRadius: 6, display: 'flex',
-                    alignItems: 'center', justifyContent: 'center',
-                    border: `1px solid rgba(255,255,255,0.12)`,
-                    color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: 700,
-                    textDecoration: 'none', fontFamily: 'var(--font-jetbrains),monospace',
-                  }}>{s.l}</a>
-              ))}
-            </div>
-            <Link href="/login" style={{
-              fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
-              color: BG, background: INK, borderRadius: 4,
-              padding: '9px 20px', textDecoration: 'none',
-            }}>Get access →</Link>
-          </div>
-        </div>
+      <hr className="section-rule" />
 
-        {/* Nav columns */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)' }}>
-          {[
-            { l: 'Plumb', links: [['Feed','#plumb'],['Mind','#plumb'],['Pipeline','#plumb'],['Build','#problem'],['Score','#problem'],['Changelog','mailto:hello@useplumb.ai']] },
-            { l: 'FDE Teams', links: [['What is FDE?','#problem'],['Use cases','#compare'],['Integrations','#plumb'],['Pipeline setup','#plumb'],['Early access','/login']] },
-            { l: 'Resources', links: [['Documentation','mailto:hello@useplumb.ai'],['Blog','mailto:hello@useplumb.ai'],['Status','mailto:hello@useplumb.ai'],['SOC 2','mailto:hello@useplumb.ai'],['Support','mailto:hello@useplumb.ai']] },
-            { l: 'Company', links: [['About','mailto:hello@useplumb.ai'],['Careers','mailto:hello@useplumb.ai'],['Privacy','/privacy'],['Terms','mailto:hello@useplumb.ai'],['Twitter','https://x.com/useplumb'],['LinkedIn','https://linkedin.com/company/useplumb']] },
-          ].map((col, ci) => (
-            <div key={col.l} className={`reveal-up stagger-${ci + 1}`}
-              style={{ padding: '36px 48px 44px', borderRight: ci < 3 ? `1px solid ${LINE}` : 'none' }}>
-              <p style={{ ...MONO, color: BLUE, marginBottom: 18 }}>{col.l}</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {col.links.map(([label, href]) => (
-                  <a key={label} href={href}
-                    target={href.startsWith('http') ? '_blank' : undefined}
-                    rel="noopener noreferrer"
-                    className="loco-link"
-                    style={{ fontSize: 13.5, letterSpacing: '-0.01em', display: 'block' }}
-                  >{label}</a>
+      {/* ── 03 · The loop ──────────────────────────────────────────────── */}
+      <section id="loop" style={{ padding: '96px 32px' }}>
+        <div style={W}>
+          <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 80, alignItems: 'start', marginBottom: 64 }}>
+            <div className="reveal">
+              <p className="section-no" style={{ marginBottom: 10 }}>03 · The loop</p>
+              <p style={{ fontSize: 13, color: '#999', lineHeight: 1.65 }}>Meeting ends. Build deploys.</p>
+            </div>
+            <div>
+              <h2 className="display-md reveal" style={{ marginBottom: 20, maxWidth: 540 }}>
+                Five steps. Used to live in five tools. Now it&apos;s one.
+              </h2>
+              <p className="reveal" style={{ fontSize: 15, color: '#6b6b6b', lineHeight: 1.78, maxWidth: 540 }}>
+                Call → notes → spec → build → deploy. Each step is a place where something gets
+                lost or delayed. Plumb collapses it. The call ends. The build starts.
+                The customer is live before end of day.
+              </p>
+            </div>
+          </div>
+
+          {/* Steps */}
+          <div className="reveal" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 1, background: '#e8e8e8', border: '1px solid #e8e8e8', borderRadius: 14, overflow: 'hidden' }}>
+            {[
+              { n: '01', title: 'The call',     body: 'Plumb listens live. No notes, no recordings to scrub later.' },
+              { n: '02', title: 'Score it',     body: 'Context scored 0–100. Gaps flagged. AE synced if needed.' },
+              { n: '03', title: 'Prompt out',   body: 'Build spec generated. FDE reviews in 30 seconds, not 30 minutes.' },
+              { n: '04', title: 'Customer live', body: 'Build ships. Customer onboarded. Same day as the call.' },
+            ].map(s => (
+              <div key={s.n} className="feat-cell">
+                <p style={{ fontSize: 10, color: '#ccc', ...mono, marginBottom: 14 }}>{s.n}</p>
+                <h3 className="serif" style={{ fontSize: 17, fontWeight: 400, marginBottom: 10 }}>{s.title}</h3>
+                <p style={{ fontSize: 13, lineHeight: 1.65, color: '#6b6b6b' }}>{s.body}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Sensor stream */}
+          <div className="reveal" style={{ marginTop: 32, border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, overflow: 'hidden', background: '#0d1117' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: '#161b22', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f57', display: 'block' }} />
+                <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ffbd2e', display: 'block' }} />
+                <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#28ca41', display: 'block' }} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="blink" style={{ width: 6, height: 6, borderRadius: '50%', background: teal, display: 'block' }} />
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', ...mono }}>plumb · live feed</span>
+              </div>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.15)', ...mono }}>FDE-workspace-prod</span>
+            </div>
+            <div style={{ height: 220, overflow: 'hidden' }}>
+              <div className="stream">
+                {[...EVENTS, ...EVENTS].map((e, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '7px 16px', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                    <span style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.2)', flexShrink: 0, ...mono }}>{e.ts}</span>
+                    <span style={{ fontSize: 10, width: 108, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: teal, ...mono }}>{e.kind}</span>
+                    <span style={{ fontSize: 11.5, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.45)' }}>{e.detail}</span>
+                  </div>
                 ))}
               </div>
             </div>
-          ))}
-        </div>
-
-        {/* Bottom bar */}
-        <div style={{ borderTop: `1px solid ${LINE}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 48px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <PlumbLogo size={13} light />
-            <span style={{ ...MONO, color: 'rgba(255,255,255,0.26)' }}>© 2026 PLUMB, INC.</span>
           </div>
-          <div style={{ display: 'flex', gap: 20 }}>
-            {[['Privacy','/privacy'],['Terms','mailto:hello@useplumb.ai'],['useplumb.ai','https://useplumb.ai']].map(([l,h]) => (
-              <a key={l} href={h} style={{ ...MONO, color: 'rgba(255,255,255,0.26)', textDecoration: 'none' }}>{l}</a>
+        </div>
+      </section>
+
+      <hr className="section-rule" />
+
+      {/* ── 04 · Compare ───────────────────────────────────────────────── */}
+      <section id="compare" style={{ padding: '96px 32px' }}>
+        <div style={W}>
+          <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 80, alignItems: 'start', marginBottom: 56 }}>
+            <div className="reveal">
+              <p className="section-no" style={{ marginBottom: 10 }}>04 · Compare</p>
+              <p style={{ fontSize: 13, color: '#999', lineHeight: 1.65 }}>Same call. Very different result.</p>
+            </div>
+            <div>
+              <h2 className="display-md reveal" style={{ marginBottom: 16, maxWidth: 480 }}>
+                The AE hears the deal.<br />Plumb hears the build.
+              </h2>
+              <p className="reveal" style={{ fontSize: 15, color: '#6b6b6b', lineHeight: 1.78, maxWidth: 500 }}>
+                One call. Two completely different things captured. The AE gets the CRM note.
+                We get everything an engineer needs to actually build it.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ textAlign: 'center', marginBottom: 0 }}>
+            <p style={{ fontSize: 15, fontStyle: 'italic', color: '#888', lineHeight: 1.6, fontFamily: 'var(--font-lora), Georgia, serif', letterSpacing: '-0.01em' }}>
+              &ldquo;Customer wants CRM contact lookup on inbound, near realtime.&rdquo;
+            </p>
+          </div>
+
+          <ExtractionTree />
+
+          <p style={{ textAlign: 'center', fontSize: 13, fontWeight: 600, color: teal, marginTop: 4 }}>
+            Scope fork → build prompt. Not a summary.
+          </p>
+        </div>
+      </section>
+
+      <hr className="section-rule" />
+
+      {/* ── 05 · The moat ──────────────────────────────────────────────── */}
+      <section id="moat" style={{ background: '#0d1117', padding: '96px 32px' }}>
+        <div style={W}>
+          <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 80, alignItems: 'start', marginBottom: 64 }}>
+            <div className="reveal">
+              <p className="section-no" style={{ color: 'rgba(255,255,255,0.2)', marginBottom: 10 }}>05 · The moat</p>
+              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', lineHeight: 1.65 }}>Why us.</p>
+            </div>
+            <div>
+              <h2 className="display-md reveal" style={{ color: '#fff', marginBottom: 24, maxWidth: 520 }}>
+                Gets better every time someone ships a build.
+              </h2>
+              <p className="reveal" style={{ fontSize: 15, lineHeight: 1.78, color: 'rgba(255,255,255,0.5)', maxWidth: 520, marginBottom: 20 }}>
+                Every build Plumb ships teaches it something. How the best FDEs think through
+                a scope problem. Which questions to ask. Which forks to take before the repo opens.
+                That knowledge compounds — every customer makes every future customer faster.
+              </p>
+              <p className="reveal" style={{ fontSize: 15, lineHeight: 1.78, color: 'rgba(255,255,255,0.5)', maxWidth: 520, marginBottom: 36, padding: '16px 20px', borderLeft: `2px solid ${teal}`, background: 'rgba(255,255,255,0.03)' }}>
+                Gong has transcripts. We have intention — and that dataset doesn&apos;t exist anywhere else.
+              </p>
+              <a href="/login" className="access-link" style={{ color: '#fff', textDecorationColor: 'rgba(255,255,255,0.25)' }}>Request early access →</a>
+            </div>
+          </div>
+
+          <div className="reveal" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, overflow: 'hidden' }}>
+            {[
+              { title: 'It learns how your best FDEs think',
+                body: 'Not just what they said — what they decided. Which fork they took. What they resolved before the repo even opened. That signal is captured on every build.' },
+              { title: 'Faster with every customer',
+                body: 'More builds → smarter prompts → faster go-lives. The gap between Plumb and doing it by hand gets bigger every week you use it.' },
+              { title: 'Data nobody else has',
+                body: 'This only accumulates on the surface where the work gets done. No CRM, no transcript tool, no PM platform is close. We\'re the only one here.' },
+            ].map(m => (
+              <div key={m.title} style={{ padding: '36px 32px', background: 'rgba(255,255,255,0.02)' }}>
+                <h3 className="serif" style={{ fontSize: 16, fontWeight: 400, color: '#fff', marginBottom: 12 }}>{m.title}</h3>
+                <p style={{ fontSize: 13, lineHeight: 1.7, color: 'rgba(255,255,255,0.4)' }}>{m.body}</p>
+              </div>
             ))}
           </div>
         </div>
+      </section>
+
+      {/* ── CTA ─────────────────────────────────────────────────────────── */}
+      <section style={{
+        background: '#fff',
+        padding: '100px 32px 0',
+        overflow: 'hidden',
+        borderTop: '1px solid #e8e8e8',
+        position: 'relative',
+      }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'flex-end', gap: 48 }}>
+
+          {/* Text */}
+          <div style={{ flex: '1 1 0', paddingBottom: 96 }}>
+            <p className="reveal eyebrow" style={{ marginBottom: 20 }}>Plumb · useplumb.ai</p>
+            <h2 className="display reveal" style={{ marginBottom: 24 }}>
+              Clear the clog.<br />Ship the build.
+            </h2>
+            <p className="reveal" style={{ fontSize: 15, color: '#6b6b6b', lineHeight: 1.78, maxWidth: 440, marginBottom: 40 }}>
+              We&apos;re working with our first customers now — AI companies where
+              the pipeline is growing faster than the team can ship builds.
+              If that&apos;s you, talk to us.
+            </p>
+            <div className="reveal" style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+              <Link href="/login" className="btn btn-solid" style={{ fontSize: 14 }}>Request early access</Link>
+              <a href="mailto:hello@useplumb.ai" style={{
+                fontSize: 14, color: '#6b6b6b',
+                textDecoration: 'underline', textUnderlineOffset: 3,
+                textDecorationColor: 'rgba(0,0,0,0.2)',
+              }}>hello@useplumb.ai</a>
+            </div>
+          </div>
+
+          {/* Character image */}
+          <div style={{ flexShrink: 0, alignSelf: 'flex-end' }}>
+            <img
+              src="/plumb-footer-img.jpg"
+              alt=""
+              style={{ display: 'block', height: 420, width: 'auto', objectFit: 'contain' }}
+            />
+          </div>
+        </div>
+      </section>
+
+      <footer id="footer-cta" style={{ borderTop: '1px solid #e8e8e8', padding: '0 32px', background: '#fff' }}>
+        <div style={{ ...W, height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <PlumbLogo size={18} />
+          <div style={{ display: 'flex', gap: 24 }}>
+            <Link href="/login" style={{ fontSize: 12.5, color: '#aaa', textDecoration: 'none' }}>Sign in</Link>
+            <a href="mailto:hello@useplumb.ai" style={{ fontSize: 12.5, color: '#aaa', textDecoration: 'none' }}>hello@useplumb.ai</a>
+          </div>
+          <span style={{ fontSize: 12, color: '#ccc' }}>© 2026 Applied Scope</span>
+        </div>
       </footer>
 
-      {/* ══ Infinite PLUMB — scroll-driven velocity field ══════════════ */}
-      <div style={{ background: BG, overflow: 'hidden', paddingBottom: 8, cursor: 'default', userSelect: 'none', position: 'relative' }}>
-        {/* Gradient fade from footer into PLUMB field */}
-        <div aria-hidden style={{
-          position: 'absolute', top: 0, left: 0, right: 0, height: 64, zIndex: 2,
-          background: 'linear-gradient(to bottom, #0e0f14 0%, transparent 100%)',
-          pointerEvents: 'none',
-        }} />
-        {[
-          { size: 'clamp(72px,13vw,176px)', op: 0.12, dur: '7' },
-          { size: 'clamp(80px,14.5vw,196px)', op: 0.22, dur: '9' },
-          { size: 'clamp(88px,15.5vw,210px)', op: 0.40, dur: '11' },
-          { size: 'clamp(96px,16.5vw,224px)', op: 0.52, dur: '13' },
-          { size: 'clamp(80px,14vw,190px)', op: 0.28, dur: '10' },
-          { size: 'clamp(68px,12vw,164px)', op: 0.14, dur: '8' },
-        ].map((row, i) => {
-          const isRev = i % 2 !== 0
-          const items = Array.from({ length: 10 }, (_, j) => (
-            <span key={j} style={{ paddingRight: '0.35em' }}>PLUMB</span>
-          ))
-          return (
-            <div key={i} style={{ overflow: 'hidden', lineHeight: 0.86, marginBottom: -6 }}>
-              <div
-                className="plumb-inf-row"
-                data-x="0"
-                style={{
-                  direction: isRev ? 'rtl' : 'ltr',
-                  fontSize: row.size,
-                  fontWeight: 900,
-                  letterSpacing: '-0.04em',
-                  color: BLUE,
-                  opacity: row.op,
-                  fontFamily: 'var(--font-inter), system-ui, sans-serif',
-                  textTransform: 'uppercase',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {items}{items}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
+      <PlumberBob />
     </div>
   )
 }

@@ -2737,6 +2737,11 @@ export function createRouter(io?: SocketServer): Router {
   const { productGraphRouter } = require('./product-graph/pgRouter') as typeof import('./product-graph/pgRouter')
   router.use('/product-graph', productGraphRouter())
 
+  // Connectors — data source ingestion (Slack, GitHub, Linear, Notion, Google Drive, Jira, Gong, Zoom)
+  const { connectorRouter, startScheduler } = require('./connectors') as typeof import('./connectors')
+  router.use('/connectors', connectorRouter())
+  startScheduler()
+
   return router
 }
 

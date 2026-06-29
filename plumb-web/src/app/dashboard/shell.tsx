@@ -10,6 +10,7 @@ const NAV = [
   { href: "/dashboard/telemetry", label: "Behavior" },
   { href: "/dashboard/cicd", label: "CI / CD" },
   { href: "/dashboard/product-graph", label: "Product Graph" },
+  { href: "/dashboard/integrations", label: "Integrations" },
 ];
 
 export function DashboardShell({ children, user }: { children: React.ReactNode; user: { email: string } }) {

@@ -26,6 +26,28 @@ async function extractQueryTerms(dealDescription: string): Promise<string[]> {
   }
 }
 
+/** Score a node's relevance to the query terms. Name matches outweigh description matches. */
+function scoreRelevance(node: ProductNode, terms: string[]): number {
+  const name = node.name.toLowerCase()
+  const desc = node.description.toLowerCase()
+  let score = 0
+  for (const term of terms) {
+    const t = term.toLowerCase()
+    if (name.includes(t)) score += 3
+    else if (desc.includes(t)) score += 1
+  }
+  return score
+}
+
+const LABEL_CAPS: Record<string, number> = {
+  capability:   8,
+  limitation:   6,
+  constraint:   6,
+  integration:  5,
+  pattern:      5,
+  workaround:   4,
+}
+
 /**
  * Given a deal description and customer ID, return relevant product context.
  * Used during FDE intake to scope what's buildable and flag known limitations.
@@ -37,66 +59,64 @@ export async function queryProductGraph(
   const terms = await extractQueryTerms(dealDescription)
   const query = terms.join(' ')
 
-  // FTS search across all node types — higher limit so limitations/constraints surface via relevance
-  const matchedNodes = searchProductNodes(customerId, query, 60)
-  const matchedIds = new Set(matchedNodes.map((n) => n.id))
+  // FTS candidates — broad sweep, we'll re-rank by term overlap below
+  const ftsNodes = searchProductNodes(customerId, query, 60)
 
-  // Scope blanket limitation/constraint include to the source documents that FTS matched.
-  // Without this, a multi-product customer (e.g. Lenis + Stripe) returns all limitations from
-  // every product regardless of query relevance.
-  const matchedSourceDocs = new Set(matchedNodes.map((n) => n.sourceDocId))
-
+  // For limitations and constraints, FTS vocabulary often misses them (negative phrasing).
+  // Fetch all, score against terms, keep only ones with at least one match.
   const allLimitations = listProductNodes(customerId, 'limitation')
   const allConstraints = listProductNodes(customerId, 'constraint')
 
-  const scopedLimitations = matchedSourceDocs.size > 0
-    ? allLimitations.filter((n) => matchedSourceDocs.has(n.sourceDocId))
-    : allLimitations
-  const scopedConstraints = matchedSourceDocs.size > 0
-    ? allConstraints.filter((n) => matchedSourceDocs.has(n.sourceDocId))
-    : allConstraints
+  const scoredLimitations = allLimitations
+    .map((n) => ({ node: n, score: scoreRelevance(n, terms) }))
+    .filter(({ score }) => score > 0)
 
-  // Merge without duplication
+  const scoredConstraints = allConstraints
+    .map((n) => ({ node: n, score: scoreRelevance(n, terms) }))
+    .filter(({ score }) => score > 0)
+
+  // Merge: FTS nodes get scored too; higher score wins if a node appears in multiple sets
+  const nodeScores = new Map<string, number>()
   const nodeMap = new Map<string, ProductNode>()
-  for (const n of [...matchedNodes, ...scopedLimitations, ...scopedConstraints]) {
-    nodeMap.set(n.id, n)
+
+  for (const node of ftsNodes) {
+    const score = scoreRelevance(node, terms)
+    nodeMap.set(node.id, node)
+    nodeScores.set(node.id, score)
+  }
+  for (const { node, score } of [...scoredLimitations, ...scoredConstraints]) {
+    nodeMap.set(node.id, node)
+    nodeScores.set(node.id, Math.max(nodeScores.get(node.id) ?? 0, score))
   }
 
-  const allNodes = Array.from(nodeMap.values())
-  const allIds = allNodes.map((n) => n.id)
-
-  // Fetch edges between these nodes
-  const relevantEdges = getProductEdges(customerId, allIds)
-
-  const byLabel = {
-    capability: [] as ProductNode[],
-    limitation: [] as ProductNode[],
-    integration: [] as ProductNode[],
-    pattern: [] as ProductNode[],
-    constraint: [] as ProductNode[],
-    workaround: [] as ProductNode[]
+  // Group by label
+  const byLabel: Record<string, ProductNode[]> = {
+    capability: [], limitation: [], integration: [],
+    pattern: [], constraint: [], workaround: [],
   }
-
-  for (const node of allNodes) {
+  for (const node of nodeMap.values()) {
     byLabel[node.label]?.push(node)
   }
 
-  // Sort: matched nodes first (they're most relevant), then by confidence
-  const sortNodes = (nodes: ProductNode[]) =>
-    nodes.sort((a, b) => {
-      const aMatched = matchedIds.has(a.id) ? 1 : 0
-      const bMatched = matchedIds.has(b.id) ? 1 : 0
-      return bMatched - aMatched || b.confidence - a.confidence
-    })
+  // Sort by relevance score then confidence, cap per label
+  const rank = (nodes: ProductNode[], cap: number) =>
+    nodes
+      .sort((a, b) => {
+        const sd = (nodeScores.get(b.id) ?? 0) - (nodeScores.get(a.id) ?? 0)
+        return sd !== 0 ? sd : b.confidence - a.confidence
+      })
+      .slice(0, cap)
+
+  const allIds = [...nodeMap.keys()]
 
   return {
-    capabilities: sortNodes(byLabel.capability),
-    limitations: sortNodes(byLabel.limitation),
-    integrations: sortNodes(byLabel.integration),
-    patterns: sortNodes(byLabel.pattern),
-    constraints: sortNodes(byLabel.constraint),
-    workarounds: sortNodes(byLabel.workaround),
-    relevantEdges
+    capabilities: rank(byLabel.capability,  LABEL_CAPS.capability),
+    limitations:  rank(byLabel.limitation,  LABEL_CAPS.limitation),
+    integrations: rank(byLabel.integration, LABEL_CAPS.integration),
+    patterns:     rank(byLabel.pattern,     LABEL_CAPS.pattern),
+    constraints:  rank(byLabel.constraint,  LABEL_CAPS.constraint),
+    workarounds:  rank(byLabel.workaround,  LABEL_CAPS.workaround),
+    relevantEdges: getProductEdges(customerId, allIds),
   }
 }
 
@@ -104,40 +124,18 @@ export async function queryProductGraph(
 export function formatProductContextForPrompt(result: ProductGraphQueryResult, customerId: string): string {
   const sections: string[] = [`## Product Context (${customerId})\n`]
 
-  if (result.capabilities.length > 0) {
-    sections.push('### Capabilities')
-    for (const n of result.capabilities.slice(0, 10)) {
-      sections.push(`- **${n.name}**: ${n.description}`)
-    }
+  const emit = (label: string, nodes: ProductNode[]) => {
+    if (nodes.length === 0) return
+    sections.push(`\n### ${label}`)
+    for (const n of nodes) sections.push(`- **${n.name}**: ${n.description}`)
   }
 
-  if (result.limitations.length > 0) {
-    sections.push('\n### Known Limitations')
-    for (const n of result.limitations) {
-      sections.push(`- **${n.name}**: ${n.description}`)
-    }
-  }
-
-  if (result.constraints.length > 0) {
-    sections.push('\n### Constraints')
-    for (const n of result.constraints) {
-      sections.push(`- **${n.name}**: ${n.description}`)
-    }
-  }
-
-  if (result.integrations.length > 0) {
-    sections.push('\n### Integrations')
-    for (const n of result.integrations.slice(0, 8)) {
-      sections.push(`- **${n.name}**: ${n.description}`)
-    }
-  }
-
-  if (result.workarounds.length > 0) {
-    sections.push('\n### Workarounds')
-    for (const n of result.workarounds) {
-      sections.push(`- **${n.name}**: ${n.description}`)
-    }
-  }
+  emit('Capabilities',      result.capabilities)
+  emit('Known Limitations', result.limitations)
+  emit('Constraints',       result.constraints)
+  emit('Integrations',      result.integrations)
+  emit('Patterns',          result.patterns)
+  emit('Workarounds',       result.workarounds)
 
   return sections.join('\n')
 }

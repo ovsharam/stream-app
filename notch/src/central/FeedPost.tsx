@@ -805,7 +805,7 @@ export function FeedPost({
       : event.source === 'linkedin'
         ? metaStr(event.meta, 'senderName') || event.title.trim() || 'LinkedIn'
         : event.source === 'notch'
-          ? 'Notch AI'
+          ? 'Plumb AI'
           : event.source === 'meet'
             ? 'Google Meet'
             : event.source === 'gmail'

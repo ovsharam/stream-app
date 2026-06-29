@@ -6,12 +6,17 @@ async function getSupabase() {
   if (supabase) return supabase
   try {
     const { createClient } = await import('@supabase/supabase-js')
+    const ws = await import('ws')
     const url = process.env.SUPABASE_URL?.trim()
     const key = process.env.SUPABASE_SECRET_KEY?.trim() ?? process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? process.env.SUPABASE_ANON_KEY?.trim()
     if (!url || !key) return null
-    supabase = createClient(url, key)
+    supabase = createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      realtime: { transport: ws.WebSocket as never },
+    })
     return supabase
-  } catch {
+  } catch (err) {
+    console.warn('[telemetry] getSupabase failed:', (err as Error).message)
     return null
   }
 }

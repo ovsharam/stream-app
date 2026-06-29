@@ -23,8 +23,28 @@ type IntegrationId =
   | 'gdocs'
   | 'obsidian'
   | 'gong'
+  | 'zoom'
+  | 'loom'
+  | 'fireflies'
+  | 'fathom'
+  | 'salesforce'
+  | 'hubspot'
+  | 'pipedrive'
+  | 'apollo'
+  | 'shopify'
+  | 'stripe'
+  | 'linear'
+  | 'jira'
+  | 'notion'
+  | 'figma'
+  | 'intercom'
+  | 'zendesk'
+  | 'teams'
+  | 'webflow'
+  | 'airtable'
+  | 'gitlab'
 
-type IntegrationCategory = 'desktop' | 'productivity' | 'communication' | 'ai' | 'sales'
+type IntegrationCategory = 'desktop' | 'productivity' | 'communication' | 'ai' | 'sales' | 'meeting' | 'crm' | 'ecommerce' | 'engineering'
 
 type MarketCategoryFilter = 'all' | 'connected' | IntegrationCategory
 
@@ -192,30 +212,231 @@ const INTEGRATIONS: IntegrationDef[] = [
     category: 'communication',
     brandClass: 'x-int-card-discord',
     icon: <span className="x-int-brand-letter">D</span>
+  },
+  // Meeting intelligence
+  {
+    id: 'zoom',
+    name: 'Zoom',
+    tagline: 'Meetings, recordings & transcripts',
+    feeds: 'Feed · Calendar',
+    category: 'meeting',
+    brandClass: 'x-int-card-zoom',
+    icon: <span className="x-int-brand-letter">Zm</span>
+  },
+  {
+    id: 'loom',
+    name: 'Loom',
+    tagline: 'Async video messages in your feed',
+    feeds: 'Feed',
+    category: 'meeting',
+    brandClass: 'x-int-card-loom',
+    icon: <span className="x-int-brand-letter">Lo</span>
+  },
+  {
+    id: 'fireflies',
+    name: 'Fireflies.ai',
+    tagline: 'Auto-join meetings, AI notes & action items',
+    feeds: 'Feed',
+    category: 'meeting',
+    brandClass: 'x-int-card-fireflies',
+    icon: <span className="x-int-brand-letter">🔥</span>
+  },
+  {
+    id: 'fathom',
+    name: 'Fathom',
+    tagline: 'Call recordings with highlighted moments',
+    feeds: 'Feed',
+    category: 'meeting',
+    brandClass: 'x-int-card-fathom',
+    icon: <span className="x-int-brand-letter">Fa</span>
+  },
+  // CRM & Sales
+  {
+    id: 'salesforce',
+    name: 'Salesforce',
+    tagline: 'Opportunities, contacts & activity feed',
+    feeds: 'Feed · Pipeline',
+    category: 'crm',
+    brandClass: 'x-int-card-salesforce',
+    icon: <span className="x-int-brand-letter">SF</span>
+  },
+  {
+    id: 'hubspot',
+    name: 'HubSpot',
+    tagline: 'Deals, contacts & sequences in feed',
+    feeds: 'Feed · Pipeline',
+    category: 'crm',
+    brandClass: 'x-int-card-hubspot',
+    icon: <span className="x-int-brand-letter">Hs</span>
+  },
+  {
+    id: 'pipedrive',
+    name: 'Pipedrive',
+    tagline: 'Deal pipeline & activity reminders',
+    feeds: 'Feed · Pipeline',
+    category: 'crm',
+    brandClass: 'x-int-card-pipedrive',
+    icon: <span className="x-int-brand-letter">Pd</span>
+  },
+  {
+    id: 'apollo',
+    name: 'Apollo.io',
+    tagline: 'Prospect enrichment & sequences',
+    feeds: 'Feed',
+    category: 'crm',
+    brandClass: 'x-int-card-apollo',
+    icon: <span className="x-int-brand-letter">Ap</span>
+  },
+  // E-commerce
+  {
+    id: 'shopify',
+    name: 'Shopify',
+    tagline: 'Orders, customers & storefront metrics',
+    feeds: 'Feed',
+    category: 'ecommerce',
+    brandClass: 'x-int-card-shopify',
+    icon: <span className="x-int-brand-letter">Sh</span>
+  },
+  {
+    id: 'stripe',
+    name: 'Stripe',
+    tagline: 'Payments, MRR & subscription events',
+    feeds: 'Feed',
+    category: 'ecommerce',
+    brandClass: 'x-int-card-stripe',
+    icon: <span className="x-int-brand-letter">St</span>
+  },
+  {
+    id: 'webflow',
+    name: 'Webflow',
+    tagline: 'Form submissions & CMS updates',
+    feeds: 'Feed',
+    category: 'ecommerce',
+    brandClass: 'x-int-card-webflow',
+    icon: <span className="x-int-brand-letter">Wf</span>
+  },
+  // Engineering
+  {
+    id: 'linear',
+    name: 'Linear',
+    tagline: 'Issues, cycles & project updates',
+    feeds: 'Feed',
+    category: 'engineering',
+    brandClass: 'x-int-card-linear',
+    icon: <span className="x-int-brand-letter">Li</span>,
+    compose: '@linear create: title / priority'
+  },
+  {
+    id: 'jira',
+    name: 'Jira',
+    tagline: 'Tickets, sprints & release tracking',
+    feeds: 'Feed',
+    category: 'engineering',
+    brandClass: 'x-int-card-jira',
+    icon: <span className="x-int-brand-letter">Ji</span>,
+    compose: '@jira create: title / body'
+  },
+  {
+    id: 'notion',
+    name: 'Notion',
+    tagline: 'Pages, databases & team docs',
+    feeds: 'Feed · Notes',
+    category: 'engineering',
+    brandClass: 'x-int-card-notion',
+    icon: <span className="x-int-brand-letter">No</span>,
+    compose: '@notion append: text'
+  },
+  {
+    id: 'figma',
+    name: 'Figma',
+    tagline: 'Design files, comments & version updates',
+    feeds: 'Feed',
+    category: 'engineering',
+    brandClass: 'x-int-card-figma',
+    icon: <span className="x-int-brand-letter">Fi</span>
+  },
+  {
+    id: 'gitlab',
+    name: 'GitLab',
+    tagline: 'MRs, pipelines & issue tracking',
+    feeds: 'Feed',
+    category: 'engineering',
+    brandClass: 'x-int-card-gitlab',
+    icon: <span className="x-int-brand-letter">GL</span>
+  },
+  {
+    id: 'airtable',
+    name: 'Airtable',
+    tagline: 'Base records & automations',
+    feeds: 'Feed',
+    category: 'productivity',
+    brandClass: 'x-int-card-airtable',
+    icon: <span className="x-int-brand-letter">At</span>,
+    compose: '@airtable create: base / fields'
+  },
+  // Communication
+  {
+    id: 'teams',
+    name: 'Microsoft Teams',
+    tagline: 'Channel messages & meeting recordings',
+    feeds: 'Feed',
+    category: 'communication',
+    brandClass: 'x-int-card-teams',
+    icon: <span className="x-int-brand-letter">Ms</span>
+  },
+  {
+    id: 'intercom',
+    name: 'Intercom',
+    tagline: 'Customer conversations & support tickets',
+    feeds: 'Feed',
+    category: 'communication',
+    brandClass: 'x-int-card-intercom',
+    icon: <span className="x-int-brand-letter">In</span>
+  },
+  {
+    id: 'zendesk',
+    name: 'Zendesk',
+    tagline: 'Support tickets & customer health',
+    feeds: 'Feed',
+    category: 'communication',
+    brandClass: 'x-int-card-zendesk',
+    icon: <span className="x-int-brand-letter">Zd</span>
   }
 ]
 
 const MARKET_CATEGORIES: { id: MarketCategoryFilter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'connected', label: 'Your apps' },
-  { id: 'productivity', label: 'Productivity' },
+  { id: 'meeting', label: 'Meetings' },
+  { id: 'crm', label: 'CRM & Sales' },
+  { id: 'engineering', label: 'Engineering' },
   { id: 'communication', label: 'Communication' },
+  { id: 'productivity', label: 'Productivity' },
+  { id: 'ecommerce', label: 'E-commerce' },
   { id: 'ai', label: 'AI & Agents' },
   { id: 'desktop', label: 'Desktop' },
   { id: 'sales', label: 'Sales' }
 ]
 
 const MARKET_CATEGORY_ORDER: IntegrationCategory[] = [
-  'productivity',
+  'meeting',
+  'crm',
+  'engineering',
   'communication',
+  'productivity',
+  'ecommerce',
   'ai',
   'desktop',
   'sales'
 ]
 
 const MARKET_CATEGORY_LABELS: Record<IntegrationCategory, string> = {
-  productivity: 'Productivity',
+  meeting: 'Meeting intelligence',
+  crm: 'CRM & Sales',
+  engineering: 'Engineering',
   communication: 'Communication',
+  productivity: 'Productivity',
+  ecommerce: 'E-commerce',
   ai: 'AI & Agents',
   desktop: 'Desktop tabs',
   sales: 'Sales & calls'
@@ -2149,6 +2370,65 @@ export function IntegrationsPanel({
               {connections?.connected.discord ? 'Update connection' : 'Connect'}
             </button>
             </div>
+          </div>
+        </div>
+      )
+    }
+
+    // Generic webview panel for apps that connect via browser sign-in
+    const webviewApps: Partial<Record<IntegrationId, { name: string; url: string; blurb: string }>> = {
+      zoom: { name: 'Zoom', url: 'https://zoom.us/signin', blurb: 'Sign in to Zoom to pull meeting recordings, transcripts, and upcoming calls into your feed.' },
+      loom: { name: 'Loom', url: 'https://www.loom.com/login', blurb: 'Connect Loom to surface async video updates and viewer analytics in your feed.' },
+      fireflies: { name: 'Fireflies.ai', url: 'https://app.fireflies.ai/login', blurb: 'Fireflies auto-joins your meetings and generates searchable transcripts and action items.' },
+      fathom: { name: 'Fathom', url: 'https://fathom.video/login', blurb: 'Fathom records and highlights your calls. Connect to surface key moments in your feed.' },
+      salesforce: { name: 'Salesforce', url: 'https://login.salesforce.com', blurb: 'Pull open opportunities, contact activity, and deal stage changes into your pipeline.' },
+      hubspot: { name: 'HubSpot', url: 'https://app.hubspot.com/login', blurb: 'Surface deal updates, sequence enrollment, and contact activity from HubSpot.' },
+      pipedrive: { name: 'Pipedrive', url: 'https://app.pipedrive.com/auth/login', blurb: 'Track deal stages, activity reminders, and won/lost notifications from Pipedrive.' },
+      apollo: { name: 'Apollo.io', url: 'https://app.apollo.io/#/login', blurb: 'Prospect enrichment, email sequences, and outreach analytics from Apollo.' },
+      shopify: { name: 'Shopify', url: 'https://accounts.shopify.com/lookup', blurb: 'Surface new orders, refunds, inventory alerts, and customer events from your store.' },
+      stripe: { name: 'Stripe', url: 'https://dashboard.stripe.com/login', blurb: 'Track payments, MRR changes, subscription events, and failed charges in real time.' },
+      webflow: { name: 'Webflow', url: 'https://webflow.com/dashboard', blurb: 'Surface form submissions, CMS record changes, and publish events from Webflow.' },
+      linear: { name: 'Linear', url: 'https://linear.app/', blurb: 'Issues assigned to you, cycle updates, and project milestones from Linear.' },
+      jira: { name: 'Jira', url: 'https://id.atlassian.com/login', blurb: 'Sprint tickets, status transitions, and release blockers from your Jira projects.' },
+      notion: { name: 'Notion', url: 'https://www.notion.so/login', blurb: 'Pages, database records, and team updates synced from your Notion workspace.' },
+      figma: { name: 'Figma', url: 'https://www.figma.com/login', blurb: 'Design file comments, version updates, and handoff notifications from Figma.' },
+      gitlab: { name: 'GitLab', url: 'https://gitlab.com/users/sign_in', blurb: 'MRs, CI pipeline status, and issue updates from your GitLab projects.' },
+      airtable: { name: 'Airtable', url: 'https://airtable.com/login', blurb: 'Base record changes, form submissions, and automation triggers from Airtable.' },
+      teams: { name: 'Microsoft Teams', url: 'https://teams.microsoft.com', blurb: 'Channel messages, meeting recordings, and @mentions from your Teams workspace.' },
+      intercom: { name: 'Intercom', url: 'https://app.intercom.com/admins/sign_in', blurb: 'Customer conversations, support volume, and CSAT signals from Intercom.' },
+      zendesk: { name: 'Zendesk', url: 'https://www.zendesk.com/login', blurb: 'New tickets, SLA breaches, and CSAT scores from your Zendesk account.' },
+    }
+
+    const webviewDef = selected ? webviewApps[selected as IntegrationId] : null
+    if (webviewDef) {
+      const openInPlumb = () => {
+        if (onOpenNavApp) {
+          onOpenNavApp(webviewDef.url)
+        } else if (typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).notchDesktop) {
+          ;((window as unknown as Record<string, unknown>).notchDesktop as { openExternal?: (url: string) => void }).openExternal?.(webviewDef.url)
+        } else {
+          window.open(webviewDef.url, '_blank')
+        }
+      }
+      return (
+        <div className="x-int-detail">
+          <div className="x-int-detail-head">
+            <div>
+              <h3>{webviewDef.name}</h3>
+              <p>{webviewDef.blurb}</p>
+            </div>
+            <div className="x-int-detail-actions">
+              <button type="button" className="x-int-btn" onClick={openInPlumb}>
+                Open {webviewDef.name}
+              </button>
+            </div>
+          </div>
+          <div className="x-int-block x-int-block-first">
+            <h4>How to connect</h4>
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', lineHeight: 1.7, margin: 0 }}>
+              Sign in via the button above. Your session will persist in Plumb — data will start
+              appearing in your feed within a few minutes. Pin the app to your sidebar for quick access.
+            </p>
           </div>
         </div>
       )

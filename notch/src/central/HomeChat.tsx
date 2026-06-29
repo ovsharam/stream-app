@@ -424,7 +424,7 @@ export function HomeChat({
               className="x-home-composer-input"
               value={input}
               rows={1}
-              placeholder="Message Notch…"
+              placeholder="Message Plumb…"
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {

@@ -1,5 +1,12 @@
 import type { TelemetryEvent, TelemetryPayload } from '@shared/telemetry'
 
+function getApiBase(): string {
+  if (typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).__PLUMB_API_URL__) {
+    return String((window as unknown as Record<string, unknown>).__PLUMB_API_URL__)
+  }
+  return 'http://localhost:3131'
+}
+
 const SESSION_ID = `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 const FLUSH_INTERVAL_MS = 10_000
 const MAX_QUEUE = 200
@@ -26,7 +33,7 @@ async function flush(): Promise<void> {
   if (queue.length === 0) return
   const batch = queue.splice(0)
   try {
-    await fetch('/api/telemetry', {
+    await fetch(`${getApiBase()}/api/telemetry`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(batch),

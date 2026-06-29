@@ -103,7 +103,7 @@ export default function MobileDroplet() {
     } catch {
       setMessages((m) => [
         ...m,
-        { id: `e-${Date.now()}`, role: 'assistant', text: 'Could not reach Notch — is the API running?' }
+        { id: `e-${Date.now()}`, role: 'assistant', text: 'Could not reach Plumb — is the API running?' }
       ])
     } finally {
       setLoading(false)
@@ -115,12 +115,12 @@ export default function MobileDroplet() {
   if (phase === 'pill') {
     return (
       <div className="mobile-root mobile-drop-in">
-        <button type="button" className="mobile-pill" onClick={openChat} aria-label="Open Notch">
+        <button type="button" className="mobile-pill" onClick={openChat} aria-label="Open Plumb">
           <span className="mobile-pill-dot" />
           <div className="mobile-wave" aria-hidden>
             <span /><span /><span /><span />
           </div>
-          <span className="mobile-pill-label">Notch</span>
+          <span className="mobile-pill-label">Plumb</span>
         </button>
         <input
           ref={inputRef}
@@ -129,7 +129,7 @@ export default function MobileDroplet() {
           onChange={(e) => onInputChange(e.target.value)}
           onFocus={openChat}
           placeholder=""
-          aria-label="Start typing to ask Notch"
+          aria-label="Start typing to ask Plumb"
         />
       </div>
     )
@@ -193,7 +193,7 @@ export default function MobileDroplet() {
               )}
             </div>
           ))}
-          {loading && <p className="mobile-typing">Notch is thinking…</p>}
+          {loading && <p className="mobile-typing">Plumb is thinking…</p>}
         </div>
 
         <div className="mobile-compose">

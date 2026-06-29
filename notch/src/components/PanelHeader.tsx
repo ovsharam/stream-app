@@ -20,7 +20,7 @@ export function PanelHeader({ phase, callActive, simulationMode }: Props) {
         <span
           className={`h-2 w-2 rounded-full ${callActive ? 'live-pulse bg-[#50DC78]' : 'bg-white/25'}`}
         />
-        <span className="text-xs font-medium text-white/75">Notch</span>
+        <span className="text-xs font-medium text-white/75">Plumb</span>
         <span className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[10px] text-white/50">
           {LABELS[phase]}
         </span>

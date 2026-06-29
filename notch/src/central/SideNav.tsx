@@ -339,11 +339,11 @@ export function SideNav({
           type="button"
           className="x-side-nav-brand"
           onClick={onGoHome}
-          title="Notch home"
+          title="Plumb home"
         >
           <IconNotch className="x-side-nav-brand-icon" />
           <span className="x-side-nav-brand-text">
-            <strong>Notch</strong>
+            <strong>Plumb</strong>
           </span>
         </button>
       </div>

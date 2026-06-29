@@ -1843,6 +1843,17 @@ export function createRouter(io?: SocketServer): Router {
       res.status(400).json({ error: result.error })
       return
     }
+    // Mirror to telemetry_events so the dashboard picks them up
+    void import('./telemetryStore').then(({ storeTelemetryEvents }) => {
+      const mapped = (events as Array<Record<string, unknown>>).map((e) => ({
+        event: String(e.type ?? 'operator.event'),
+        ts: Number(e.ts ?? Date.now()),
+        sessionId: String(e.sessionId ?? ''),
+        userId: e.operatorId ? String(e.operatorId) : undefined,
+        ...(e.payload && typeof e.payload === 'object' ? (e.payload as Record<string, unknown>) : {}),
+      }))
+      return storeTelemetryEvents(mapped)
+    }).catch(() => {})
     res.json({ ok: true, inserted: result.inserted })
   })
 
@@ -2721,6 +2732,10 @@ export function createRouter(io?: SocketServer): Router {
       res.json({ sessions: 0, llmCalls: 0, avgLatencyMs: null, thinkingRate: 0, feedImpressions: 0, signalRatings: { confirmed: 0, noise: 0, known: 0 }, topPages: [], totalEvents: 0 })
     }
   })
+
+  // Product context graph — per-customer product knowledge graph for FDE workflows
+  const { productGraphRouter } = require('./product-graph/pgRouter') as typeof import('./product-graph/pgRouter')
+  router.use('/product-graph', productGraphRouter())
 
   return router
 }

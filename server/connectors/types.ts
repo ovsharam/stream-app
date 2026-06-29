@@ -7,6 +7,13 @@ export type ConnectorType =
   | 'jira'
   | 'gong'
   | 'zoom'
+  | 'monday'
+  | 'trello'
+  | 'asana'
+  | 'clickup'
+  | 'confluence'
+  | 'gitbook'
+  | 'readme'
 
 export type AuthType = 'pat' | 'api_key' | 'oauth'
 
@@ -39,6 +46,18 @@ export interface ConnectorSettings {
   trackerNames?: string[] // filter by tracker; empty = all recent calls
   // Zoom
   topicFilter?: string    // substring match on meeting topic
+  // Monday
+  boardIds?: string[]
+  // Trello (key stored as 'apiKey' in key:token format)
+  // Asana / ClickUp (shared)
+  projectIds?: string[]
+  // ClickUp
+  listIds?: string[]
+  // Confluence
+  spaceKeys?: string[]
+  // GitBook
+  spaceIds?: string[]
+  // Readme.com — no extra settings needed (syncs all docs + changelog)
 }
 
 export interface ConnectorConfig {

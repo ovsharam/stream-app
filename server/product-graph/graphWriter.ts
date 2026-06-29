@@ -114,7 +114,7 @@ export async function writeApprovedNodes(jobId: string, customerId: string): Pro
 
   updateJobStatus(jobId, 'writing')
 
-  const nodes: ProductNode[] = approved.map((item: ReviewQueueItem) => ({
+  const candidates: ProductNode[] = approved.map((item: ReviewQueueItem) => ({
     id: randomUUID(),
     label: item.label,
     name: item.editedName ?? item.name,
@@ -124,23 +124,28 @@ export async function writeApprovedNodes(jobId: string, customerId: string): Pro
     customerId
   }))
 
-  // Write to SQLite cache
-  for (const node of nodes) {
-    upsertProductNode(node)
+  // Write to SQLite — upsertProductNode deduplicates by (customer_id, name) and returns the canonical node.
+  // Track which IDs are genuinely new so we only write those to FalkorDB.
+  const newIds = new Set(candidates.map((n) => n.id))
+  const nodes: ProductNode[] = []
+  for (const candidate of candidates) {
+    const canonical = upsertProductNode(candidate)
+    nodes.push(canonical)
   }
+  const newNodes = nodes.filter((n) => newIds.has(n.id))
 
-  // Infer edges
+  // Infer edges from canonical node set (deduplicated)
   const edges = inferEdges(nodes)
   for (const edge of edges) {
     upsertProductEdge(edge)
   }
 
-  // Write to FalkorDB (best-effort — non-blocking)
+  // Write to FalkorDB (best-effort — non-blocking, only genuinely new nodes)
   if (falkorConfigured()) {
     Promise.all([
-      ...nodes.map((n) => writeNodeToFalkor(n).catch((e) => console.warn('[product-graph] falkor node write:', e.message))),
+      ...newNodes.map((n) => writeNodeToFalkor(n).catch((e) => console.warn('[product-graph] falkor node write:', e.message))),
       ...edges.map((e) => writeEdgeToFalkor(e).catch((e2) => console.warn('[product-graph] falkor edge write:', e2.message)))
-    ]).then(() => console.log(`[product-graph] wrote ${nodes.length} nodes, ${edges.length} edges to FalkorDB`))
+    ]).then(() => console.log(`[product-graph] wrote ${newNodes.length} nodes (${candidates.length - newNodes.length} deduped), ${edges.length} edges to FalkorDB`))
   }
 
   updateJobStatus(jobId, 'done', { nodeCount: nodes.length })

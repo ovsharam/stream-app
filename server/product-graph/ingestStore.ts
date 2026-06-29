@@ -92,7 +92,45 @@ function getDb(): Database.Database {
   db = new Database(path)
   db.pragma('journal_mode = WAL')
   db.exec(SCHEMA)
+  deduplicateExistingNodes(db)
   return db
+}
+
+// One-time migration: collapse existing duplicate rows by (customer_id, name), keeping the highest-confidence row.
+function deduplicateExistingNodes(database: Database.Database): void {
+  const dupes = database
+    .prepare(
+      `SELECT customer_id, name, COUNT(*) as cnt
+       FROM pg_product_nodes GROUP BY customer_id, name HAVING cnt > 1`
+    )
+    .all() as { customer_id: string; name: string; cnt: number }[]
+  if (dupes.length === 0) return
+
+  console.log(`[product-graph] deduplicating ${dupes.length} node name(s) with duplicates`)
+  const dedup = database.transaction(() => {
+    for (const { customer_id, name } of dupes) {
+      // Keep the row with highest confidence (earliest written_at as tiebreak)
+      const rows = database
+        .prepare(
+          `SELECT id FROM pg_product_nodes WHERE customer_id=? AND name=? ORDER BY confidence DESC, written_at ASC`
+        )
+        .all(customer_id, name) as { id: string }[]
+      const keepId = rows[0].id
+      const dropIds = rows.slice(1).map((r) => r.id)
+      const placeholders = dropIds.map(() => '?').join(',')
+      database.prepare(`DELETE FROM pg_product_nodes WHERE id IN (${placeholders})`).run(...dropIds)
+      database.prepare(`DELETE FROM pg_nodes_fts WHERE node_id IN (${placeholders})`).run(...dropIds)
+      // Ensure FTS entry exists for the kept row
+      const kept = database
+        .prepare(`SELECT * FROM pg_product_nodes WHERE id=?`)
+        .get(keepId) as Record<string, unknown>
+      database.prepare(`DELETE FROM pg_nodes_fts WHERE node_id=?`).run(keepId)
+      database
+        .prepare(`INSERT INTO pg_nodes_fts (name, description, label, node_id, customer_id) VALUES (?, ?, ?, ?, ?)`)
+        .run(String(kept.name), String(kept.description), String(kept.label), keepId, customer_id)
+    }
+  })
+  dedup()
 }
 
 // ─── Jobs ────────────────────────────────────────────────────────────────────
@@ -271,15 +309,35 @@ function rowToReview(r: Record<string, unknown>): ReviewQueueItem {
 
 // ─── Product nodes (approved, committed) ─────────────────────────────────────
 
-export function upsertProductNode(node: ProductNode): void {
+/** Returns the canonical node that was written — may be an existing node if name already exists for this customer. */
+export function upsertProductNode(node: ProductNode): ProductNode {
   const database = getDb()
   const now = Date.now()
+
+  // Deduplicate by (customer_id, name) — same concept extracted from multiple chunks should merge, not duplicate.
+  const existing = database
+    .prepare(`SELECT * FROM pg_product_nodes WHERE customer_id=? AND name=? LIMIT 1`)
+    .get(node.customerId, node.name) as Record<string, unknown> | undefined
+
+  if (existing) {
+    // Keep the higher-confidence description
+    const keepDescription =
+      node.confidence >= Number(existing.confidence) ? node.description : String(existing.description)
+    const keepConfidence = Math.max(node.confidence, Number(existing.confidence))
+    database
+      .prepare(`UPDATE pg_product_nodes SET description=?, confidence=?, written_at=? WHERE id=?`)
+      .run(keepDescription, keepConfidence, now, String(existing.id))
+    database.prepare(`DELETE FROM pg_nodes_fts WHERE node_id=?`).run(String(existing.id))
+    database
+      .prepare(`INSERT INTO pg_nodes_fts (name, description, label, node_id, customer_id) VALUES (?, ?, ?, ?, ?)`)
+      .run(node.name, keepDescription, node.label, String(existing.id), node.customerId)
+    return rowToNode({ ...existing, description: keepDescription, confidence: keepConfidence, written_at: now })
+  }
+
   database
     .prepare(
       `INSERT INTO pg_product_nodes (id, customer_id, label, name, description, source_doc_id, confidence, properties_json, written_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description,
-         confidence=excluded.confidence, properties_json=excluded.properties_json, written_at=excluded.written_at`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       node.id,
@@ -292,11 +350,11 @@ export function upsertProductNode(node: ProductNode): void {
       JSON.stringify(node.properties ?? {}),
       now
     )
-  // Update FTS
   database.prepare(`DELETE FROM pg_nodes_fts WHERE node_id=?`).run(node.id)
   database
     .prepare(`INSERT INTO pg_nodes_fts (name, description, label, node_id, customer_id) VALUES (?, ?, ?, ?, ?)`)
     .run(node.name, node.description, node.label, node.id, node.customerId)
+  return node
 }
 
 export function upsertProductEdge(edge: ProductEdge): void {

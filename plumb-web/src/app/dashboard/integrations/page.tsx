@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 
 const CUSTOMER_ID = "plumb-internal";
-const API = process.env.NEXT_PUBLIC_STREAM_API_URL ?? "http://localhost:4000/api/stream";
 
 type ConnectorMeta = {
   type: string;
@@ -34,27 +33,34 @@ type SyncRun = {
 };
 
 const CONNECTOR_ICONS: Record<string, string> = {
-  slack: "💬",
-  github: "🐙",
-  linear: "🔺",
-  notion: "📝",
+  slack:        "💬",
+  github:       "🐙",
+  linear:       "🔺",
+  notion:       "📝",
   google_drive: "📁",
-  jira: "🎯",
-  gong: "🎙️",
-  zoom: "📹",
+  jira:         "🎯",
+  gong:         "🎙️",
+  zoom:         "📹",
+  monday:       "📅",
+  trello:       "🗂️",
+  asana:        "✅",
+  clickup:      "⚡",
+  confluence:   "📚",
+  gitbook:      "📖",
+  readme:       "📄",
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  active: "#1db584",
-  paused: "rgba(255,255,255,0.3)",
-  error: "#ef4444",
+  active:       "#1db584",
+  paused:       "rgba(255,255,255,0.3)",
+  error:        "#ef4444",
   pending_auth: "#f59e0b",
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  active: "Active",
-  paused: "Paused",
-  error: "Error",
+  active:       "Active",
+  paused:       "Paused",
+  error:        "Error",
   pending_auth: "Auth needed",
 };
 
@@ -85,8 +91,8 @@ export default function IntegrationsPage() {
 
   const load = useCallback(async () => {
     const [metaRes, listRes] = await Promise.all([
-      fetch(`${API}/connectors/meta`),
-      fetch(`${API}/connectors?customerId=${CUSTOMER_ID}`),
+      fetch("/api/connectors/meta"),
+      fetch(`/api/connectors?customerId=${CUSTOMER_ID}`),
     ]);
     if (metaRes.ok) setMeta((await metaRes.json()).connectors ?? []);
     if (listRes.ok) setConnectors((await listRes.json()).connectors ?? []);
@@ -94,7 +100,6 @@ export default function IntegrationsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Show toast after OAuth redirect
   useEffect(() => {
     const connected = searchParams.get("connected");
     if (connected) {
@@ -104,7 +109,7 @@ export default function IntegrationsPage() {
   }, [searchParams, load]);
 
   const loadRuns = async (connectorId: string) => {
-    const res = await fetch(`${API}/connectors/${connectorId}/runs`);
+    const res = await fetch(`/api/connectors/${connectorId}/runs`);
     if (res.ok) setRuns((await res.json()).runs ?? []);
   };
 
@@ -115,15 +120,16 @@ export default function IntegrationsPage() {
 
   const handleConnect = async (m: ConnectorMeta) => {
     if (m.authType === "oauth") {
-      // Create stub connector first, then redirect to OAuth
-      const res = await fetch(`${API}/connectors`, {
+      const res = await fetch("/api/connectors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customerId: CUSTOMER_ID, type: m.type }),
+        body: JSON.stringify({ customerId: CUSTOMER_ID, type: m.type, label: m.label }),
       });
       const data = await res.json();
       const connectorId = data.connector?.id ?? "";
-      window.location.href = `${API}/connectors/oauth/authorize?type=${m.type}&customerId=${CUSTOMER_ID}&connectorId=${connectorId}`;
+      // OAuth flows require the Railway backend — show instructions for now
+      showToast(`${m.label} connector created. Configure OAuth via the Railway backend.`);
+      if (connectorId) load();
     } else {
       setAddingType(m);
       setFormData({});
@@ -136,25 +142,46 @@ export default function IntegrationsPage() {
     try {
       const credentials: Record<string, string> = {};
       const settings: Record<string, string[] | string> = {};
+      const t = addingType.type;
 
-      if (addingType.type === "github") {
+      if (t === "github") {
         credentials.pat = formData.pat ?? "";
         settings.repos = (formData.repos ?? "").split(",").map(s => s.trim()).filter(Boolean);
-      } else if (addingType.type === "linear") {
+      } else if (t === "linear") {
         credentials.apiKey = formData.apiKey ?? "";
-      } else if (addingType.type === "jira") {
+      } else if (t === "jira") {
         credentials.workspaceUrl = formData.workspaceUrl ?? "";
-        (credentials as Record<string, string>).email = formData.email ?? "";
+        credentials.email = formData.email ?? "";
         credentials.apiKey = formData.apiKey ?? "";
-        if (formData.projectKeys) {
-          (settings as Record<string, string[]>).projectKeys = formData.projectKeys.split(",").map(s => s.trim()).filter(Boolean);
-        }
+        if (formData.projectKeys) settings.projectKeys = formData.projectKeys.split(",").map(s => s.trim()).filter(Boolean);
+      } else if (t === "monday") {
+        credentials.apiKey = formData.apiKey ?? "";
+        if (formData.boardIds) settings.boardIds = formData.boardIds.split(",").map(s => s.trim()).filter(Boolean);
+      } else if (t === "trello") {
+        // Trello needs apiKey:token combined
+        credentials.apiKey = `${formData.apiKey ?? ""}:${formData.token ?? ""}`;
+        if (formData.boardIds) settings.boardIds = formData.boardIds.split(",").map(s => s.trim()).filter(Boolean);
+      } else if (t === "asana") {
+        credentials.pat = formData.pat ?? "";
+        if (formData.projectIds) settings.projectIds = formData.projectIds.split(",").map(s => s.trim()).filter(Boolean);
+      } else if (t === "clickup") {
+        credentials.apiKey = formData.apiKey ?? "";
+      } else if (t === "confluence") {
+        credentials.workspaceUrl = formData.workspaceUrl ?? "";
+        credentials.email = formData.email ?? "";
+        credentials.apiKey = formData.apiKey ?? "";
+        if (formData.spaceKeys) settings.spaceKeys = formData.spaceKeys.split(",").map(s => s.trim()).filter(Boolean);
+      } else if (t === "gitbook") {
+        credentials.apiKey = formData.apiKey ?? "";
+        if (formData.spaceIds) settings.spaceIds = formData.spaceIds.split(",").map(s => s.trim()).filter(Boolean);
+      } else if (t === "readme") {
+        credentials.apiKey = formData.apiKey ?? "";
       }
 
-      const res = await fetch(`${API}/connectors`, {
+      const res = await fetch("/api/connectors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customerId: CUSTOMER_ID, type: addingType.type, credentials, settings }),
+        body: JSON.stringify({ customerId: CUSTOMER_ID, type: t, label: addingType.label, credentials, settings }),
       });
 
       if (!res.ok) throw new Error("Failed to save");
@@ -171,7 +198,7 @@ export default function IntegrationsPage() {
   const handleSync = async (id: string) => {
     setSyncing(id);
     try {
-      await fetch(`${API}/connectors/${id}/sync`, { method: "POST" });
+      await fetch(`/api/connectors/${id}/sync`, { method: "POST" });
       showToast("Sync started");
       setTimeout(() => { loadRuns(id); setSyncing(null); }, 1500);
     } catch {
@@ -181,7 +208,7 @@ export default function IntegrationsPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Remove this connector?")) return;
-    await fetch(`${API}/connectors/${id}`, { method: "DELETE" });
+    await fetch(`/api/connectors/${id}`, { method: "DELETE" });
     if (selectedId === id) setSelectedId(null);
     load();
   };
@@ -192,7 +219,6 @@ export default function IntegrationsPage() {
 
   return (
     <div style={{ padding: "2rem", maxWidth: 960, margin: "0 auto" }}>
-      {/* Toast */}
       {toast && (
         <div style={{
           position: "fixed", top: 20, right: 20, background: "#1db584",
@@ -210,7 +236,6 @@ export default function IntegrationsPage() {
         Connect data sources to automatically build and update your product knowledge graph.
       </p>
 
-      {/* Connected */}
       {connectors.length > 0 && (
         <section style={{ marginBottom: 40 }}>
           <h2 style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>
@@ -269,7 +294,6 @@ export default function IntegrationsPage() {
         </section>
       )}
 
-      {/* Sync runs panel */}
       {selected && (
         <section style={{ marginBottom: 40, padding: "16px 20px", borderRadius: 10, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
           <h3 style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.5)", marginBottom: 12 }}>
@@ -294,7 +318,6 @@ export default function IntegrationsPage() {
         </section>
       )}
 
-      {/* Available to connect */}
       {unconnected.length > 0 && (
         <section>
           <h2 style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>
@@ -332,7 +355,6 @@ export default function IntegrationsPage() {
         </section>
       )}
 
-      {/* Add connector modal (PAT/API key flows) */}
       {addingType && (
         <div style={{
           position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)",
@@ -341,7 +363,7 @@ export default function IntegrationsPage() {
           <div
             style={{
               background: "#111", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12,
-              padding: "28px 32px", width: 440, maxWidth: "90vw",
+              padding: "28px 32px", width: 440, maxWidth: "90vw", maxHeight: "85vh", overflowY: "auto",
             }}
             onClick={e => e.stopPropagation()}
           >
@@ -352,48 +374,99 @@ export default function IntegrationsPage() {
               {addingType.description}
             </p>
 
-            {/* GitHub */}
-            {addingType.type === "github" && (
-              <>
-                <Field label="Personal Access Token" value={formData.pat ?? ""} type="password"
-                  onChange={v => setFormData(p => ({ ...p, pat: v }))}
-                  hint="Needs repo scope. Create at github.com/settings/tokens"
-                />
-                <Field label="Repositories" value={formData.repos ?? ""}
-                  onChange={v => setFormData(p => ({ ...p, repos: v }))}
-                  hint="Comma-separated: owner/repo, owner/repo2"
-                />
-              </>
-            )}
+            {addingType.type === "github" && <>
+              <Field label="Personal Access Token" value={formData.pat ?? ""} type="password"
+                onChange={v => setFormData(p => ({ ...p, pat: v }))}
+                hint="Needs repo scope — github.com/settings/tokens" />
+              <Field label="Repositories" value={formData.repos ?? ""}
+                onChange={v => setFormData(p => ({ ...p, repos: v }))}
+                hint="Comma-separated: owner/repo, owner/repo2" />
+            </>}
 
-            {/* Linear */}
-            {addingType.type === "linear" && (
+            {addingType.type === "linear" && <>
               <Field label="API Key" value={formData.apiKey ?? ""} type="password"
                 onChange={v => setFormData(p => ({ ...p, apiKey: v }))}
-                hint="Create at linear.app/settings/api"
-              />
-            )}
+                hint="linear.app → Settings → API → Personal API Keys" />
+            </>}
 
-            {/* Jira */}
-            {addingType.type === "jira" && (
-              <>
-                <Field label="Workspace URL" value={formData.workspaceUrl ?? ""}
-                  onChange={v => setFormData(p => ({ ...p, workspaceUrl: v }))}
-                  hint="e.g. https://yourcompany.atlassian.net"
-                />
-                <Field label="Email" value={formData.email ?? ""}
-                  onChange={v => setFormData(p => ({ ...p, email: v }))}
-                />
-                <Field label="API Token" value={formData.apiKey ?? ""} type="password"
-                  onChange={v => setFormData(p => ({ ...p, apiKey: v }))}
-                  hint="Create at id.atlassian.com/manage-profile/security/api-tokens"
-                />
-                <Field label="Project Keys (optional)" value={formData.projectKeys ?? ""}
-                  onChange={v => setFormData(p => ({ ...p, projectKeys: v }))}
-                  hint="Comma-separated: API,PLAT (empty = all projects)"
-                />
-              </>
-            )}
+            {addingType.type === "jira" && <>
+              <Field label="Workspace URL" value={formData.workspaceUrl ?? ""}
+                onChange={v => setFormData(p => ({ ...p, workspaceUrl: v }))}
+                hint="https://yourcompany.atlassian.net" />
+              <Field label="Email" value={formData.email ?? ""}
+                onChange={v => setFormData(p => ({ ...p, email: v }))} />
+              <Field label="API Token" value={formData.apiKey ?? ""} type="password"
+                onChange={v => setFormData(p => ({ ...p, apiKey: v }))}
+                hint="id.atlassian.com/manage-profile/security/api-tokens" />
+              <Field label="Project Keys (optional)" value={formData.projectKeys ?? ""}
+                onChange={v => setFormData(p => ({ ...p, projectKeys: v }))}
+                hint="Comma-separated: API,PLAT (empty = all)" />
+            </>}
+
+            {addingType.type === "monday" && <>
+              <Field label="API Key" value={formData.apiKey ?? ""} type="password"
+                onChange={v => setFormData(p => ({ ...p, apiKey: v }))}
+                hint="monday.com → Avatar → Admin → API" />
+              <Field label="Board IDs (optional)" value={formData.boardIds ?? ""}
+                onChange={v => setFormData(p => ({ ...p, boardIds: v }))}
+                hint="Comma-separated board IDs (empty = all boards)" />
+            </>}
+
+            {addingType.type === "trello" && <>
+              <Field label="API Key" value={formData.apiKey ?? ""}
+                onChange={v => setFormData(p => ({ ...p, apiKey: v }))}
+                hint="trello.com/app-key" />
+              <Field label="Token" value={formData.token ?? ""} type="password"
+                onChange={v => setFormData(p => ({ ...p, token: v }))}
+                hint="Generate token on the same page" />
+              <Field label="Board IDs (optional)" value={formData.boardIds ?? ""}
+                onChange={v => setFormData(p => ({ ...p, boardIds: v }))}
+                hint="Comma-separated (empty = all boards)" />
+            </>}
+
+            {addingType.type === "asana" && <>
+              <Field label="Personal Access Token" value={formData.pat ?? ""} type="password"
+                onChange={v => setFormData(p => ({ ...p, pat: v }))}
+                hint="app.asana.com → Profile → Apps → Personal access tokens" />
+              <Field label="Project IDs (optional)" value={formData.projectIds ?? ""}
+                onChange={v => setFormData(p => ({ ...p, projectIds: v }))}
+                hint="Comma-separated GIDs (empty = all projects)" />
+            </>}
+
+            {addingType.type === "clickup" && <>
+              <Field label="API Key" value={formData.apiKey ?? ""} type="password"
+                onChange={v => setFormData(p => ({ ...p, apiKey: v }))}
+                hint="app.clickup.com → Settings → Apps → API Token" />
+            </>}
+
+            {addingType.type === "confluence" && <>
+              <Field label="Workspace URL" value={formData.workspaceUrl ?? ""}
+                onChange={v => setFormData(p => ({ ...p, workspaceUrl: v }))}
+                hint="https://yourcompany.atlassian.net" />
+              <Field label="Email" value={formData.email ?? ""}
+                onChange={v => setFormData(p => ({ ...p, email: v }))} />
+              <Field label="API Token" value={formData.apiKey ?? ""} type="password"
+                onChange={v => setFormData(p => ({ ...p, apiKey: v }))}
+                hint="Same token as Jira — id.atlassian.com/api-tokens" />
+              <Field label="Space Keys (optional)" value={formData.spaceKeys ?? ""}
+                onChange={v => setFormData(p => ({ ...p, spaceKeys: v }))}
+                hint="Comma-separated: PROD,ENG (empty = all spaces)" />
+            </>}
+
+            {addingType.type === "gitbook" && <>
+              <Field label="API Key" value={formData.apiKey ?? ""} type="password"
+                onChange={v => setFormData(p => ({ ...p, apiKey: v }))}
+                hint="app.gitbook.com → Settings → Developer → API Keys" />
+              <Field label="Space IDs (optional)" value={formData.spaceIds ?? ""}
+                onChange={v => setFormData(p => ({ ...p, spaceIds: v }))}
+                hint="Comma-separated space IDs (empty = all spaces)" />
+            </>}
+
+            {addingType.type === "readme" && <>
+              <Field label="API Key" value={formData.apiKey ?? ""} type="password"
+                onChange={v => setFormData(p => ({ ...p, apiKey: v }))}
+                hint="dash.readme.com → Configuration → API Key" />
+            </>}
 
             <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
               <button

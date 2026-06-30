@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { google } from '@ai-sdk/google'
+import { anthropic } from '@ai-sdk/anthropic'
 import { generateObject } from 'ai'
 import { z } from 'zod'
 
@@ -87,7 +87,7 @@ export async function POST(req: Request) {
       .join('\n\n')
 
     const { object } = await generateObject({
-      model: google('gemini-2.0-flash'),
+      model: anthropic('claude-sonnet-4-6'),
       schema: AssessmentSchema,
       system: `You are a scope assessment engine embedded in Plumb, a tool used by Forward-Deployed Engineers (FDEs) at AI companies.
 

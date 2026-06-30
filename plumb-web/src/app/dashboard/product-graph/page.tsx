@@ -470,7 +470,10 @@ function ReviewTab({ customerId }: { customerId: string }) {
 
   async function approveAll() {
     const pending = items.filter((i) => i.status === "pending");
-    await Promise.all(pending.map((i) => approve(i.id)));
+    const BATCH = 10;
+    for (let i = 0; i < pending.length; i += BATCH) {
+      await Promise.all(pending.slice(i, i + BATCH).map((item) => approve(item.id)));
+    }
     await load();
   }
 

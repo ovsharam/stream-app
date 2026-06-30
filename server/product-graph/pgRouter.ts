@@ -123,6 +123,30 @@ export function productGraphRouter(): Router {
     }
   })
 
+  // POST /product-graph/ingest-urls
+  // Body: { customerId, urls: string[] } — up to 20 URLs, scraped in background
+  router.post('/ingest-urls', async (req: Request, res: Response) => {
+    try {
+      const { customerId, urls } = req.body as { customerId: string; urls: string[] }
+      if (!customerId || !Array.isArray(urls) || urls.length === 0) {
+        res.status(400).json({ error: 'customerId and urls[] required' })
+        return
+      }
+      const capped = urls.map(u => u.trim()).filter(Boolean).slice(0, 20)
+      const jobs = capped.map(url => {
+        let fileName: string
+        try { fileName = new URL(url).hostname + new URL(url).pathname.replace(/\/$/, '') + '.txt' }
+        catch { fileName = url.slice(0, 80) + '.txt' }
+        const job = createIngestJob({ customerId, fileName, mimeType: 'text/plain' })
+        setImmediate(() => runUrlIngestPipeline(job.id, customerId, url))
+        return { url, jobId: job.id, status: 'pending' }
+      })
+      res.json({ jobs })
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message })
+    }
+  })
+
   // GET /product-graph/stats?customerId=...
   router.get('/stats', (req: Request, res: Response) => {
     const customerId = String(req.query.customerId ?? '')
@@ -131,6 +155,41 @@ export function productGraphRouter(): Router {
   })
 
   return router
+}
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
+    .replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, ' ')
+    .replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, ' ')
+    .replace(/<\/?(p|div|h[1-6]|li|tr|br|article|section|blockquote)[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/&mdash;/g, '—').replace(/&ndash;/g, '–')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+async function runUrlIngestPipeline(jobId: string, customerId: string, url: string): Promise<void> {
+  try {
+    updateJobStatus(jobId, 'chunking')
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PlumbBot/1.0; +https://useplumb.ai)' },
+      signal: AbortSignal.timeout(30_000),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`)
+    const html = await res.text()
+    const text = stripHtml(html)
+    if (!text.trim()) throw new Error('No text content found at URL')
+    const b64 = Buffer.from(text, 'utf-8').toString('base64')
+    await runIngestPipeline(jobId, customerId, b64, 'text/plain')
+  } catch (err) {
+    console.error(`[product-graph] url-ingest ${jobId} failed:`, (err as Error).message)
+    updateJobStatus(jobId, 'error', { errorMsg: (err as Error).message })
+  }
 }
 
 async function runIngestPipeline(

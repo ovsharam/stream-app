@@ -135,6 +135,9 @@ function IngestTab({ customerId }: { customerId: string }) {
   const [pasteMode, setPasteMode] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [pasteLabel, setPasteLabel] = useState("product-docs.txt");
+  const [urlMode, setUrlMode] = useState(false);
+  const [urlText, setUrlText] = useState("");
+  const [urlResults, setUrlResults] = useState<{ url: string; jobId?: string; error?: string }[]>([]);
 
   const loadJobs = useCallback(async () => {
     const r = await fetch(`${API}/product-graph/jobs?customerId=${encodeURIComponent(customerId)}`);
@@ -177,6 +180,31 @@ function IngestTab({ customerId }: { customerId: string }) {
     await submitFile(pasteLabel || "paste.txt", "text/plain", b64);
   }
 
+  async function handleUrlSubmit() {
+    const urls = urlText.split('\n').map(u => u.trim()).filter(u => u.startsWith('http'));
+    if (urls.length === 0) return;
+    setLoading(true);
+    setUrlResults([]);
+    try {
+      const r = await fetch(`${API}/product-graph/ingest-urls`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerId, urls }),
+      });
+      if (r.ok) {
+        const data = await r.json() as { jobs: { url: string; jobId?: string; error?: string }[] };
+        setUrlResults(data.jobs);
+        setUrlText("");
+        await loadJobs();
+      } else {
+        const err = await r.json() as { error: string };
+        setUrlResults([{ url: "—", error: err.error }]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 28 }}>
       <div>
@@ -214,15 +242,23 @@ function IngestTab({ customerId }: { customerId: string }) {
           />
         </div>
 
-        <button
-          onClick={() => setPasteMode(!pasteMode)}
-          style={{ fontSize: 11, color: "var(--db-text-5)", background: "none", border: "none", cursor: "pointer", marginBottom: 12, textDecoration: "underline" }}
-        >
-          {pasteMode ? "Hide paste mode" : "Or paste text directly"}
-        </button>
+        <div style={{ display: "flex", gap: 16, marginBottom: 4 }}>
+          <button
+            onClick={() => { setPasteMode(!pasteMode); setUrlMode(false); }}
+            style={{ fontSize: 11, color: "var(--db-text-5)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+          >
+            {pasteMode ? "Hide paste mode" : "Or paste text directly"}
+          </button>
+          <button
+            onClick={() => { setUrlMode(!urlMode); setPasteMode(false); }}
+            style={{ fontSize: 11, color: "var(--db-text-5)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+          >
+            {urlMode ? "Hide URL import" : "Or import from URLs"}
+          </button>
+        </div>
 
         {pasteMode && (
-          <div>
+          <div style={{ marginTop: 12 }}>
             <input
               value={pasteLabel}
               onChange={(e) => setPasteLabel(e.target.value)}
@@ -256,6 +292,64 @@ function IngestTab({ customerId }: { customerId: string }) {
             >
               {loading ? "Processing..." : "Extract from text"}
             </button>
+          </div>
+        )}
+
+        {urlMode && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 12, color: "var(--db-text-5)", marginBottom: 8, lineHeight: 1.5 }}>
+              Paste URLs — one per line. We'll scrape each page and extract product knowledge.
+              Up to 20 URLs at once.
+            </div>
+            <textarea
+              value={urlText}
+              onChange={(e) => setUrlText(e.target.value)}
+              placeholder={"https://docs.stripe.com/api/cards\nhttps://stripe.com/docs/payments\nhttps://docs.stripe.com/radar"}
+              rows={8}
+              style={{
+                width: "100%", fontSize: 12, border: "1px solid var(--db-border-alt)", borderRadius: 5,
+                padding: "10px 12px", resize: "vertical", background: "var(--db-input-bg)", color: "var(--db-text-2)",
+                boxSizing: "border-box", fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+              }}
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
+              <button
+                onClick={() => void handleUrlSubmit()}
+                disabled={loading || !urlText.trim()}
+                style={{
+                  fontSize: 12, padding: "7px 16px", borderRadius: 5,
+                  background: loading || !urlText.trim() ? "var(--db-surface-2)" : "#cc785c",
+                  color: loading || !urlText.trim() ? "var(--db-text-5)" : "#fff",
+                  border: "none", cursor: loading || !urlText.trim() ? "not-allowed" : "pointer",
+                }}
+              >
+                {loading ? "Queuing..." : `Import ${urlText.split('\n').filter(u => u.trim().startsWith('http')).length || ""} URL${urlText.split('\n').filter(u => u.trim().startsWith('http')).length === 1 ? "" : "s"}`}
+              </button>
+              <span style={{ fontSize: 11, color: "var(--db-text-6)" }}>
+                Jobs start immediately — check the queue on the right
+              </span>
+            </div>
+            {urlResults.length > 0 && (
+              <div style={{ marginTop: 12, border: "1px solid var(--db-border)", borderRadius: 6, overflow: "hidden" }}>
+                {urlResults.map((r, i) => (
+                  <div key={i} style={{
+                    display: "flex", alignItems: "center", gap: 8, padding: "7px 12px",
+                    borderBottom: i < urlResults.length - 1 ? "1px solid var(--db-border)" : "none",
+                    fontSize: 11,
+                  }}>
+                    <span style={{ color: r.error ? "#ef4444" : "#1db584", flexShrink: 0 }}>
+                      {r.error ? "✗" : "✓"}
+                    </span>
+                    <span style={{ color: "var(--db-text-4)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {r.url}
+                    </span>
+                    <span style={{ color: r.error ? "#ef4444" : "var(--db-text-5)", flexShrink: 0 }}>
+                      {r.error ?? `job ${r.jobId?.slice(0, 8)}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

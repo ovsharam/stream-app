@@ -79,16 +79,35 @@ export default function ProductGraphPage() {
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--db-text)" }}>
           Product Graph
         </h1>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-          <label style={{ fontSize: 11, color: "var(--db-text-5)" }}>Customer</label>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+          <label style={{ fontSize: 11, color: "var(--db-text-5)", flexShrink: 0 }}>Customer</label>
+          {[
+            { id: "plumb-internal", label: "Mixed" },
+            { id: "helix-demo", label: "Helix" },
+            { id: "vapi-demo", label: "Vapi" },
+          ].map((preset) => (
+            <button
+              key={preset.id}
+              onClick={() => setCustomerId(preset.id)}
+              style={{
+                fontSize: 11, padding: "3px 10px", borderRadius: 5,
+                background: customerId === preset.id ? "var(--db-overlay-md)" : "transparent",
+                color: customerId === preset.id ? "var(--db-text)" : "var(--db-text-5)",
+                border: `1px solid ${customerId === preset.id ? "var(--db-border-alt)" : "transparent"}`,
+                cursor: "pointer", fontWeight: customerId === preset.id ? 600 : 400,
+              }}
+            >
+              {preset.label}
+            </button>
+          ))}
           <input
             value={customerId}
             onChange={(e) => setCustomerId(e.target.value.trim())}
             style={{
               fontSize: 12, border: "1px solid var(--db-input-border)", borderRadius: 5,
-              padding: "4px 10px", width: 160, background: "var(--db-input-bg)", color: "var(--db-text-2)",
+              padding: "4px 10px", width: 130, background: "var(--db-input-bg)", color: "var(--db-text-2)",
             }}
-            placeholder="customer-id"
+            placeholder="custom-id"
           />
         </div>
       </div>
@@ -140,7 +159,8 @@ function IngestTab({ customerId }: { customerId: string }) {
   const [urlResults, setUrlResults] = useState<{ url: string; jobId?: string; error?: string }[]>([]);
   const [seeding, setSeeding] = useState(false);
   const [seedMsg, setSeedMsg] = useState<string | null>(null);
-  const [seedScenario, setSeedScenario] = useState<"b2b-payments" | "voice-ai">("b2b-payments");
+  const defaultScenario = customerId === "vapi-demo" ? "voice-ai" : "b2b-payments";
+  const [seedScenario, setSeedScenario] = useState<"b2b-payments" | "voice-ai">(defaultScenario);
 
   const loadJobs = useCallback(async () => {
     const r = await fetch(`${API}/product-graph/jobs?customerId=${encodeURIComponent(customerId)}`);

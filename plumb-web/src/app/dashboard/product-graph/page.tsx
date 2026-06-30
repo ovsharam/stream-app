@@ -298,7 +298,7 @@ function IngestTab({ customerId }: { customerId: string }) {
         {urlMode && (
           <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 12, color: "var(--db-text-5)", marginBottom: 8, lineHeight: 1.5 }}>
-              Paste URLs — one per line. We'll scrape each page and extract product knowledge.
+              Paste URLs — one per line. We&apos;ll scrape each page and extract product knowledge.
               Up to 20 URLs at once.
             </div>
             <textarea

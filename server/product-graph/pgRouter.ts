@@ -14,6 +14,8 @@ import {
 } from './ingestStore'
 import { writeApprovedNodes } from './graphWriter'
 import { queryProductGraph, formatProductContextForPrompt } from './queryService'
+import { getDemoScenario, listDemoScenarios } from './demoSeed'
+import { runConnectorPipeline } from '../connectors/pipeline'
 
 export function productGraphRouter(): Router {
   const router = Router()
@@ -152,6 +154,32 @@ export function productGraphRouter(): Router {
     const customerId = String(req.query.customerId ?? '')
     if (!customerId) { res.status(400).json({ error: 'customerId required' }); return }
     res.json(getProductGraphStats(customerId))
+  })
+
+  // GET /product-graph/demo-scenarios — list available demo datasets
+  router.get('/demo-scenarios', (_req: Request, res: Response) => {
+    res.json({ scenarios: listDemoScenarios() })
+  })
+
+  // POST /product-graph/seed-demo
+  // Body: { customerId, scenario } — feeds synthetic demo data through the extraction pipeline
+  router.post('/seed-demo', async (req: Request, res: Response) => {
+    const { customerId, scenario = 'b2b-payments' } = req.body as { customerId: string; scenario?: string }
+    if (!customerId) { res.status(400).json({ error: 'customerId required' }); return }
+
+    const demo = getDemoScenario(scenario)
+    if (!demo) { res.status(404).json({ error: `Unknown scenario: ${scenario}` }); return }
+
+    async function* chunkGen() {
+      for (const chunk of demo.chunks) yield chunk
+    }
+
+    res.json({ ok: true, scenario, chunkCount: demo.chunks.length, message: 'Seeding started — check the Review tab in ~60 seconds' })
+
+    // Run async after response
+    runConnectorPipeline(customerId, `[demo] ${demo.companyName}`, chunkGen())
+      .then(r => console.log(`[demo-seed] done: ${r.chunksProcessed} chunks, ${r.nodesExtracted} nodes`))
+      .catch(e => console.error('[demo-seed] error:', (e as Error).message))
   })
 
   return router

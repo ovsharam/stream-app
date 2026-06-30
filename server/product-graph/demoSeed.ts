@@ -667,11 +667,18 @@ Customers often say "I need same-day settlement" when they actually mean "I need
   },
 ]
 
+import { VAPI_CHUNKS } from './demoSeedVapi'
+
 export const DEMO_SCENARIOS: Record<string, DemoScenario> = {
   'b2b-payments': {
     label: 'Helix Payments (B2B payments API platform)',
     companyName: 'Helix',
     chunks: HELIX_CHUNKS,
+  },
+  'voice-ai': {
+    label: 'Vapi (voice AI platform for developers)',
+    companyName: 'Vapi',
+    chunks: VAPI_CHUNKS,
   },
 }
 

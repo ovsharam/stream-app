@@ -140,6 +140,7 @@ function IngestTab({ customerId }: { customerId: string }) {
   const [urlResults, setUrlResults] = useState<{ url: string; jobId?: string; error?: string }[]>([]);
   const [seeding, setSeeding] = useState(false);
   const [seedMsg, setSeedMsg] = useState<string | null>(null);
+  const [seedScenario, setSeedScenario] = useState<"b2b-payments" | "voice-ai">("b2b-payments");
 
   const loadJobs = useCallback(async () => {
     const r = await fetch(`${API}/product-graph/jobs?customerId=${encodeURIComponent(customerId)}`);
@@ -152,10 +153,11 @@ function IngestTab({ customerId }: { customerId: string }) {
     const r = await fetch(`${API}/product-graph/seed-demo`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ customerId, scenario: "b2b-payments" }),
+      body: JSON.stringify({ customerId, scenario: seedScenario }),
     });
-    const data = await r.json() as { message?: string; chunkCount?: number };
-    setSeedMsg(`Seeding ${data.chunkCount ?? "?"} items from Helix demo dataset — check Review tab in ~60s`);
+    const data = await r.json() as { message?: string; chunkCount?: number; scenario?: string };
+    const label = seedScenario === "voice-ai" ? "Vapi" : "Helix";
+    setSeedMsg(`Seeding ${data.chunkCount ?? "?"} items from ${label} demo dataset — check Review tab in ~60s`);
     setSeeding(false);
     setTimeout(() => void loadJobs(), 5000);
   }
@@ -373,32 +375,48 @@ function IngestTab({ customerId }: { customerId: string }) {
       {/* Demo seed banner */}
       <div style={{
         border: "1px dashed var(--db-border-alt)", borderRadius: 8, padding: "14px 16px",
-        marginBottom: 20, display: "flex", alignItems: "center", gap: 12,
+        marginBottom: 20,
       }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--db-text-3)", marginBottom: 3 }}>
-            No real data yet?
-          </div>
-          <div style={{ fontSize: 11, color: "var(--db-text-5)" }}>
-            Load a synthetic demo dataset — Linear issues, Slack threads, GitHub releases, and internal docs for a fictional B2B payments company (Helix).
-          </div>
-          {seedMsg && (
-            <div style={{ fontSize: 11, color: "#1db584", marginTop: 6 }}>{seedMsg}</div>
-          )}
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--db-text-3)", marginBottom: 4 }}>
+          Load demo dataset
         </div>
-        <button
-          onClick={() => void seedDemo()}
-          disabled={seeding}
-          style={{
-            fontSize: 12, fontWeight: 600, padding: "8px 14px", borderRadius: 6,
-            background: seeding ? "var(--db-surface-2)" : "var(--db-surface)",
-            color: seeding ? "var(--db-text-5)" : "var(--db-text-3)",
-            border: "1px solid var(--db-border-alt)", cursor: seeding ? "not-allowed" : "pointer",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {seeding ? "Seeding…" : "Load Helix demo"}
-        </button>
+        <div style={{ fontSize: 11, color: "var(--db-text-5)", marginBottom: 10 }}>
+          Synthetic Linear issues, Slack threads, GitHub releases, and internal docs — feeds through the same extraction pipeline as real connectors.
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {(["b2b-payments", "voice-ai"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setSeedScenario(s)}
+              style={{
+                fontSize: 11, padding: "5px 12px", borderRadius: 5,
+                background: seedScenario === s ? "var(--db-overlay-md)" : "transparent",
+                color: seedScenario === s ? "var(--db-text)" : "var(--db-text-5)",
+                border: `1px solid ${seedScenario === s ? "var(--db-border-alt)" : "transparent"}`,
+                cursor: "pointer", fontWeight: seedScenario === s ? 600 : 400,
+              }}
+            >
+              {s === "b2b-payments" ? "Helix Payments" : "Vapi Voice AI"}
+            </button>
+          ))}
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={() => void seedDemo()}
+            disabled={seeding}
+            style={{
+              fontSize: 12, fontWeight: 600, padding: "7px 14px", borderRadius: 6,
+              background: seeding ? "var(--db-surface-2)" : "var(--db-surface)",
+              color: seeding ? "var(--db-text-5)" : "var(--db-text-3)",
+              border: "1px solid var(--db-border-alt)", cursor: seeding ? "not-allowed" : "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {seeding ? "Seeding…" : "Load dataset →"}
+          </button>
+        </div>
+        {seedMsg && (
+          <div style={{ fontSize: 11, color: "#1db584", marginTop: 8 }}>{seedMsg}</div>
+        )}
       </div>
 
       {/* Jobs list */}

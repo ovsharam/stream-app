@@ -754,10 +754,176 @@ type GraphStats = {
   lastUpdated?: number;
 };
 
+type ScopeAssessment = {
+  contextScore: number;
+  headline: string;
+  buildable: string[];
+  blockers: { issue: string; action: string }[];
+  scopeForks: { decision: string; options: string[] }[];
+  gaps: string[];
+  buildSpec: { approach: string; keyConstraints: string[]; openQuestions: string[] } | null;
+};
+
+function scoreColor(score: number) {
+  if (score >= 70) return "#1db584";
+  if (score >= 40) return "#f59e0b";
+  return "#ef4444";
+}
+
+function AssessmentPanel({ assessment: a }: { assessment: ScopeAssessment }) {
+  const color = scoreColor(a.contextScore);
+  return (
+    <div style={{ marginBottom: 24 }}>
+      {/* Score header */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 20, padding: "20px 24px",
+        background: "var(--db-surface)", border: "1px solid var(--db-border)",
+        borderRadius: "10px 10px 0 0", borderBottom: "none",
+      }}>
+        <div style={{ textAlign: "center", minWidth: 64 }}>
+          <div style={{ fontSize: 44, fontWeight: 700, color, lineHeight: 1, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.03em" }}>
+            {a.contextScore}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--db-text-5)", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 4 }}>
+            context score
+          </div>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--db-text)", lineHeight: 1.4 }}>{a.headline}</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            {a.blockers.length > 0 && (
+              <span style={{ fontSize: 11, background: "rgba(239,68,68,0.1)", color: "#ef4444", borderRadius: 4, padding: "2px 8px", fontWeight: 600 }}>
+                {a.blockers.length} blocker{a.blockers.length !== 1 ? "s" : ""}
+              </span>
+            )}
+            {a.scopeForks.length > 0 && (
+              <span style={{ fontSize: 11, background: "rgba(245,158,11,0.1)", color: "#f59e0b", borderRadius: 4, padding: "2px 8px", fontWeight: 600 }}>
+                {a.scopeForks.length} scope fork{a.scopeForks.length !== 1 ? "s" : ""}
+              </span>
+            )}
+            {a.gaps.length > 0 && (
+              <span style={{ fontSize: 11, background: "rgba(107,114,128,0.1)", color: "var(--db-text-4)", borderRadius: 4, padding: "2px 8px", fontWeight: 600 }}>
+                {a.gaps.length} gap{a.gaps.length !== 1 ? "s" : ""}
+              </span>
+            )}
+            {a.blockers.length === 0 && a.gaps.length === 0 && (
+              <span style={{ fontSize: 11, background: "rgba(29,181,132,0.1)", color: "#1db584", borderRadius: 4, padding: "2px 8px", fontWeight: 600 }}>
+                fully covered
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div style={{
+        border: "1px solid var(--db-border)", borderRadius: "0 0 10px 10px",
+        overflow: "hidden",
+      }}>
+        {/* Confirmed buildable */}
+        {a.buildable.length > 0 && (
+          <Section label="✓ Confirmed buildable" labelColor="#1db584">
+            {a.buildable.map((item, i) => (
+              <Row key={i} icon="✓" iconColor="#1db584" text={item} />
+            ))}
+          </Section>
+        )}
+
+        {/* Blockers */}
+        {a.blockers.length > 0 && (
+          <Section label="✗ Blockers" labelColor="#ef4444">
+            {a.blockers.map((b, i) => (
+              <div key={i} style={{ padding: "10px 16px", borderBottom: i < a.blockers.length - 1 ? "1px solid var(--db-border)" : "none" }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: "var(--db-text-2)", marginBottom: 3 }}>{b.issue}</div>
+                <div style={{ fontSize: 11, color: "#f59e0b" }}>→ {b.action}</div>
+              </div>
+            ))}
+          </Section>
+        )}
+
+        {/* Scope forks */}
+        {a.scopeForks.length > 0 && (
+          <Section label="⟷ Scope forks" labelColor="#f59e0b">
+            {a.scopeForks.map((f, i) => (
+              <div key={i} style={{ padding: "10px 16px", borderBottom: i < a.scopeForks.length - 1 ? "1px solid var(--db-border)" : "none" }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: "var(--db-text-2)", marginBottom: 6 }}>{f.decision}</div>
+                {f.options.map((opt, j) => (
+                  <div key={j} style={{ fontSize: 11, color: "var(--db-text-4)", display: "flex", gap: 6, marginTop: 3 }}>
+                    <span style={{ color: "#f59e0b", flexShrink: 0 }}>{String.fromCharCode(65 + j)}.</span>
+                    {opt}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Section>
+        )}
+
+        {/* Gaps */}
+        {a.gaps.length > 0 && (
+          <Section label="⚠ Gaps — no graph coverage" labelColor="var(--db-text-4)">
+            {a.gaps.map((g, i) => (
+              <Row key={i} icon="⚠" iconColor="var(--db-text-5)" text={g} />
+            ))}
+          </Section>
+        )}
+
+        {/* Build spec */}
+        {a.buildSpec && (
+          <div style={{ background: "var(--db-surface-2)", padding: "14px 16px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#1db584", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+              Build spec · ready to dispatch
+            </div>
+            <div style={{ fontSize: 12, color: "var(--db-text-3)", marginBottom: 8 }}>
+              <span style={{ color: "var(--db-text-5)", marginRight: 6 }}>approach</span>{a.buildSpec.approach}
+            </div>
+            {a.buildSpec.keyConstraints.length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 10, color: "var(--db-text-5)", marginBottom: 4 }}>KEY CONSTRAINTS</div>
+                {a.buildSpec.keyConstraints.map((c, i) => (
+                  <div key={i} style={{ fontSize: 11, color: "var(--db-text-4)", marginTop: 2 }}>⊘ {c}</div>
+                ))}
+              </div>
+            )}
+            {a.buildSpec.openQuestions.length > 0 && (
+              <div>
+                <div style={{ fontSize: 10, color: "var(--db-text-5)", marginBottom: 4 }}>OPEN QUESTIONS</div>
+                {a.buildSpec.openQuestions.map((q, i) => (
+                  <div key={i} style={{ fontSize: 11, color: "#f59e0b", marginTop: 2 }}>? {q}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Section({ label, labelColor, children }: { label: string; labelColor: string; children: React.ReactNode }) {
+  return (
+    <div style={{ borderBottom: "1px solid var(--db-border)" }}>
+      <div style={{ padding: "8px 16px", fontSize: 10, fontWeight: 700, color: labelColor, textTransform: "uppercase", letterSpacing: "0.07em", background: "var(--db-surface)" }}>
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Row({ icon, iconColor, text }: { icon: string; iconColor: string; text: string }) {
+  return (
+    <div style={{ display: "flex", gap: 10, padding: "8px 16px", borderTop: "1px solid var(--db-border)", alignItems: "flex-start" }}>
+      <span style={{ color: iconColor, fontSize: 11, flexShrink: 0, marginTop: 1 }}>{icon}</span>
+      <span style={{ fontSize: 12, color: "var(--db-text-3)", lineHeight: 1.5 }}>{text}</span>
+    </div>
+  );
+}
+
 function QueryTab({ customerId, controls }: { customerId: string; controls: GraphControls }) {
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<GraphQueryResult | null>(null);
   const [promptText, setPromptText] = useState<string | null>(null);
+  const [assessment, setAssessment] = useState<ScopeAssessment | null>(null);
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<GraphStats | null>(null);
 
@@ -772,6 +938,7 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
     setLoading(true);
     setResult(null);
     setPromptText(null);
+    setAssessment(null);
     const r = await fetch(`${API}/product-graph/query`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -781,6 +948,24 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
       const data = (await r.json()) as { context?: string } & GraphQueryResult;
       if (format === "prompt") setPromptText(data.context ?? "");
       else setResult(data);
+    }
+    setLoading(false);
+  }
+
+  async function runAssess() {
+    if (!query.trim()) return;
+    setLoading(true);
+    setResult(null);
+    setPromptText(null);
+    setAssessment(null);
+    const r = await fetch("/api/product-graph/assess", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ customerId, dealDescription: query, minScore: controls.minScore }),
+    });
+    if (r.ok) {
+      const data = (await r.json()) as { assessment: ScopeAssessment };
+      setAssessment(data.assessment);
     }
     setLoading(false);
   }
@@ -827,16 +1012,29 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
         />
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <button
-            onClick={() => void runQuery("json")}
+            onClick={() => void runAssess()}
             disabled={loading || !query.trim()}
             style={{
               fontSize: 12, padding: "8px 14px", borderRadius: 6, whiteSpace: "nowrap",
               background: loading || !query.trim() ? "var(--db-surface-2)" : "#cc785c",
               color: loading || !query.trim() ? "var(--db-text-5)" : "#fff",
               border: "none", cursor: loading || !query.trim() ? "not-allowed" : "pointer",
+              fontWeight: 600,
             }}
           >
-            {loading ? "Querying..." : "Query graph"}
+            {loading ? "Assessing..." : "Assess"}
+          </button>
+          <button
+            onClick={() => void runQuery("json")}
+            disabled={loading || !query.trim()}
+            style={{
+              fontSize: 12, padding: "8px 14px", borderRadius: 6, whiteSpace: "nowrap",
+              background: "transparent", color: loading || !query.trim() ? "var(--db-text-5)" : "var(--db-text-3)",
+              border: `1px solid ${loading || !query.trim() ? "var(--db-surface-2)" : "var(--db-border-alt)"}`,
+              cursor: loading || !query.trim() ? "not-allowed" : "pointer",
+            }}
+          >
+            Raw nodes
           </button>
           <button
             onClick={() => void runQuery("prompt")}
@@ -852,6 +1050,8 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
           </button>
         </div>
       </div>
+
+      {assessment && <AssessmentPanel assessment={assessment} />}
 
       {promptText && (
         <div

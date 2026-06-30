@@ -750,6 +750,12 @@ type GraphQueryResult = {
   workarounds: ProductNode[];
 };
 
+type LogLine =
+  | { type: "status"; message: string }
+  | { type: "graph_result"; labelCounts: Record<string, number>; totalNodes: number }
+  | { type: "assessment_ready"; score: number }
+  | { type: "error"; message: string };
+
 type GraphStats = {
   totalNodes: number;
   byLabel: Record<ProductNodeLabel, number>;
@@ -771,6 +777,77 @@ function scoreColor(score: number) {
   if (score >= 70) return "#1db584";
   if (score >= 40) return "#f59e0b";
   return "#ef4444";
+}
+
+function QueryLog({ lines }: { lines: LogLine[] }) {
+  const BAR_MAX = 16;
+  return (
+    <div
+      style={{
+        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+        fontSize: 11.5,
+        background: "var(--db-surface)",
+        border: "1px solid var(--db-border)",
+        borderRadius: 8,
+        padding: "14px 16px",
+        marginBottom: 16,
+        lineHeight: 1.7,
+      }}
+    >
+      {lines.map((line, i) => {
+        if (line.type === "status") {
+          return (
+            <div key={i} style={{ color: "var(--db-text-4)" }}>
+              <span style={{ color: "#cc785c", marginRight: 8 }}>→</span>{line.message}
+              {i === lines.length - 1 && (
+                <span style={{ color: "var(--db-text-6)", animation: "none" }}> …</span>
+              )}
+            </div>
+          );
+        }
+        if (line.type === "graph_result") {
+          const counts = Object.entries(line.labelCounts).sort((a, b) => b[1] - a[1]);
+          const maxCount = counts[0]?.[1] ?? 1;
+          return (
+            <div key={i} style={{ marginBottom: 6 }}>
+              <div style={{ color: "var(--db-text-3)", marginBottom: 4 }}>
+                <span style={{ color: "#1db584", marginRight: 8 }}>✓</span>
+                {line.totalNodes} nodes matched
+              </div>
+              {counts.map(([label, count]) => {
+                const bars = Math.max(1, Math.round((count / maxCount) * BAR_MAX));
+                const color = LABEL_COLORS[label] ?? "var(--db-text-4)";
+                return (
+                  <div key={label} style={{ display: "flex", gap: 10, alignItems: "center", paddingLeft: 24 }}>
+                    <span style={{ color: "var(--db-text-6)", width: 88, flexShrink: 0, fontSize: 11 }}>{label}</span>
+                    <span style={{ color, letterSpacing: "0.02em", fontSize: 10 }}>{"█".repeat(bars)}</span>
+                    <span style={{ color: "var(--db-text-5)", fontSize: 11 }}>{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        }
+        if (line.type === "assessment_ready") {
+          const color = scoreColor(line.score);
+          return (
+            <div key={i} style={{ color: "var(--db-text-4)" }}>
+              <span style={{ color, marginRight: 8 }}>✓</span>
+              Done · context score <span style={{ color, fontWeight: 700 }}>{line.score}</span>
+            </div>
+          );
+        }
+        if (line.type === "error") {
+          return (
+            <div key={i} style={{ color: "#ef4444" }}>
+              <span style={{ marginRight: 8 }}>✗</span>{line.message}
+            </div>
+          );
+        }
+        return null;
+      })}
+    </div>
+  );
 }
 
 function AssessmentPanel({ assessment: a }: { assessment: ScopeAssessment }) {
@@ -929,6 +1006,7 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
   const [assessment, setAssessment] = useState<ScopeAssessment | null>(null);
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<GraphStats | null>(null);
+  const [queryLog, setQueryLog] = useState<LogLine[]>([]);
 
   useEffect(() => {
     void fetch(`${API}/product-graph/stats?customerId=${encodeURIComponent(customerId)}`)
@@ -961,15 +1039,55 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
     setResult(null);
     setPromptText(null);
     setAssessment(null);
-    const r = await fetch("/api/product-graph/assess", {
+    setQueryLog([]);
+
+    const res = await fetch("/api/product-graph/assess", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ customerId, dealDescription: query, minScore: controls.minScore }),
     });
-    if (r.ok) {
-      const data = (await r.json()) as { assessment: ScopeAssessment };
-      setAssessment(data.assessment);
+
+    if (!res.ok || !res.body) {
+      const err = await res.json().catch(() => ({ error: "Request failed" })) as { error?: string };
+      setQueryLog([{ type: "error", message: err.error ?? "Request failed" }]);
+      setLoading(false);
+      return;
     }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+      for (const part of parts) {
+        if (!part.startsWith("data: ")) continue;
+        try {
+          const data = JSON.parse(part.slice(6)) as {
+            event: string;
+            message?: string;
+            labelCounts?: Record<string, number>;
+            totalNodes?: number;
+            assessment?: ScopeAssessment;
+          };
+          if (data.event === "status") {
+            setQueryLog(prev => [...prev, { type: "status", message: data.message! }]);
+          } else if (data.event === "graph_result") {
+            setQueryLog(prev => [...prev, { type: "graph_result", labelCounts: data.labelCounts!, totalNodes: data.totalNodes! }]);
+          } else if (data.event === "assessment") {
+            setAssessment(data.assessment!);
+            setQueryLog(prev => [...prev, { type: "assessment_ready", score: data.assessment!.contextScore }]);
+          } else if (data.event === "error") {
+            setQueryLog(prev => [...prev, { type: "error", message: data.message! }]);
+          }
+        } catch { /* invalid chunk */ }
+      }
+    }
+
     setLoading(false);
   }
 
@@ -1054,6 +1172,7 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
         </div>
       </div>
 
+      {queryLog.length > 0 && <QueryLog lines={queryLog} />}
       {assessment && <AssessmentPanel assessment={assessment} />}
 
       {promptText && (

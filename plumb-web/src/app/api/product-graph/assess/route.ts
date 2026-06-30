@@ -33,63 +33,7 @@ const AssessmentSchema = z.object({
 
 export type ScopeAssessment = z.infer<typeof AssessmentSchema>
 
-export async function POST(req: Request) {
-  try {
-    const { customerId, dealDescription, minScore } = await req.json() as {
-      customerId: string
-      dealDescription: string
-      minScore?: number
-    }
-
-    if (!customerId || !dealDescription?.trim()) {
-      return NextResponse.json({ error: 'customerId and dealDescription required' }, { status: 400 })
-    }
-
-    // Pull matched nodes from Railway graph
-    const graphRes = await fetch(`${RAILWAY_URL}/product-graph/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerId, dealDescription, format: 'json', minScore: minScore ?? 1 }),
-    })
-
-    if (!graphRes.ok) {
-      return NextResponse.json({ error: `Graph query failed: ${graphRes.status}` }, { status: 502 })
-    }
-
-    const graphResult = await graphRes.json() as Record<string, Array<{ name: string; description: string }>>
-
-    const totalNodes = Object.values(graphResult)
-      .filter(Array.isArray)
-      .reduce((sum, arr) => sum + arr.length, 0)
-
-    if (totalNodes === 0) {
-      return NextResponse.json({
-        assessment: {
-          contextScore: 5,
-          headline: 'No matching product knowledge found — ingest product docs first.',
-          buildable: [],
-          blockers: [{ issue: 'Graph has no coverage for this deal', action: 'Ingest relevant product documentation in the Ingest tab' }],
-          scopeForks: [],
-          gaps: ['Full deal description has no graph coverage'],
-          buildSpec: null,
-        } satisfies ScopeAssessment,
-        nodeCount: 0,
-      })
-    }
-
-    // Format nodes into a structured context block for Claude
-    const nodeContext = Object.entries(graphResult)
-      .map(([key, nodes]) => {
-        if (!Array.isArray(nodes) || nodes.length === 0) return null
-        return `## ${key.toUpperCase()}\n${nodes.map(n => `- ${n.name}: ${n.description}`).join('\n')}`
-      })
-      .filter(Boolean)
-      .join('\n\n')
-
-    const { object } = await generateObject({
-      model: anthropic('claude-sonnet-4-6'),
-      schema: AssessmentSchema,
-      system: `You are a scope assessment engine embedded in Plumb, a tool used by Forward-Deployed Engineers (FDEs) at AI companies.
+const SYSTEM_PROMPT = `You are a scope assessment engine embedded in Plumb, a tool used by Forward-Deployed Engineers (FDEs) at AI companies.
 
 An FDE is on a deal. They describe what the prospect wants to build. You have a product knowledge graph — matched nodes from the company's actual product documentation (capabilities, limitations, constraints, patterns, integrations, workarounds).
 
@@ -107,13 +51,103 @@ Rules:
 - Scope forks are real architectural choices revealed by the graph — not hypotheticals
 - Gaps are specific things in the deal description with zero graph coverage
 - buildSpec is null if contextScore < 70
-- Be concrete and direct — no hedge language, no "it depends"`,
-      prompt: `DEAL DESCRIPTION:\n${dealDescription}\n\nPRODUCT GRAPH (${totalNodes} matched nodes):\n${nodeContext}`,
-    })
+- Be concrete and direct — no hedge language, no "it depends"`
 
-    return NextResponse.json({ assessment: object, nodeCount: totalNodes })
-  } catch (err) {
-    console.error('[product-graph/assess]', err)
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+export async function POST(req: Request) {
+  const body = await req.json() as { customerId?: string; dealDescription?: string; minScore?: number }
+  const { customerId, dealDescription, minScore } = body
+
+  if (!customerId || !dealDescription?.trim()) {
+    return NextResponse.json({ error: 'customerId and dealDescription required' }, { status: 400 })
   }
+
+  const encoder = new TextEncoder()
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const emit = (data: Record<string, unknown>) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+      }
+
+      try {
+        emit({ event: 'status', message: 'Querying product graph...' })
+
+        const graphRes = await fetch(`${RAILWAY_URL}/product-graph/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customerId, dealDescription, format: 'json', minScore: minScore ?? 1 }),
+        })
+
+        if (!graphRes.ok) {
+          emit({ event: 'error', message: `Graph query failed: ${graphRes.status}` })
+          controller.close()
+          return
+        }
+
+        const graphResult = await graphRes.json() as Record<string, Array<{ name: string; description: string }>>
+
+        const labelCounts: Record<string, number> = {}
+        let totalNodes = 0
+        for (const [key, nodes] of Object.entries(graphResult)) {
+          if (Array.isArray(nodes) && nodes.length > 0) {
+            labelCounts[key] = nodes.length
+            totalNodes += nodes.length
+          }
+        }
+
+        emit({ event: 'graph_result', labelCounts, totalNodes })
+
+        if (totalNodes === 0) {
+          emit({
+            event: 'assessment',
+            assessment: {
+              contextScore: 5,
+              headline: 'No matching product knowledge found — ingest product docs first.',
+              buildable: [],
+              blockers: [{ issue: 'Graph has no coverage for this deal', action: 'Ingest relevant product documentation in the Ingest tab' }],
+              scopeForks: [],
+              gaps: ['Full deal description has no graph coverage'],
+              buildSpec: null,
+            } satisfies ScopeAssessment,
+            nodeCount: 0,
+          })
+          controller.close()
+          return
+        }
+
+        emit({ event: 'status', message: `Running scope assessment · Claude Sonnet 4.6` })
+
+        const nodeContext = Object.entries(graphResult)
+          .map(([key, nodes]) => {
+            if (!Array.isArray(nodes) || nodes.length === 0) return null
+            return `## ${key.toUpperCase()}\n${nodes.map(n => `- ${n.name}: ${n.description}`).join('\n')}`
+          })
+          .filter(Boolean)
+          .join('\n\n')
+
+        const { object } = await generateObject({
+          model: anthropic('claude-sonnet-4-6'),
+          schema: AssessmentSchema,
+          system: SYSTEM_PROMPT,
+          prompt: `DEAL DESCRIPTION:\n${dealDescription}\n\nPRODUCT GRAPH (${totalNodes} matched nodes):\n${nodeContext}`,
+        })
+
+        emit({ event: 'assessment', assessment: object, nodeCount: totalNodes })
+
+      } catch (err) {
+        console.error('[product-graph/assess]', err)
+        emit({ event: 'error', message: (err as Error).message })
+      } finally {
+        controller.close()
+      }
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'X-Accel-Buffering': 'no',
+    },
+  })
 }

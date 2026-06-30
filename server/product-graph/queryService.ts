@@ -54,7 +54,8 @@ const LABEL_CAPS: Record<string, number> = {
  */
 export async function queryProductGraph(
   customerId: string,
-  dealDescription: string
+  dealDescription: string,
+  minScore = 1,
 ): Promise<ProductGraphQueryResult> {
   const terms = await extractQueryTerms(dealDescription)
   const query = terms.join(' ')
@@ -63,17 +64,17 @@ export async function queryProductGraph(
   const ftsNodes = searchProductNodes(customerId, query, 60)
 
   // For limitations and constraints, FTS vocabulary often misses them (negative phrasing).
-  // Fetch all, score against terms, keep only ones with at least one match.
+  // Fetch all, score against terms, keep only ones meeting the minScore threshold.
   const allLimitations = listProductNodes(customerId, 'limitation')
   const allConstraints = listProductNodes(customerId, 'constraint')
 
   const scoredLimitations = allLimitations
     .map((n) => ({ node: n, score: scoreRelevance(n, terms) }))
-    .filter(({ score }) => score > 0)
+    .filter(({ score }) => score >= minScore)
 
   const scoredConstraints = allConstraints
     .map((n) => ({ node: n, score: scoreRelevance(n, terms) }))
-    .filter(({ score }) => score > 0)
+    .filter(({ score }) => score >= minScore)
 
   // Merge: FTS nodes get scored too; higher score wins if a node appears in multiple sets
   const nodeScores = new Map<string, number>()

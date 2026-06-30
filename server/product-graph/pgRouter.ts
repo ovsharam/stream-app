@@ -103,15 +103,16 @@ export function productGraphRouter(): Router {
   // Body: { customerId, dealDescription }
   router.post('/query', async (req: Request, res: Response) => {
     try {
-      const { customerId, dealDescription, format } = req.body as {
+      const { customerId, dealDescription, format, minScore } = req.body as {
         customerId: string
         dealDescription: string
         format?: 'json' | 'prompt'
+        minScore?: number
       }
       if (!customerId || !dealDescription) {
         res.status(400).json({ error: 'customerId, dealDescription required' }); return
       }
-      const result = await queryProductGraph(customerId, dealDescription)
+      const result = await queryProductGraph(customerId, dealDescription, minScore ?? 1)
       if (format === 'prompt') {
         res.json({ context: formatProductContextForPrompt(result, customerId) })
       } else {

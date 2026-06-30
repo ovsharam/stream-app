@@ -30,11 +30,42 @@ const LABEL_ICONS: Record<string, string> = {
   workaround: "↻",
 };
 
-type Tab = "ingest" | "review" | "query";
+type Tab = "ingest" | "review" | "query" | "controls";
+
+const CONTROLS_KEY = "pg-controls-v1";
+
+function loadControls() {
+  try {
+    const raw = localStorage.getItem(CONTROLS_KEY);
+    if (raw) return JSON.parse(raw) as GraphControls;
+  } catch { /* ignore */ }
+  return null;
+}
+
+export type GraphControls = {
+  minScore: number;
+  caps: Record<string, number>;
+};
+
+const DEFAULT_CONTROLS: GraphControls = {
+  minScore: 2,
+  caps: { capability: 8, limitation: 6, constraint: 6, integration: 5, pattern: 5, workaround: 4 },
+};
 
 export default function ProductGraphPage() {
   const [customerId, setCustomerId] = useState("plumb-internal");
   const [tab, setTab] = useState<Tab>("ingest");
+  const [controls, setControls] = useState<GraphControls>(DEFAULT_CONTROLS);
+
+  useEffect(() => {
+    const saved = loadControls();
+    if (saved) setControls(saved);
+  }, []);
+
+  function saveControls(next: GraphControls) {
+    setControls(next);
+    try { localStorage.setItem(CONTROLS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  }
 
   return (
     <div style={{ padding: "24px 28px", maxWidth: 1100 }}>
@@ -68,7 +99,7 @@ export default function ProductGraphPage() {
           display: "flex", gap: 2, marginBottom: 24, borderBottom: "1px solid #1c1c1c", paddingBottom: 0,
         }}
       >
-        {(["ingest", "review", "query"] as Tab[]).map((t) => (
+        {(["ingest", "review", "query", "controls"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -88,7 +119,8 @@ export default function ProductGraphPage() {
 
       {tab === "ingest" && <IngestTab customerId={customerId} />}
       {tab === "review" && <ReviewTab customerId={customerId} />}
-      {tab === "query" && <QueryTab customerId={customerId} />}
+      {tab === "query" && <QueryTab customerId={customerId} controls={controls} />}
+      {tab === "controls" && <ControlsTab controls={controls} onChange={saveControls} />}
     </div>
   );
 }
@@ -628,7 +660,7 @@ type GraphStats = {
   lastUpdated?: number;
 };
 
-function QueryTab({ customerId }: { customerId: string }) {
+function QueryTab({ customerId, controls }: { customerId: string; controls: GraphControls }) {
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<GraphQueryResult | null>(null);
   const [promptText, setPromptText] = useState<string | null>(null);
@@ -649,7 +681,7 @@ function QueryTab({ customerId }: { customerId: string }) {
     const r = await fetch(`${API}/product-graph/query`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ customerId, dealDescription: query, format }),
+      body: JSON.stringify({ customerId, dealDescription: query, format, minScore: controls.minScore }),
     });
     if (r.ok) {
       const data = (await r.json()) as { context?: string } & GraphQueryResult;
@@ -661,6 +693,17 @@ function QueryTab({ customerId }: { customerId: string }) {
 
   return (
     <div>
+      {/* Active controls strip */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14 }}>
+        <span style={{ fontSize: 11, color: "#383838" }}>min score</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#cc785c", background: "rgba(204,120,92,0.1)", borderRadius: 4, padding: "2px 7px" }}>
+          {controls.minScore}
+        </span>
+        <span style={{ fontSize: 11, color: "#2a2a2a", marginLeft: 4 }}>
+          {controls.minScore <= 1 ? "· maximum recall" : controls.minScore <= 2 ? "· balanced" : controls.minScore <= 3 ? "· low noise" : "· precision mode"}
+        </span>
+      </div>
+
       {/* Stats strip */}
       {stats && (
         <div
@@ -771,7 +814,7 @@ function QueryTab({ customerId }: { customerId: string }) {
                   </span>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  {nodes.slice(0, 8).map((n) => (
+                  {nodes.slice(0, controls.caps[label] ?? 8).map((n) => (
                     <div
                       key={n.id}
                       style={{
@@ -791,6 +834,119 @@ function QueryTab({ customerId }: { customerId: string }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Controls Tab ─────────────────────────────────────────────────────────────
+
+const SCORE_LABELS: Record<number, { label: string; detail: string; color: string }> = {
+  0: { label: "All nodes",       detail: "No filtering — include everything matched by FTS",         color: "#555" },
+  1: { label: "Any match",       detail: "At least one query term appears anywhere in the node",     color: "#6b7280" },
+  2: { label: "Balanced",        detail: "Strong description match or any name match — recommended", color: "#cc785c" },
+  3: { label: "Name match",      detail: "Query term must appear in the node name",                  color: "#3e78c8" },
+  4: { label: "Strong name",     detail: "Multiple name matches or very high term density",          color: "#8b5cf6" },
+  5: { label: "Precision mode",  detail: "Maximum precision, minimum recall — may miss valid nodes", color: "#1db584" },
+};
+
+const LABEL_ORDER = ["capability", "limitation", "constraint", "integration", "pattern", "workaround"] as const;
+
+function ControlsTab({ controls, onChange }: { controls: GraphControls; onChange: (c: GraphControls) => void }) {
+  const scoreInfo = SCORE_LABELS[controls.minScore] ?? SCORE_LABELS[1];
+
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <p style={{ fontSize: 12, color: "#555", marginBottom: 28, lineHeight: 1.6 }}>
+        Tune how aggressively the query filters nodes by relevance. Higher score = less noise, fewer results.
+        Lower score = more recall, more noise. Changes apply immediately to the next query.
+      </p>
+
+      {/* Min score slider */}
+      <div style={{ marginBottom: 36 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            Min relevance score
+          </span>
+          <span style={{ fontSize: 18, fontWeight: 700, color: scoreInfo.color }}>
+            {controls.minScore}
+          </span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: scoreInfo.color }}>
+            {scoreInfo.label}
+          </span>
+        </div>
+
+        <input
+          type="range" min={0} max={5} step={1}
+          value={controls.minScore}
+          onChange={e => onChange({ ...controls, minScore: Number(e.target.value) })}
+          style={{ width: "100%", accentColor: scoreInfo.color, marginBottom: 8 }}
+        />
+
+        {/* Tick labels */}
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+          {[0, 1, 2, 3, 4, 5].map(v => (
+            <span key={v} style={{
+              fontSize: 10, color: v === controls.minScore ? scoreInfo.color : "#333",
+              fontWeight: v === controls.minScore ? 700 : 400,
+            }}>
+              {v}
+            </span>
+          ))}
+        </div>
+
+        <div style={{
+          background: "#0e0e0e", border: `1px solid ${scoreInfo.color}22`,
+          borderLeft: `3px solid ${scoreInfo.color}`,
+          borderRadius: 6, padding: "9px 12px",
+          fontSize: 12, color: "#888", lineHeight: 1.5,
+        }}>
+          {scoreInfo.detail}
+        </div>
+      </div>
+
+      {/* Per-label caps */}
+      <div style={{ marginBottom: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          Results per label
+        </span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        {LABEL_ORDER.map(label => (
+          <div key={label} style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            background: "#0e0e0e", border: "1px solid #1c1c1c",
+            borderRadius: 7, padding: "9px 12px",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: LABEL_COLORS[label] ?? "#555" }} />
+              <span style={{ fontSize: 12, color: "#888", textTransform: "capitalize" }}>{label}</span>
+            </div>
+            <input
+              type="number" min={1} max={20}
+              value={controls.caps[label] ?? 6}
+              onChange={e => onChange({
+                ...controls,
+                caps: { ...controls.caps, [label]: Math.max(1, Math.min(20, Number(e.target.value))) },
+              })}
+              style={{
+                width: 44, fontSize: 13, fontWeight: 600, textAlign: "center",
+                background: "#141414", border: "1px solid #2a2a2a",
+                borderRadius: 5, padding: "3px 0", color: "#e0e0e0",
+              }}
+            />
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={() => onChange(DEFAULT_CONTROLS)}
+        style={{
+          marginTop: 24, fontSize: 11, color: "#444", background: "none",
+          border: "none", cursor: "pointer", textDecoration: "underline",
+        }}
+      >
+        Reset to defaults
+      </button>
     </div>
   );
 }

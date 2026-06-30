@@ -80,13 +80,13 @@ export default function ProductGraphPage() {
           Product Graph
         </h1>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-          <label style={{ fontSize: 11, color: "#444" }}>Customer</label>
+          <label style={{ fontSize: 11, color: "var(--db-text-5)" }}>Customer</label>
           <input
             value={customerId}
             onChange={(e) => setCustomerId(e.target.value.trim())}
             style={{
-              fontSize: 12, border: "1px solid #2a2a2a", borderRadius: 5,
-              padding: "4px 10px", width: 160, background: "#141414", color: "#c9c9c9",
+              fontSize: 12, border: "1px solid var(--db-input-border)", borderRadius: 5,
+              padding: "4px 10px", width: 160, background: "var(--db-input-bg)", color: "var(--db-text-2)",
             }}
             placeholder="customer-id"
           />
@@ -105,7 +105,7 @@ export default function ProductGraphPage() {
             onClick={() => setTab(t)}
             style={{
               fontSize: 12, fontWeight: tab === t ? 600 : 400,
-              color: tab === t ? "#e0e0e0" : "#555",
+              color: tab === t ? "var(--db-text)" : "var(--db-text-4)",
               background: "none", border: "none",
               borderBottom: `2px solid ${tab === t ? "#cc785c" : "transparent"}`,
               padding: "8px 16px", cursor: "pointer", textTransform: "capitalize",
@@ -180,7 +180,7 @@ function IngestTab({ customerId }: { customerId: string }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 28 }}>
       <div>
-        <p style={{ fontSize: 12, color: "#555", marginBottom: 20, lineHeight: 1.6 }}>
+        <p style={{ fontSize: 12, color: "var(--db-text-4)", marginBottom: 20, lineHeight: 1.6 }}>
           Upload product docs, API references, internal specs, or Slack exports.
           Claude extracts capabilities, limitations, integrations, and constraints —
           then queues them for your review before writing to the graph.
@@ -193,17 +193,17 @@ function IngestTab({ customerId }: { customerId: string }) {
           onDrop={(e) => { e.preventDefault(); setDragging(false); void handleFiles(e.dataTransfer.files); }}
           onClick={() => fileRef.current?.click()}
           style={{
-            border: `1px dashed ${dragging ? "#1db584" : "#2a2a2a"}`,
+            border: `1px dashed ${dragging ? "#1db584" : "var(--db-border-alt)"}`,
             borderRadius: 10, padding: "40px 24px", textAlign: "center", cursor: "pointer",
-            background: dragging ? "rgba(29,181,132,0.04)" : "#0e0e0e",
+            background: dragging ? "rgba(29,181,132,0.04)" : "var(--db-surface)",
             transition: "all 0.15s", marginBottom: 16,
           }}
         >
           <div style={{ fontSize: 28, marginBottom: 8 }}>📄</div>
-          <div style={{ fontSize: 13, fontWeight: 500, color: loading ? "#555" : "#666" }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: loading ? "var(--db-text-4)" : "#666" }}>
             {loading ? "Processing..." : "Drop files here or click to upload"}
           </div>
-          <div style={{ fontSize: 11, color: "#383838", marginTop: 4 }}>txt · md · pdf</div>
+          <div style={{ fontSize: 11, color: "var(--db-text-6)", marginTop: 4 }}>txt · md · pdf</div>
           <input
             ref={fileRef}
             type="file"
@@ -216,7 +216,7 @@ function IngestTab({ customerId }: { customerId: string }) {
 
         <button
           onClick={() => setPasteMode(!pasteMode)}
-          style={{ fontSize: 11, color: "#444", background: "none", border: "none", cursor: "pointer", marginBottom: 12, textDecoration: "underline" }}
+          style={{ fontSize: 11, color: "var(--db-text-5)", background: "none", border: "none", cursor: "pointer", marginBottom: 12, textDecoration: "underline" }}
         >
           {pasteMode ? "Hide paste mode" : "Or paste text directly"}
         </button>
@@ -229,7 +229,7 @@ function IngestTab({ customerId }: { customerId: string }) {
               placeholder="File label (e.g. api-docs.txt)"
               style={{
                 width: "100%", fontSize: 12, border: "1px solid #222", borderRadius: 5,
-                padding: "7px 10px", marginBottom: 8, background: "#0e0e0e", color: "#c9c9c9",
+                padding: "7px 10px", marginBottom: 8, background: "var(--db-input-bg)", color: "var(--db-text-2)",
                 boxSizing: "border-box",
               }}
             />
@@ -240,7 +240,7 @@ function IngestTab({ customerId }: { customerId: string }) {
               rows={10}
               style={{
                 width: "100%", fontSize: 12, border: "1px solid #222", borderRadius: 5,
-                padding: "10px 12px", resize: "vertical", background: "#0e0e0e", color: "#c9c9c9",
+                padding: "10px 12px", resize: "vertical", background: "var(--db-input-bg)", color: "var(--db-text-2)",
                 boxSizing: "border-box", fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
               }}
             />
@@ -249,8 +249,8 @@ function IngestTab({ customerId }: { customerId: string }) {
               disabled={loading || !pasteText.trim()}
               style={{
                 marginTop: 8, fontSize: 12, padding: "7px 16px", borderRadius: 5,
-                background: loading || !pasteText.trim() ? "#1a1a1a" : "#cc785c",
-                color: loading || !pasteText.trim() ? "#444" : "#fff",
+                background: loading || !pasteText.trim() ? "var(--db-surface-2)" : "#cc785c",
+                color: loading || !pasteText.trim() ? "var(--db-text-5)" : "#fff",
                 border: "none", cursor: loading || !pasteText.trim() ? "not-allowed" : "pointer",
               }}
             >
@@ -263,18 +263,18 @@ function IngestTab({ customerId }: { customerId: string }) {
       {/* Jobs list */}
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-          <span style={{ fontSize: 11, fontWeight: 600, color: "#444", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--db-text-5)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
             Ingestion Jobs
           </span>
           <button
             onClick={() => void loadJobs()}
-            style={{ fontSize: 11, color: "#444", background: "none", border: "none", cursor: "pointer" }}
+            style={{ fontSize: 11, color: "var(--db-text-5)", background: "none", border: "none", cursor: "pointer" }}
           >
             ↻
           </button>
         </div>
         {jobs.length === 0 && (
-          <div style={{ fontSize: 12, color: "#383838", padding: "24px 0", textAlign: "center" }}>
+          <div style={{ fontSize: 12, color: "var(--db-text-6)", padding: "24px 0", textAlign: "center" }}>
             No jobs yet
           </div>
         )}
@@ -289,7 +289,7 @@ function IngestTab({ customerId }: { customerId: string }) {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  pending: "#444", chunking: "#f59e0b", extracting: "#3e78c8",
+  pending: "var(--db-text-5)", chunking: "#f59e0b", extracting: "#3e78c8",
   review: "#8b5cf6", writing: "#f59e0b", done: "#1db584", error: "#e05252",
 };
 
@@ -297,13 +297,13 @@ function JobCard({ job, onRefresh }: { job: IngestJob; onRefresh: () => void }) 
   return (
     <div
       style={{
-        background: "#0e0e0e", border: "1px solid #1c1c1c", borderRadius: 8, padding: "12px 14px",
+        background: "var(--db-surface)", border: "1px solid var(--db-border)", borderRadius: 8, padding: "12px 14px",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
         <span
           style={{
-            fontSize: 12, fontWeight: 500, color: "#c0c0c0",
+            fontSize: 12, fontWeight: 500, color: "var(--db-text-2)",
             maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           }}
         >
@@ -312,13 +312,13 @@ function JobCard({ job, onRefresh }: { job: IngestJob; onRefresh: () => void }) 
         <span
           style={{
             fontSize: 9, fontWeight: 700, letterSpacing: "0.06em",
-            color: STATUS_COLOR[job.status] ?? "#444", textTransform: "uppercase",
+            color: STATUS_COLOR[job.status] ?? "var(--db-text-5)", textTransform: "uppercase",
           }}
         >
           {job.status}
         </span>
       </div>
-      <div style={{ fontSize: 11, color: "#444" }}>
+      <div style={{ fontSize: 11, color: "var(--db-text-5)" }}>
         {job.chunkCount != null && `${job.chunkCount} chunks · `}
         {job.nodeCount != null && `${job.nodeCount} nodes extracted`}
         {job.errorMsg && <span style={{ color: "#e05252" }}> Error: {job.errorMsg}</span>}
@@ -416,7 +416,7 @@ function ReviewTab({ customerId }: { customerId: string }) {
               style={{
                 fontSize: 11, padding: "4px 10px", borderRadius: 5, cursor: "pointer",
                 background: filter === f ? "#222" : "transparent",
-                color: filter === f ? "#e0e0e0" : "#555",
+                color: filter === f ? "var(--db-text)" : "var(--db-text-4)",
                 border: `1px solid ${filter === f ? "#333" : "transparent"}`,
                 textTransform: "capitalize",
               }}
@@ -431,7 +431,7 @@ function ReviewTab({ customerId }: { customerId: string }) {
               onClick={() => void approveAll()}
               style={{
                 fontSize: 11, padding: "5px 12px", borderRadius: 5, cursor: "pointer",
-                background: "transparent", color: "#888",
+                background: "transparent", color: "var(--db-text-3)",
                 border: "1px solid #333",
               }}
             >
@@ -444,7 +444,7 @@ function ReviewTab({ customerId }: { customerId: string }) {
               disabled={writing}
               style={{
                 fontSize: 11, padding: "5px 12px", borderRadius: 5, cursor: writing ? "not-allowed" : "pointer",
-                background: writing ? "#1a1a1a" : "#cc785c", color: writing ? "#444" : "#fff", border: "none",
+                background: writing ? "var(--db-surface-2)" : "#cc785c", color: writing ? "var(--db-text-5)" : "#fff", border: "none",
               }}
             >
               {writing ? "Writing..." : `Write to graph (${approved})`}
@@ -452,7 +452,7 @@ function ReviewTab({ customerId }: { customerId: string }) {
           )}
           <button
             onClick={() => void load()}
-            style={{ fontSize: 11, color: "#444", background: "none", border: "none", cursor: "pointer" }}
+            style={{ fontSize: 11, color: "var(--db-text-5)", background: "none", border: "none", cursor: "pointer" }}
           >
             ↻
           </button>
@@ -471,10 +471,10 @@ function ReviewTab({ customerId }: { customerId: string }) {
       )}
 
       {loading && (
-        <div style={{ fontSize: 12, color: "#383838", padding: "32px 0", textAlign: "center" }}>Loading...</div>
+        <div style={{ fontSize: 12, color: "var(--db-text-6)", padding: "32px 0", textAlign: "center" }}>Loading...</div>
       )}
       {!loading && items.length === 0 && (
-        <div style={{ fontSize: 12, color: "#383838", padding: "32px 0", textAlign: "center" }}>
+        <div style={{ fontSize: 12, color: "var(--db-text-6)", padding: "32px 0", textAlign: "center" }}>
           No {filter === "all" ? "" : filter} items. Upload a document in the Ingest tab.
         </div>
       )}
@@ -515,14 +515,14 @@ function ReviewCard({
   onReject: () => void;
   onCancelEdit: () => void;
 }) {
-  const color = LABEL_COLORS[item.label] ?? "#888";
+  const color = LABEL_COLORS[item.label] ?? "var(--db-text-3)";
   const icon = LABEL_ICONS[item.label] ?? "·";
 
   return (
     <div
       style={{
-        background: item.status === "approved" ? "rgba(29,181,132,0.05)" : "#0e0e0e",
-        border: `1px solid ${item.status === "approved" ? "rgba(29,181,132,0.2)" : item.status === "rejected" ? "rgba(224,82,82,0.15)" : "#1c1c1c"}`,
+        background: item.status === "approved" ? "rgba(29,181,132,0.05)" : "var(--db-surface)",
+        border: `1px solid ${item.status === "approved" ? "rgba(29,181,132,0.2)" : item.status === "rejected" ? "rgba(224,82,82,0.15)" : "var(--db-border)"}`,
         borderRadius: 8, padding: "12px 14px",
       }}
     >
@@ -544,8 +544,8 @@ function ReviewCard({
                 onChange={(e) => onEditName(e.target.value)}
                 style={{
                   width: "100%", fontSize: 13, fontWeight: 500, border: "1px solid #2a2a2a",
-                  borderRadius: 5, padding: "4px 8px", marginBottom: 5, background: "#141414",
-                  color: "#e0e0e0", boxSizing: "border-box",
+                  borderRadius: 5, padding: "4px 8px", marginBottom: 5, background: "var(--db-surface-2)",
+                  color: "var(--db-text)", boxSizing: "border-box",
                 }}
               />
               <textarea
@@ -555,16 +555,16 @@ function ReviewCard({
                 style={{
                   width: "100%", fontSize: 12, border: "1px solid #2a2a2a",
                   borderRadius: 5, padding: "4px 8px", resize: "vertical",
-                  background: "#141414", color: "#c9c9c9", boxSizing: "border-box",
+                  background: "var(--db-surface-2)", color: "var(--db-text-2)", boxSizing: "border-box",
                 }}
               />
             </>
           ) : (
             <>
-              <div style={{ fontSize: 13, fontWeight: 500, color: "#c9c9c9", marginBottom: 3 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: "var(--db-text-2)", marginBottom: 3 }}>
                 {item.editedName ?? item.name}
               </div>
-              <div style={{ fontSize: 12, color: "#555", lineHeight: 1.45 }}>
+              <div style={{ fontSize: 12, color: "var(--db-text-4)", lineHeight: 1.45 }}>
                 {item.editedDescription ?? item.description}
               </div>
             </>
@@ -579,7 +579,7 @@ function ReviewCard({
             >
               {item.label}
             </span>
-            <span style={{ fontSize: 10, color: "#383838" }}>
+            <span style={{ fontSize: 10, color: "var(--db-text-6)" }}>
               {Math.round(item.confidence * 100)}% confidence
             </span>
           </div>
@@ -597,7 +597,7 @@ function ReviewCard({
                 </button>
                 <button
                   onClick={onCancelEdit}
-                  style={{ fontSize: 11, padding: "4px 9px", borderRadius: 5, background: "#1a1a1a", color: "#888", border: "none", cursor: "pointer" }}
+                  style={{ fontSize: 11, padding: "4px 9px", borderRadius: 5, background: "var(--db-surface-2)", color: "var(--db-text-3)", border: "none", cursor: "pointer" }}
                 >
                   Cancel
                 </button>
@@ -612,13 +612,13 @@ function ReviewCard({
                 </button>
                 <button
                   onClick={onEdit}
-                  style={{ fontSize: 11, padding: "4px 9px", borderRadius: 5, background: "#1a1a1a", color: "#888", border: "1px solid #2a2a2a", cursor: "pointer" }}
+                  style={{ fontSize: 11, padding: "4px 9px", borderRadius: 5, background: "var(--db-surface-2)", color: "var(--db-text-3)", border: "1px solid #2a2a2a", cursor: "pointer" }}
                 >
                   Edit
                 </button>
                 <button
                   onClick={onReject}
-                  style={{ fontSize: 11, padding: "4px 9px", borderRadius: 5, background: "#1a1a1a", color: "#e05252", border: "1px solid #2a1a1a", cursor: "pointer" }}
+                  style={{ fontSize: 11, padding: "4px 9px", borderRadius: 5, background: "var(--db-surface-2)", color: "#e05252", border: "1px solid #2a1a1a", cursor: "pointer" }}
                 >
                   ✗
                 </button>
@@ -695,11 +695,11 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
     <div>
       {/* Active controls strip */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14 }}>
-        <span style={{ fontSize: 11, color: "#383838" }}>min score</span>
+        <span style={{ fontSize: 11, color: "var(--db-text-6)" }}>min score</span>
         <span style={{ fontSize: 12, fontWeight: 700, color: "#cc785c", background: "rgba(204,120,92,0.1)", borderRadius: 4, padding: "2px 7px" }}>
           {controls.minScore}
         </span>
-        <span style={{ fontSize: 11, color: "#2a2a2a", marginLeft: 4 }}>
+        <span style={{ fontSize: 11, color: "var(--db-border-alt)", marginLeft: 4 }}>
           {controls.minScore <= 1 ? "· maximum recall" : controls.minScore <= 2 ? "· balanced" : controls.minScore <= 3 ? "· low noise" : "· precision mode"}
         </span>
       </div>
@@ -726,9 +726,9 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
           rows={3}
           placeholder="Describe the deal — e.g. Northwind needs real-time Salesforce sync, custom dashboards, role-based access, and SOC 2 compliance..."
           style={{
-            flex: 1, fontSize: 12, border: "1px solid #2a2a2a", borderRadius: 8,
-            padding: "10px 14px", resize: "vertical", background: "#0e0e0e",
-            color: "#c9c9c9", fontFamily: "inherit",
+            flex: 1, fontSize: 12, border: "1px solid var(--db-input-border)", borderRadius: 8,
+            padding: "10px 14px", resize: "vertical", background: "var(--db-input-bg)",
+            color: "var(--db-text-2)", fontFamily: "inherit",
           }}
         />
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -737,8 +737,8 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
             disabled={loading || !query.trim()}
             style={{
               fontSize: 12, padding: "8px 14px", borderRadius: 6, whiteSpace: "nowrap",
-              background: loading || !query.trim() ? "#1a1a1a" : "#cc785c",
-              color: loading || !query.trim() ? "#444" : "#fff",
+              background: loading || !query.trim() ? "var(--db-surface-2)" : "#cc785c",
+              color: loading || !query.trim() ? "var(--db-text-5)" : "#fff",
               border: "none", cursor: loading || !query.trim() ? "not-allowed" : "pointer",
             }}
           >
@@ -749,8 +749,8 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
             disabled={loading || !query.trim()}
             style={{
               fontSize: 12, padding: "8px 14px", borderRadius: 6, whiteSpace: "nowrap",
-              background: "transparent", color: loading || !query.trim() ? "#444" : "#888",
-              border: `1px solid ${loading || !query.trim() ? "#1a1a1a" : "#333"}`,
+              background: "transparent", color: loading || !query.trim() ? "var(--db-text-5)" : "var(--db-text-3)",
+              border: `1px solid ${loading || !query.trim() ? "var(--db-surface-2)" : "#333"}`,
               cursor: loading || !query.trim() ? "not-allowed" : "pointer",
             }}
           >
@@ -762,24 +762,24 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
       {promptText && (
         <div
           style={{
-            background: "#070710", border: "1px solid #1c1c2e", borderRadius: 9,
+            background: "var(--db-surface-2)", border: "1px solid var(--db-border)", borderRadius: 9,
             padding: "18px 20px", marginBottom: 24,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: "#444", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "var(--db-text-5)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
               Prompt context block
             </span>
             <button
               onClick={() => void navigator.clipboard.writeText(promptText)}
-              style={{ fontSize: 11, color: "#555", background: "none", border: "none", cursor: "pointer" }}
+              style={{ fontSize: 11, color: "var(--db-text-4)", background: "none", border: "none", cursor: "pointer" }}
             >
               Copy
             </button>
           </div>
           <pre
             style={{
-              fontSize: 11, color: "#8899ae", margin: 0, whiteSpace: "pre-wrap",
+              fontSize: 11, color: "var(--db-text-3)", margin: 0, whiteSpace: "pre-wrap",
               lineHeight: 1.65, fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
             }}
           >
@@ -790,7 +790,7 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
 
       {result && (
         <div>
-          <div style={{ fontSize: 12, color: "#444", marginBottom: 16 }}>
+          <div style={{ fontSize: 12, color: "var(--db-text-5)", marginBottom: 16 }}>
             Matched context across{" "}
             {new Set((Object.values(result) as ProductNode[][]).flat().map(n => n.name)).size} unique nodes
           </div>
@@ -818,14 +818,14 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
                     <div
                       key={n.id}
                       style={{
-                        background: "#0e0e0e", border: "1px solid #1c1c1c",
+                        background: "var(--db-surface)", border: "1px solid #1c1c1c",
                         borderRadius: 7, padding: "9px 12px",
                       }}
                     >
-                      <div style={{ fontSize: 12, fontWeight: 500, color: "#c9c9c9", marginBottom: 2 }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: "var(--db-text-2)", marginBottom: 2 }}>
                         {n.name}
                       </div>
-                      <div style={{ fontSize: 11, color: "#555" }}>{n.description}</div>
+                      <div style={{ fontSize: 11, color: "var(--db-text-4)" }}>{n.description}</div>
                     </div>
                   ))}
                 </div>
@@ -841,7 +841,7 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
 // ─── Controls Tab ─────────────────────────────────────────────────────────────
 
 const SCORE_LABELS: Record<number, { label: string; detail: string; color: string }> = {
-  0: { label: "All nodes",       detail: "No filtering — include everything matched by FTS",         color: "#555" },
+  0: { label: "All nodes",       detail: "No filtering — include everything matched by FTS",         color: "var(--db-text-4)" },
   1: { label: "Any match",       detail: "At least one query term appears anywhere in the node",     color: "#6b7280" },
   2: { label: "Balanced",        detail: "Strong description match or any name match — recommended", color: "#cc785c" },
   3: { label: "Name match",      detail: "Query term must appear in the node name",                  color: "#3e78c8" },
@@ -856,7 +856,7 @@ function ControlsTab({ controls, onChange }: { controls: GraphControls; onChange
 
   return (
     <div style={{ maxWidth: 560 }}>
-      <p style={{ fontSize: 12, color: "#555", marginBottom: 28, lineHeight: 1.6 }}>
+      <p style={{ fontSize: 12, color: "var(--db-text-4)", marginBottom: 28, lineHeight: 1.6 }}>
         Tune how aggressively the query filters nodes by relevance. Higher score = less noise, fewer results.
         Lower score = more recall, more noise. Changes apply immediately to the next query.
       </p>
@@ -864,7 +864,7 @@ function ControlsTab({ controls, onChange }: { controls: GraphControls; onChange
       {/* Min score slider */}
       <div style={{ marginBottom: 36 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--db-text-3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
             Min relevance score
           </span>
           <span style={{ fontSize: 18, fontWeight: 700, color: scoreInfo.color }}>
@@ -895,10 +895,10 @@ function ControlsTab({ controls, onChange }: { controls: GraphControls; onChange
         </div>
 
         <div style={{
-          background: "#0e0e0e", border: `1px solid ${scoreInfo.color}22`,
+          background: "var(--db-surface)", border: `1px solid ${scoreInfo.color}22`,
           borderLeft: `3px solid ${scoreInfo.color}`,
           borderRadius: 6, padding: "9px 12px",
-          fontSize: 12, color: "#888", lineHeight: 1.5,
+          fontSize: 12, color: "var(--db-text-3)", lineHeight: 1.5,
         }}>
           {scoreInfo.detail}
         </div>
@@ -906,7 +906,7 @@ function ControlsTab({ controls, onChange }: { controls: GraphControls; onChange
 
       {/* Per-label caps */}
       <div style={{ marginBottom: 8 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--db-text-3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
           Results per label
         </span>
       </div>
@@ -914,12 +914,12 @@ function ControlsTab({ controls, onChange }: { controls: GraphControls; onChange
         {LABEL_ORDER.map(label => (
           <div key={label} style={{
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            background: "#0e0e0e", border: "1px solid #1c1c1c",
+            background: "var(--db-surface)", border: "1px solid #1c1c1c",
             borderRadius: 7, padding: "9px 12px",
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-              <div style={{ width: 6, height: 6, borderRadius: "50%", background: LABEL_COLORS[label] ?? "#555" }} />
-              <span style={{ fontSize: 12, color: "#888", textTransform: "capitalize" }}>{label}</span>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: LABEL_COLORS[label] ?? "var(--db-text-4)" }} />
+              <span style={{ fontSize: 12, color: "var(--db-text-3)", textTransform: "capitalize" }}>{label}</span>
             </div>
             <input
               type="number" min={1} max={20}
@@ -930,8 +930,8 @@ function ControlsTab({ controls, onChange }: { controls: GraphControls; onChange
               })}
               style={{
                 width: 44, fontSize: 13, fontWeight: 600, textAlign: "center",
-                background: "#141414", border: "1px solid #2a2a2a",
-                borderRadius: 5, padding: "3px 0", color: "#e0e0e0",
+                background: "var(--db-surface-2)", border: "1px solid #2a2a2a",
+                borderRadius: 5, padding: "3px 0", color: "var(--db-text)",
               }}
             />
           </div>
@@ -941,7 +941,7 @@ function ControlsTab({ controls, onChange }: { controls: GraphControls; onChange
       <button
         onClick={() => onChange(DEFAULT_CONTROLS)}
         style={{
-          marginTop: 24, fontSize: 11, color: "#444", background: "none",
+          marginTop: 24, fontSize: 11, color: "var(--db-text-5)", background: "none",
           border: "none", cursor: "pointer", textDecoration: "underline",
         }}
       >
@@ -955,13 +955,13 @@ function StatChip({ label, value, color }: { label: string; value: number; color
   return (
     <div
       style={{
-        background: "#0e0e0e", border: "1px solid #1c1c1c", borderRadius: 7,
+        background: "var(--db-surface)", border: "1px solid #1c1c1c", borderRadius: 7,
         padding: "7px 12px", display: "flex", alignItems: "center", gap: 7,
       }}
     >
       {color && <div style={{ width: 6, height: 6, borderRadius: "50%", background: color }} />}
-      <span style={{ fontSize: 11, color: "#444" }}>{label}</span>
-      <span style={{ fontSize: 13, fontWeight: 600, color: "#e0e0e0" }}>{value}</span>
+      <span style={{ fontSize: 11, color: "var(--db-text-5)" }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--db-text)" }}>{value}</span>
     </div>
   );
 }

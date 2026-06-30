@@ -43,7 +43,7 @@ function modelColor(model: string): string {
   for (const [key, color] of Object.entries(MODEL_COLORS)) {
     if (model.toLowerCase().includes(key)) return color;
   }
-  return "rgba(255,255,255,0.3)";
+  return "var(--db-overlay-hover)";
 }
 
 export default function LlmCallsPage() {
@@ -88,7 +88,7 @@ export default function LlmCallsPage() {
           href="/dashboard"
           style={{
             fontSize: 12,
-            color: "rgba(255,255,255,0.3)",
+            color: "var(--db-text-6)",
             textDecoration: "none",
             fontWeight: 600,
           }}
@@ -126,13 +126,13 @@ export default function LlmCallsPage() {
           <div
             key={label as string}
             style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.07)",
+              background: "var(--db-overlay-md)",
+              border: "1px solid var(--db-border)",
               borderRadius: 9,
               padding: "14px 16px",
             }}
           >
-            <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--db-text-6)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
               {label}
             </div>
             <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.03em" }}>{value}</div>
@@ -144,15 +144,15 @@ export default function LlmCallsPage() {
         {/* Spans table */}
         <div
           style={{
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid rgba(255,255,255,0.07)",
+            background: "var(--db-overlay-sm)",
+            border: "1px solid var(--db-border)",
             borderRadius: 12,
             overflow: "hidden",
           }}
         >
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
-              <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+              <tr style={{ borderBottom: "1px solid var(--db-overlay-md)" }}>
                 {["Surface", "Input", "Model", "Tokens", "Latency", "Time"].map((h) => (
                   <th
                     key={h}
@@ -161,10 +161,10 @@ export default function LlmCallsPage() {
                       textAlign: "left",
                       fontSize: 10,
                       fontWeight: 700,
-                      color: "rgba(255,255,255,0.3)",
+                      color: "var(--db-text-6)",
                       textTransform: "uppercase",
                       letterSpacing: "0.05em",
-                      background: "rgba(255,255,255,0.02)",
+                      background: "var(--db-overlay-sm)",
                     }}
                   >
                     {h}
@@ -175,13 +175,13 @@ export default function LlmCallsPage() {
             <tbody>
               {loading && spans.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: "24px 14px", fontSize: 12, color: "rgba(255,255,255,0.25)", textAlign: "center" }}>
+                  <td colSpan={6} style={{ padding: "24px 14px", fontSize: 12, color: "var(--db-text-6)", textAlign: "center" }}>
                     Loading…
                   </td>
                 </tr>
               ) : spans.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: "24px 14px", fontSize: 12, color: "rgba(255,255,255,0.25)", textAlign: "center" }}>
+                  <td colSpan={6} style={{ padding: "24px 14px", fontSize: 12, color: "var(--db-text-6)", textAlign: "center" }}>
                     No spans yet. LLM calls will appear here once Braintrust is wired up and the app is running.
                   </td>
                 </tr>
@@ -191,7 +191,7 @@ export default function LlmCallsPage() {
                     key={s.id}
                     onClick={() => setSelected(selected?.id === s.id ? null : s)}
                     style={{
-                      borderBottom: "1px solid rgba(255,255,255,0.04)",
+                      borderBottom: "1px solid var(--db-overlay-md)",
                       cursor: "pointer",
                       background: selected?.id === s.id ? "rgba(204,120,92,0.07)" : "transparent",
                       transition: "background 0.1s",
@@ -202,8 +202,8 @@ export default function LlmCallsPage() {
                         style={{
                           fontSize: 9,
                           fontWeight: 700,
-                          background: s.hadThinking ? "rgba(204,120,92,0.15)" : "rgba(255,255,255,0.06)",
-                          color: s.hadThinking ? "#cc785c" : "rgba(255,255,255,0.4)",
+                          background: s.hadThinking ? "rgba(204,120,92,0.15)" : "var(--db-overlay-md)",
+                          color: s.hadThinking ? "#cc785c" : "var(--db-text-5)",
                           padding: "2px 6px",
                           borderRadius: 4,
                           textTransform: "uppercase",
@@ -213,20 +213,20 @@ export default function LlmCallsPage() {
                       </span>
                     </td>
                     <td style={{ padding: "9px 14px", maxWidth: 280 }}>
-                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.75)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div style={{ fontSize: 12, color: "var(--db-text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {s.input || "(empty)"}
                       </div>
                     </td>
                     <td style={{ padding: "9px 14px" }}>
                       <span style={{ fontSize: 11, color: modelColor(s.model), fontWeight: 600 }}>{s.model}</span>
                     </td>
-                    <td style={{ padding: "9px 14px", fontSize: 11, color: "rgba(255,255,255,0.4)", fontVariantNumeric: "tabular-nums" }}>
+                    <td style={{ padding: "9px 14px", fontSize: 11, color: "var(--db-text-5)", fontVariantNumeric: "tabular-nums" }}>
                       {s.tokens > 0 ? s.tokens.toLocaleString() : "—"}
                     </td>
                     <td style={{ padding: "9px 14px", fontSize: 12, color: "#1db584", fontVariantNumeric: "tabular-nums" }}>
                       {formatMs(s.latencyMs)}
                     </td>
-                    <td style={{ padding: "9px 14px", fontSize: 11, color: "rgba(255,255,255,0.25)" }}>
+                    <td style={{ padding: "9px 14px", fontSize: 11, color: "var(--db-text-6)" }}>
                       {timeAgo(s.created)}
                     </td>
                   </tr>
@@ -240,8 +240,8 @@ export default function LlmCallsPage() {
         {selected && (
           <div
             style={{
-              background: "rgba(255,255,255,0.03)",
-              border: "1px solid rgba(255,255,255,0.07)",
+              background: "var(--db-overlay-sm)",
+              border: "1px solid var(--db-border)",
               borderRadius: 12,
               padding: 20,
               display: "flex",
@@ -256,7 +256,7 @@ export default function LlmCallsPage() {
               <button
                 type="button"
                 onClick={() => setSelected(null)}
-                style={{ background: "none", border: "none", color: "rgba(255,255,255,0.3)", cursor: "pointer", fontSize: 16, padding: 0 }}
+                style={{ background: "none", border: "none", color: "var(--db-border-alt)", cursor: "pointer", fontSize: 16, padding: 0 }}
               >
                 ×
               </button>
@@ -271,23 +271,23 @@ export default function LlmCallsPage() {
                 ["Thinking", selected.hadThinking ? `Yes (${selected.thinkingLength.toLocaleString()} chars)` : "No"],
                 ["Time", new Date(selected.created).toLocaleTimeString()],
               ].map(([k, v]) => (
-                <div key={k as string} style={{ background: "rgba(255,255,255,0.04)", borderRadius: 6, padding: "8px 10px" }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 3 }}>{k}</div>
-                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>{v}</div>
+                <div key={k as string} style={{ background: "var(--db-overlay-md)", borderRadius: 6, padding: "8px 10px" }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: "var(--db-text-6)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 3 }}>{k}</div>
+                  <div style={{ fontSize: 12, color: "var(--db-text-2)" }}>{v}</div>
                 </div>
               ))}
             </div>
 
             <div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Input</div>
-              <pre style={{ margin: 0, fontSize: 11.5, color: "rgba(255,255,255,0.65)", background: "rgba(255,255,255,0.04)", borderRadius: 7, padding: 10, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 180, overflow: "auto", lineHeight: 1.5 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--db-text-6)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Input</div>
+              <pre style={{ margin: 0, fontSize: 11.5, color: "var(--db-text-3)", background: "var(--db-text-6)", borderRadius: 7, padding: 10, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 180, overflow: "auto", lineHeight: 1.5 }}>
                 {selected.input || "(empty)"}
               </pre>
             </div>
 
             <div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Output</div>
-              <pre style={{ margin: 0, fontSize: 11.5, color: "rgba(255,255,255,0.65)", background: "rgba(255,255,255,0.04)", borderRadius: 7, padding: 10, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 200, overflow: "auto", lineHeight: 1.5 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--db-text-6)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Output</div>
+              <pre style={{ margin: 0, fontSize: 11.5, color: "var(--db-text-3)", background: "var(--db-text-6)", borderRadius: 7, padding: 10, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 200, overflow: "auto", lineHeight: 1.5 }}>
                 {selected.output || "(empty)"}
               </pre>
             </div>

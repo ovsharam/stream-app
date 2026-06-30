@@ -27,7 +27,7 @@ type Stats = {
 };
 
 const STATUS_COLOR: Record<JobStatus, string> = {
-  pending:    "rgba(255,255,255,0.2)",
+  pending:    "var(--db-overlay-hover)",
   chunking:   "#f59e0b",
   extracting: "#3e78c8",
   review:     "#cc785c",
@@ -76,14 +76,14 @@ function PipelineFlow({ activeStatus }: { activeStatus?: JobStatus }) {
       {STAGE_ORDER.map((stage, i) => {
         const isActive = stage === activeStatus;
         const isDone = activeStatus && STAGE_ORDER.indexOf(activeStatus) > i;
-        const color = isDone ? "#1db584" : isActive ? STATUS_COLOR[stage] : "rgba(255,255,255,0.08)";
-        const labelColor = isDone || isActive ? "#e0e0e0" : "#444";
+        const color = isDone ? "#1db584" : isActive ? STATUS_COLOR[stage] : "var(--db-overlay-hover)";
+        const labelColor = isDone || isActive ? "var(--db-text)" : "var(--db-text-5)";
         return (
           <div key={stage} style={{ display: "flex", alignItems: "center", flex: 1 }}>
             <div style={{
               flex: 1,
               padding: "10px 12px",
-              background: isActive ? `${color}18` : isDone ? "rgba(29,181,132,0.06)" : "#111",
+              background: isActive ? `${color}18` : isDone ? "rgba(29,181,132,0.06)" : "var(--db-surface)",
               border: `1px solid ${color}`,
               borderRadius: i === 0 ? "6px 0 0 6px" : i === STAGE_ORDER.length - 1 ? "0 6px 6px 0" : 0,
               borderRight: i < STAGE_ORDER.length - 1 ? "none" : undefined,
@@ -176,7 +176,7 @@ export default function PipelinePage() {
     <div style={{ padding: "24px 28px" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 28 }}>
-        <Link href="/dashboard" style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", textDecoration: "none", fontWeight: 600 }}>
+        <Link href="/dashboard" style={{ fontSize: 12, color: "var(--db-text-6)", textDecoration: "none", fontWeight: 600 }}>
           ← Overview
         </Link>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, letterSpacing: "-0.03em" }}>
@@ -184,9 +184,9 @@ export default function PipelinePage() {
         </h1>
         <span style={{
           fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 5,
-          background: activeJob ? "rgba(59,130,246,0.12)" : "rgba(255,255,255,0.05)",
-          color: activeJob ? "#3e78c8" : "#444",
-          border: `1px solid ${activeJob ? "rgba(59,130,246,0.25)" : "#1c1c1c"}`,
+          background: activeJob ? "rgba(59,130,246,0.12)" : "var(--db-overlay-md)",
+          color: activeJob ? "#3e78c8" : "var(--db-text-5)",
+          border: `1px solid ${activeJob ? "rgba(59,130,246,0.25)" : "var(--db-border)"}`,
         }}>
           {activeJob ? `● ${STATUS_LABEL[activeJob.status]}` : "Idle"}
         </span>
@@ -204,10 +204,10 @@ export default function PipelinePage() {
           { label: "Last ingest", value: stats?.lastUpdated ? timeAgo(stats.lastUpdated) : "—" },
         ].map(({ label, value }) => (
           <div key={label} style={{
-            background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)",
+            background: "var(--db-border)", border: "1px solid var(--db-border)",
             borderRadius: 9, padding: "14px 16px",
           }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--db-text-6)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
               {label}
             </div>
             <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em" }}>{value}</div>
@@ -225,12 +225,12 @@ export default function PipelinePage() {
             onDrop={handleDrop}
             onClick={() => fileRef.current?.click()}
             style={{
-              border: `1px dashed ${dragOver ? "#3e78c8" : uploading ? "#1db584" : "rgba(255,255,255,0.12)"}`,
+              border: `1px dashed ${dragOver ? "#3e78c8" : uploading ? "#1db584" : "var(--db-border-alt)"}`,
               borderRadius: 10,
               padding: "22px 24px",
               textAlign: "center",
               cursor: uploading ? "wait" : "pointer",
-              background: dragOver ? "rgba(62,120,200,0.05)" : "rgba(255,255,255,0.02)",
+              background: dragOver ? "rgba(62,120,200,0.05)" : "var(--db-overlay-sm)",
               transition: "all 0.15s",
             }}
           >
@@ -241,10 +241,10 @@ export default function PipelinePage() {
               style={{ display: "none" }}
               onChange={e => { const f = e.target.files?.[0]; if (f) void uploadFile(f); }}
             />
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", marginBottom: 4 }}>
+            <div style={{ fontSize: 13, color: "var(--db-text-5)", marginBottom: 4 }}>
               {uploading ? "Uploading…" : dragOver ? "Drop to ingest" : "Drop a doc or click to upload"}
             </div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.18)" }}>
+            <div style={{ fontSize: 11, color: "var(--db-text-6)" }}>
               PDF, Markdown, plain text — API docs, internal specs, Slack exports
             </div>
             {uploadMsg && (
@@ -260,24 +260,24 @@ export default function PipelinePage() {
 
           {/* Jobs table */}
           <div style={{
-            background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)",
+            background: "var(--db-border)", border: "1px solid var(--db-border)",
             borderRadius: 12, overflow: "hidden",
           }}>
             <div style={{
-              padding: "10px 16px", borderBottom: "1px solid rgba(255,255,255,0.07)",
+              padding: "10px 16px", borderBottom: "1px solid var(--db-overlay-md)",
               display: "flex", alignItems: "center", justifyContent: "space-between",
             }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: "var(--db-text-6)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
                 Ingest jobs
               </span>
-              <Link href="/dashboard/product-graph" style={{ fontSize: 11, color: "#444", textDecoration: "none" }}>
+              <Link href="/dashboard/product-graph" style={{ fontSize: 11, color: "var(--db-text-5)", textDecoration: "none" }}>
                 Full review queue →
               </Link>
             </div>
             {loading ? (
-              <p style={{ padding: "20px 16px", fontSize: 12, color: "#383838", margin: 0 }}>Loading…</p>
+              <p style={{ padding: "20px 16px", fontSize: 12, color: "var(--db-text-6)", margin: 0 }}>Loading…</p>
             ) : recentJobs.length === 0 ? (
-              <p style={{ padding: "20px 16px", fontSize: 12, color: "#383838", margin: 0 }}>
+              <p style={{ padding: "20px 16px", fontSize: 12, color: "var(--db-text-6)", margin: 0 }}>
                 No jobs yet. Upload a document above to start building the context graph.
               </p>
             ) : (
@@ -287,19 +287,19 @@ export default function PipelinePage() {
                 const pct = job.status === "done" ? 100 : job.status === "error" ? 0 : Math.round((stageIdx / (STAGE_ORDER.length - 1)) * 100);
                 return (
                   <div key={job.id} style={{
-                    padding: "10px 16px", borderBottom: "1px solid rgba(255,255,255,0.04)",
+                    padding: "10px 16px", borderBottom: "1px solid var(--db-overlay-md)",
                     display: "grid", gridTemplateColumns: "1fr 80px 100px 70px", gap: 12, alignItems: "center",
                   }}>
                     <div>
-                      <div style={{ fontSize: 12, color: "#c0c0c0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 3 }}>
+                      <div style={{ fontSize: 12, color: "var(--db-text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 3 }}>
                         {job.fileName}
                       </div>
                       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                         {/* Progress bar */}
-                        <div style={{ flex: 1, height: 2, background: "#1a1a1a", borderRadius: 1, overflow: "hidden", maxWidth: 120 }}>
+                        <div style={{ flex: 1, height: 2, background: "var(--db-surface-2)", borderRadius: 1, overflow: "hidden", maxWidth: 120 }}>
                           <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 1, transition: "width 0.4s" }} />
                         </div>
-                        <span style={{ fontSize: 9, color: "#383838", fontVariantNumeric: "tabular-nums" }}>
+                        <span style={{ fontSize: 9, color: "var(--db-text-6)", fontVariantNumeric: "tabular-nums" }}>
                           {job.chunkCount != null ? `${job.chunkCount} chunks` : ""}
                           {job.nodeCount != null ? ` · ${job.nodeCount} nodes` : ""}
                         </span>
@@ -313,10 +313,10 @@ export default function PipelinePage() {
                     }}>
                       {STATUS_LABEL[job.status]}
                     </span>
-                    <span style={{ fontSize: 10, color: "#383838", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span style={{ fontSize: 10, color: "var(--db-text-6)", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {job.id.slice(-12)}
                     </span>
-                    <span style={{ fontSize: 10, color: "#383838", textAlign: "right" }}>
+                    <span style={{ fontSize: 10, color: "var(--db-text-6)", textAlign: "right" }}>
                       {timeAgo(job.updatedAt)}
                     </span>
                   </div>
@@ -329,10 +329,10 @@ export default function PipelinePage() {
         {/* Right: graph composition */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{
-            background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)",
+            background: "var(--db-border)", border: "1px solid var(--db-border)",
             borderRadius: 12, padding: "16px",
           }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 14 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--db-text-6)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 14 }}>
               Graph composition
             </div>
             {stats ? (
@@ -343,33 +343,33 @@ export default function PipelinePage() {
                   return (
                     <div key={label} style={{ marginBottom: 10 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                        <span style={{ fontSize: 11, color: LABEL_COLORS[label] ?? "#888", textTransform: "capitalize", fontWeight: 500 }}>
+                        <span style={{ fontSize: 11, color: LABEL_COLORS[label] ?? "var(--db-text-3)", textTransform: "capitalize", fontWeight: 500 }}>
                           {label}
                         </span>
-                        <span style={{ fontSize: 11, color: "#555", fontVariantNumeric: "tabular-nums" }}>
+                        <span style={{ fontSize: 11, color: "var(--db-text-4)", fontVariantNumeric: "tabular-nums" }}>
                           {count}
                         </span>
                       </div>
-                      <div style={{ height: 3, background: "#1a1a1a", borderRadius: 2, overflow: "hidden" }}>
-                        <div style={{ height: "100%", width: `${pct}%`, background: LABEL_COLORS[label] ?? "#888", borderRadius: 2 }} />
+                      <div style={{ height: 3, background: "var(--db-surface-2)", borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${pct}%`, background: LABEL_COLORS[label] ?? "var(--db-text-3)", borderRadius: 2 }} />
                       </div>
                     </div>
                   );
                 })
               ) : (
-                <p style={{ fontSize: 12, color: "#383838", margin: 0 }}>Graph is empty. Ingest documents to populate.</p>
+                <p style={{ fontSize: 12, color: "var(--db-text-6)", margin: 0 }}>Graph is empty. Ingest documents to populate.</p>
               )
             ) : (
-              <p style={{ fontSize: 12, color: "#383838", margin: 0 }}>—</p>
+              <p style={{ fontSize: 12, color: "var(--db-text-6)", margin: 0 }}>—</p>
             )}
           </div>
 
           {/* Pipeline legend */}
           <div style={{
-            background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)",
+            background: "var(--db-border)", border: "1px solid var(--db-border)",
             borderRadius: 12, padding: "16px",
           }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 14 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--db-text-6)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 14 }}>
               How it works
             </div>
             {[
@@ -379,10 +379,10 @@ export default function PipelinePage() {
               { step: "04", title: "Write to graph", body: "Approved nodes land in the context graph — live for FDE agents" },
             ].map(({ step, title, body }) => (
               <div key={step} style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-                <span style={{ fontSize: 9, color: "#383838", fontFamily: "monospace", fontWeight: 700, flexShrink: 0, paddingTop: 2 }}>{step}</span>
+                <span style={{ fontSize: 9, color: "var(--db-text-6)", fontFamily: "monospace", fontWeight: 700, flexShrink: 0, paddingTop: 2 }}>{step}</span>
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: "#888", marginBottom: 2 }}>{title}</div>
-                  <div style={{ fontSize: 11, color: "#444", lineHeight: 1.5 }}>{body}</div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "var(--db-text-3)", marginBottom: 2 }}>{title}</div>
+                  <div style={{ fontSize: 11, color: "var(--db-text-5)", lineHeight: 1.5 }}>{body}</div>
                 </div>
               </div>
             ))}

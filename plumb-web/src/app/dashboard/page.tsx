@@ -22,7 +22,7 @@ const DOT: Record<string, { icon: string; color: string }> = {
   success: { icon: "✓", color: "#3ecf8e" },
   failure: { icon: "✗", color: "#e05c45" },
   in_progress: { icon: "●", color: "#f59e0b" },
-  cancelled: { icon: "–", color: "#444" },
+  cancelled: { icon: "–", color: "var(--db-text-5)" },
 };
 
 export default function DashboardPage() {
@@ -77,7 +77,7 @@ export default function DashboardPage() {
           </div>
           <div className="db-pane-body">
             {spans.length === 0 ? (
-              <div className="db-empty">No traces yet.<br />Start the Plumb server with <code style={{ color: "#555" }}>BRAINTRUST_API_KEY</code> set.</div>
+              <div className="db-empty">No traces yet.<br />Start the Plumb server with <code style={{ color: "var(--db-text-4)" }}>BRAINTRUST_API_KEY</code> set.</div>
             ) : spans.slice(0, 25).map(s => (
               <div key={s.id} className="db-row">
                 <span className={`db-tag ${s.hadThinking ? "thinking" : "normal"}`}>{s.surface}</span>
@@ -112,7 +112,7 @@ export default function DashboardPage() {
                 <div className="db-bar-track"><div className="db-bar-fill" style={{ width: `${(count / stats.topPages[0][1]) * 100}%` }} /></div>
                 <span className="db-bar-count">{count}</span>
               </div>
-            )) : <div style={{ padding: "6px 16px", fontSize: 11, color: "#383838" }}>No events yet.</div>}
+            )) : <div style={{ padding: "6px 16px", fontSize: 11, color: "var(--db-text-6)" }}>No events yet.</div>}
           </div>
         </div>
 
@@ -123,7 +123,7 @@ export default function DashboardPage() {
             <Link href="/dashboard/cicd" className="db-pane-link">All →</Link>
           </div>
           {latestRun && (() => {
-            const d = DOT[latestRun.conclusion ?? latestRun.status] ?? { icon: "·", color: "#444" };
+            const d = DOT[latestRun.conclusion ?? latestRun.status] ?? { icon: "·", color: "var(--db-text-5)" };
             return (
               <div className="db-ci-latest">
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -138,12 +138,12 @@ export default function DashboardPage() {
             {runs.length === 0 ? (
               <div className="db-empty">No CI runs yet.</div>
             ) : runs.slice(0, 20).map(run => {
-              const d = DOT[run.conclusion ?? run.status] ?? { icon: "·", color: "#444" };
+              const d = DOT[run.conclusion ?? run.status] ?? { icon: "·", color: "var(--db-text-5)" };
               return (
                 <a key={run.id} href={run.url} target="_blank" rel="noreferrer" className="db-row">
                   <span style={{ color: d.color, fontSize: 12, flexShrink: 0 }}>{d.icon}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="db-text-main" style={{ color: "#777" }}>{run.name}</div>
+                    <div className="db-text-main" style={{ color: "var(--db-text-3)" }}>{run.name}</div>
                     <div className="db-text-dim">{run.branch} · {ago(run.createdAt)}</div>
                   </div>
                   <span className="db-text-dim">{run.durationMs ? `${Math.round(run.durationMs/1000)}s` : "—"}</span>

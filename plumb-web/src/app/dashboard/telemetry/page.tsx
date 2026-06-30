@@ -27,13 +27,13 @@ function timeAgo(iso: string): string {
 
 const EVENT_COLOR: Record<string, string> = {
   "feed.signal_rate": "#1db584",
-  "feed.impression": "rgba(255,255,255,0.3)",
+  "feed.impression": "var(--db-overlay-hover)",
   "feed.dwell": "#4285f4",
   "feed.action": "#f59e0b",
   "chat.send": "#cc785c",
   "chat.response": "#8b5cf6",
   "chat.thinking_expand": "#cc785c",
-  "nav.page": "rgba(255,255,255,0.3)",
+  "nav.page": "var(--db-overlay-hover)",
   "app.connect": "#1db584",
   "app.disconnect": "#ef4444",
   "demo.phase": "#4285f4",
@@ -81,7 +81,7 @@ export default function TelemetryPage() {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 28 }}>
-        <Link href="/dashboard" style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", textDecoration: "none", fontWeight: 600 }}>
+        <Link href="/dashboard" style={{ fontSize: 12, color: "var(--db-text-6)", textDecoration: "none", fontWeight: 600 }}>
           ← Overview
         </Link>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, letterSpacing: "-0.03em" }}>
@@ -114,13 +114,13 @@ export default function TelemetryPage() {
           <div
             key={label as string}
             style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.07)",
+              background: "var(--db-overlay-md)",
+              border: "1px solid var(--db-border)",
               borderRadius: 9,
               padding: "14px 16px",
             }}
           >
-            <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--db-text-6)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
               {label}
             </div>
             <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.03em" }}>{value}</div>
@@ -132,14 +132,14 @@ export default function TelemetryPage() {
         {/* Event type filter */}
         <div
           style={{
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid rgba(255,255,255,0.07)",
+            background: "var(--db-overlay-sm)",
+            border: "1px solid var(--db-border)",
             borderRadius: 12,
             padding: "14px 0",
             alignSelf: "start",
           }}
         >
-          <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.05em", padding: "0 14px 10px" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--db-text-6)", textTransform: "uppercase", letterSpacing: "0.05em", padding: "0 14px 10px" }}>
             Event type
           </div>
           {eventTypes.map((type) => (
@@ -152,12 +152,12 @@ export default function TelemetryPage() {
                 width: "100%",
                 textAlign: "left",
                 padding: "7px 14px",
-                background: filter === type ? "rgba(255,255,255,0.07)" : "transparent",
+                background: filter === type ? "var(--db-overlay-md)" : "transparent",
                 border: "none",
                 borderLeft: `2px solid ${filter === type ? (EVENT_COLOR[type] ?? "#cc785c") : "transparent"}`,
                 cursor: "pointer",
                 fontSize: 12,
-                color: filter === type ? "#f0efed" : "rgba(255,255,255,0.4)",
+                color: filter === type ? "var(--db-text)" : "var(--db-text-5)",
                 fontWeight: filter === type ? 600 : 400,
               }}
             >
@@ -169,16 +169,16 @@ export default function TelemetryPage() {
         {/* Event stream */}
         <div
           style={{
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid rgba(255,255,255,0.07)",
+            background: "var(--db-overlay-sm)",
+            border: "1px solid var(--db-border)",
             borderRadius: 12,
             overflow: "hidden",
           }}
         >
           {loading && events.length === 0 ? (
-            <p style={{ padding: "24px", fontSize: 12, color: "rgba(255,255,255,0.25)", margin: 0 }}>Loading…</p>
+            <p style={{ padding: "24px", fontSize: 12, color: "var(--db-text-6)", margin: 0 }}>Loading…</p>
           ) : filtered.length === 0 ? (
-            <p style={{ padding: "24px", fontSize: 12, color: "rgba(255,255,255,0.25)", margin: 0 }}>
+            <p style={{ padding: "24px", fontSize: 12, color: "var(--db-text-6)", margin: 0 }}>
               {plumbConnected
                 ? "No events yet. The Plumb desktop app tracks interactions automatically once running."
                 : "Plumb is offline. Deploy the API server to see live events."}
@@ -186,7 +186,7 @@ export default function TelemetryPage() {
           ) : (
             <div style={{ maxHeight: 560, overflow: "auto" }}>
               {filtered.slice(0, 200).map((e, i) => {
-                const color = EVENT_COLOR[e.event] ?? "rgba(255,255,255,0.3)";
+                const color = EVENT_COLOR[e.event] ?? "var(--db-overlay-hover)";
                 return (
                   <div
                     key={`${e.ts}-${i}`}
@@ -195,7 +195,7 @@ export default function TelemetryPage() {
                       gridTemplateColumns: "120px 160px 1fr 80px",
                       gap: 12,
                       padding: "8px 16px",
-                      borderBottom: "1px solid rgba(255,255,255,0.04)",
+                      borderBottom: "1px solid var(--db-overlay-md)",
                       alignItems: "center",
                     }}
                   >
@@ -215,13 +215,13 @@ export default function TelemetryPage() {
                     >
                       {e.event}
                     </span>
-                    <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+                    <span style={{ fontSize: 10, color: "var(--db-text-6)", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
                       {(e.sessionId ?? "").slice(-8) || "—"}
                     </span>
-                    <span style={{ fontSize: 11.5, color: "rgba(255,255,255,0.55)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+                    <span style={{ fontSize: 11.5, color: "var(--db-text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
                       {e.page ?? e.surface ?? e.rating ?? e.query ?? JSON.stringify(e).slice(0, 80)}
                     </span>
-                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.2)", textAlign: "right" as const }}>
+                    <span style={{ fontSize: 11, color: "var(--db-text-6)", textAlign: "right" as const }}>
                       {timeAgo(e.ts)}
                     </span>
                   </div>

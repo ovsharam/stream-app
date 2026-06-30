@@ -72,11 +72,11 @@ export default function ProductGraphPage() {
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 28 }}>
         <Link
           href="/dashboard"
-          style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", textDecoration: "none", fontWeight: 600 }}
+          style={{ fontSize: 12, color: "var(--db-text-6)", textDecoration: "none", fontWeight: 600 }}
         >
           ← Overview
         </Link>
-        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, letterSpacing: "-0.03em", color: "#e8e8e8" }}>
+        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--db-text)" }}>
           Product Graph
         </h1>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
@@ -96,7 +96,7 @@ export default function ProductGraphPage() {
       {/* Tabs */}
       <div
         style={{
-          display: "flex", gap: 2, marginBottom: 24, borderBottom: "1px solid #1c1c1c", paddingBottom: 0,
+          display: "flex", gap: 2, marginBottom: 24, borderBottom: "1px solid var(--db-border)", paddingBottom: 0,
         }}
       >
         {(["ingest", "review", "query", "controls"] as Tab[]).map((t) => (
@@ -200,7 +200,7 @@ function IngestTab({ customerId }: { customerId: string }) {
           }}
         >
           <div style={{ fontSize: 28, marginBottom: 8 }}>📄</div>
-          <div style={{ fontSize: 13, fontWeight: 500, color: loading ? "var(--db-text-4)" : "#666" }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: loading ? "var(--db-text-4)" : "var(--db-text-3)" }}>
             {loading ? "Processing..." : "Drop files here or click to upload"}
           </div>
           <div style={{ fontSize: 11, color: "var(--db-text-6)", marginTop: 4 }}>txt · md · pdf</div>
@@ -228,7 +228,7 @@ function IngestTab({ customerId }: { customerId: string }) {
               onChange={(e) => setPasteLabel(e.target.value)}
               placeholder="File label (e.g. api-docs.txt)"
               style={{
-                width: "100%", fontSize: 12, border: "1px solid #222", borderRadius: 5,
+                width: "100%", fontSize: 12, border: "1px solid var(--db-border-alt)", borderRadius: 5,
                 padding: "7px 10px", marginBottom: 8, background: "var(--db-input-bg)", color: "var(--db-text-2)",
                 boxSizing: "border-box",
               }}
@@ -239,7 +239,7 @@ function IngestTab({ customerId }: { customerId: string }) {
               placeholder="Paste product documentation, API specs, Slack export text..."
               rows={10}
               style={{
-                width: "100%", fontSize: 12, border: "1px solid #222", borderRadius: 5,
+                width: "100%", fontSize: 12, border: "1px solid var(--db-border-alt)", borderRadius: 5,
                 padding: "10px 12px", resize: "vertical", background: "var(--db-input-bg)", color: "var(--db-text-2)",
                 boxSizing: "border-box", fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
               }}
@@ -415,9 +415,9 @@ function ReviewTab({ customerId }: { customerId: string }) {
               onClick={() => setFilter(f)}
               style={{
                 fontSize: 11, padding: "4px 10px", borderRadius: 5, cursor: "pointer",
-                background: filter === f ? "#222" : "transparent",
+                background: filter === f ? "var(--db-border-alt)" : "transparent",
                 color: filter === f ? "var(--db-text)" : "var(--db-text-4)",
-                border: `1px solid ${filter === f ? "#333" : "transparent"}`,
+                border: `1px solid ${filter === f ? "var(--db-border-alt)" : "transparent"}`,
                 textTransform: "capitalize",
               }}
             >
@@ -432,7 +432,7 @@ function ReviewTab({ customerId }: { customerId: string }) {
               style={{
                 fontSize: 11, padding: "5px 12px", borderRadius: 5, cursor: "pointer",
                 background: "transparent", color: "var(--db-text-3)",
-                border: "1px solid #333",
+                border: "1px solid var(--db-border-alt)",
               }}
             >
               Approve all ({pending})
@@ -543,7 +543,7 @@ function ReviewCard({
                 value={editName}
                 onChange={(e) => onEditName(e.target.value)}
                 style={{
-                  width: "100%", fontSize: 13, fontWeight: 500, border: "1px solid #2a2a2a",
+                  width: "100%", fontSize: 13, fontWeight: 500, border: "1px solid var(--db-border-alt)",
                   borderRadius: 5, padding: "4px 8px", marginBottom: 5, background: "var(--db-surface-2)",
                   color: "var(--db-text)", boxSizing: "border-box",
                 }}
@@ -553,7 +553,7 @@ function ReviewCard({
                 onChange={(e) => onEditDesc(e.target.value)}
                 rows={2}
                 style={{
-                  width: "100%", fontSize: 12, border: "1px solid #2a2a2a",
+                  width: "100%", fontSize: 12, border: "1px solid var(--db-border-alt)",
                   borderRadius: 5, padding: "4px 8px", resize: "vertical",
                   background: "var(--db-surface-2)", color: "var(--db-text-2)", boxSizing: "border-box",
                 }}
@@ -612,13 +612,13 @@ function ReviewCard({
                 </button>
                 <button
                   onClick={onEdit}
-                  style={{ fontSize: 11, padding: "4px 9px", borderRadius: 5, background: "var(--db-surface-2)", color: "var(--db-text-3)", border: "1px solid #2a2a2a", cursor: "pointer" }}
+                  style={{ fontSize: 11, padding: "4px 9px", borderRadius: 5, background: "var(--db-surface-2)", color: "var(--db-text-3)", border: "1px solid var(--db-border-alt)", cursor: "pointer" }}
                 >
                   Edit
                 </button>
                 <button
                   onClick={onReject}
-                  style={{ fontSize: 11, padding: "4px 9px", borderRadius: 5, background: "var(--db-surface-2)", color: "#e05252", border: "1px solid #2a1a1a", cursor: "pointer" }}
+                  style={{ fontSize: 11, padding: "4px 9px", borderRadius: 5, background: "var(--db-surface-2)", color: "#e05252", border: "1px solid rgba(224,82,82,0.2)", cursor: "pointer" }}
                 >
                   ✗
                 </button>
@@ -750,7 +750,7 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
             style={{
               fontSize: 12, padding: "8px 14px", borderRadius: 6, whiteSpace: "nowrap",
               background: "transparent", color: loading || !query.trim() ? "var(--db-text-5)" : "var(--db-text-3)",
-              border: `1px solid ${loading || !query.trim() ? "var(--db-surface-2)" : "#333"}`,
+              border: `1px solid ${loading || !query.trim() ? "var(--db-surface-2)" : "var(--db-border-alt)"}`,
               cursor: loading || !query.trim() ? "not-allowed" : "pointer",
             }}
           >
@@ -886,7 +886,7 @@ function ControlsTab({ controls, onChange }: { controls: GraphControls; onChange
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
           {[0, 1, 2, 3, 4, 5].map(v => (
             <span key={v} style={{
-              fontSize: 10, color: v === controls.minScore ? scoreInfo.color : "#333",
+              fontSize: 10, color: v === controls.minScore ? scoreInfo.color : "var(--db-border-alt)",
               fontWeight: v === controls.minScore ? 700 : 400,
             }}>
               {v}
@@ -930,7 +930,7 @@ function ControlsTab({ controls, onChange }: { controls: GraphControls; onChange
               })}
               style={{
                 width: 44, fontSize: 13, fontWeight: 600, textAlign: "center",
-                background: "var(--db-surface-2)", border: "1px solid #2a2a2a",
+                background: "var(--db-surface-2)", border: "1px solid var(--db-border-alt)",
                 borderRadius: 5, padding: "3px 0", color: "var(--db-text)",
               }}
             />

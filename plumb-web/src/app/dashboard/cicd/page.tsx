@@ -27,14 +27,14 @@ function dur(ms: number | null) {
 const DOT: Record<string, { icon: string; color: string }> = {
   success: { icon: "✓", color: "#3ecf8e" },
   failure: { icon: "✗", color: "#e05c45" },
-  cancelled: { icon: "–", color: "#444" },
-  skipped: { icon: "–", color: "#444" },
+  cancelled: { icon: "–", color: "var(--db-text-5)" },
+  skipped: { icon: "–", color: "var(--db-text-5)" },
   in_progress: { icon: "●", color: "#f59e0b" },
-  queued: { icon: "○", color: "#555" },
+  queued: { icon: "○", color: "var(--db-text-4)" },
 };
 
 function dot(status: string, conclusion: string | null) {
-  return DOT[conclusion ?? status] ?? { icon: "·", color: "#444" };
+  return DOT[conclusion ?? status] ?? { icon: "·", color: "var(--db-text-5)" };
 }
 
 export default function CiCdPage() {
@@ -72,7 +72,7 @@ export default function CiCdPage() {
       {/* Stats */}
       <div className="db-stat-row">
         <div className="db-stat"><div className="db-stat-label">Total runs</div><div className="db-stat-value">{total}</div></div>
-        <div className="db-stat"><div className="db-stat-label">Passing</div><div className="db-stat-value">{passing}{total > 0 ? <span style={{ fontSize: 12, color: "#444", fontWeight: 400 }}> / {Math.round(passing/total*100)}%</span> : ""}</div></div>
+        <div className="db-stat"><div className="db-stat-label">Passing</div><div className="db-stat-value">{passing}{total > 0 ? <span style={{ fontSize: 12, color: "var(--db-text-5)", fontWeight: 400 }}> / {Math.round(passing/total*100)}%</span> : ""}</div></div>
         <div className="db-stat"><div className="db-stat-label">Failing</div><div className={`db-stat-value${failing > 0 ? " warn" : ""}`}>{failing}</div></div>
         <div className="db-stat"><div className="db-stat-label">Avg duration</div><div className="db-stat-value">{dur(avgDur)}</div></div>
       </div>
@@ -90,13 +90,13 @@ export default function CiCdPage() {
 
       {/* Branch filter */}
       {branches.length > 1 && (
-        <div style={{ display: "flex", gap: 4, padding: "8px 16px", borderBottom: "1px solid #1c1c1c", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 4, padding: "8px 16px", borderBottom: "1px solid var(--db-border)", flexWrap: "wrap" }}>
           {branches.map(b => (
             <button key={b} type="button" onClick={() => setBranch(b)} style={{
               padding: "3px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer",
-              background: branch === b ? "#cc785c1a" : "#141414",
-              border: `1px solid ${branch === b ? "#cc785c55" : "#222"}`,
-              color: branch === b ? "#cc785c" : "#555",
+              background: branch === b ? "#cc785c1a" : "var(--db-surface-2)",
+              border: `1px solid ${branch === b ? "#cc785c55" : "var(--db-border-alt)"}`,
+              color: branch === b ? "#cc785c" : "var(--db-text-4)",
               fontWeight: branch === b ? 600 : 400,
             }}>{b}</button>
           ))}
@@ -114,22 +114,22 @@ export default function CiCdPage() {
         ) : filtered.map(run => {
           const d = dot(run.status, run.conclusion);
           return (
-            <a key={run.id} href={run.url} target="_blank" rel="noreferrer" style={{ display: "grid", gridTemplateColumns: "20px 1fr auto", gap: 10, padding: "10px 16px", borderBottom: "1px solid #141414", textDecoration: "none", alignItems: "center" }}
-              onMouseEnter={e => (e.currentTarget.style.background = "#0f0f0f")}
+            <a key={run.id} href={run.url} target="_blank" rel="noreferrer" style={{ display: "grid", gridTemplateColumns: "20px 1fr auto", gap: 10, padding: "10px 16px", borderBottom: "1px solid var(--db-border)", textDecoration: "none", alignItems: "center" }}
+              onMouseEnter={e => (e.currentTarget.style.background = "var(--db-surface-2)")}
               onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
             >
               <span style={{ color: d.color, fontSize: 13, fontWeight: 700 }}>{d.icon}</span>
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 12, fontWeight: 500, color: "#c0c0c0" }}>{run.name}</span>
-                  <span style={{ fontSize: 10, background: "#161616", border: "1px solid #222", borderRadius: 3, padding: "0 5px", color: "#555" }}>{run.branch}</span>
+                  <span style={{ fontSize: 12, fontWeight: 500, color: "var(--db-text-2)" }}>{run.name}</span>
+                  <span style={{ fontSize: 10, background: "var(--db-surface-2)", border: "1px solid var(--db-border-alt)", borderRadius: 3, padding: "0 5px", color: "var(--db-text-4)" }}>{run.branch}</span>
                   {run.conclusion && <span style={{ fontSize: 10, color: d.color, textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 600 }}>{run.conclusion}</span>}
                 </div>
-                <div style={{ fontSize: 11, color: "#444", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 520 }}>{run.commitMessage}</div>
+                <div style={{ fontSize: 11, color: "var(--db-text-5)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 520 }}>{run.commitMessage}</div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: 11, color: "#555", fontVariantNumeric: "tabular-nums" }}>{dur(run.durationMs)}</div>
-                <div style={{ fontSize: 10, color: "#383838", marginTop: 1 }}>{ago(run.createdAt)}</div>
+                <div style={{ fontSize: 11, color: "var(--db-text-4)", fontVariantNumeric: "tabular-nums" }}>{dur(run.durationMs)}</div>
+                <div style={{ fontSize: 10, color: "var(--db-text-6)", marginTop: 1 }}>{ago(run.createdAt)}</div>
               </div>
             </a>
           );

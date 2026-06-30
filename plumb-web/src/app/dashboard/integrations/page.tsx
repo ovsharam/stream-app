@@ -52,7 +52,7 @@ const CONNECTOR_ICONS: Record<string, string> = {
 
 const STATUS_COLOR: Record<string, string> = {
   active:       "#1db584",
-  paused:       "rgba(255,255,255,0.3)",
+  paused:       "var(--db-text-5)",
   error:        "#ef4444",
   pending_auth: "#f59e0b",
 };
@@ -229,16 +229,16 @@ export default function IntegrationsPage() {
         </div>
       )}
 
-      <h1 style={{ fontSize: 22, fontWeight: 700, color: "#fff", marginBottom: 4 }}>
+      <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--db-text)", marginBottom: 4 }}>
         Integrations
       </h1>
-      <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 14, marginBottom: 32 }}>
+      <p style={{ color: "var(--db-text-4)", fontSize: 14, marginBottom: 32 }}>
         Connect data sources to automatically build and update your product knowledge graph.
       </p>
 
       {connectors.length > 0 && (
         <section style={{ marginBottom: 40 }}>
-          <h2 style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>
+          <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--db-text-5)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>
             Connected
           </h2>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -249,15 +249,15 @@ export default function IntegrationsPage() {
                 style={{
                   display: "flex", alignItems: "center", gap: 14,
                   padding: "14px 18px", borderRadius: 10,
-                  background: selectedId === c.id ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.03)",
-                  border: `1px solid ${selectedId === c.id ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.07)"}`,
+                  background: selectedId === c.id ? "var(--db-overlay-md)" : "var(--db-overlay-sm)",
+                  border: `1px solid ${selectedId === c.id ? "var(--db-border-alt)" : "var(--db-border)"}`,
                   cursor: "pointer", transition: "all 0.15s",
                 }}
               >
                 <span style={{ fontSize: 20 }}>{CONNECTOR_ICONS[c.type] ?? "🔌"}</span>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: "#fff" }}>{c.label}</div>
-                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--db-text)" }}>{c.label}</div>
+                  <div style={{ fontSize: 12, color: "var(--db-text-5)", marginTop: 2 }}>
                     {c.lastSyncAt ? `Last sync ${formatRelative(c.lastSyncAt)}` : "Never synced"}
                   </div>
                 </div>
@@ -271,8 +271,8 @@ export default function IntegrationsPage() {
                   onClick={e => { e.stopPropagation(); handleSync(c.id); }}
                   disabled={syncing === c.id}
                   style={{
-                    padding: "5px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.6)",
+                    padding: "5px 12px", borderRadius: 6, border: "1px solid var(--db-border-alt)",
+                    background: "var(--db-overlay-md)", color: "var(--db-text-3)",
                     fontSize: 12, cursor: "pointer",
                   }}
                 >
@@ -295,22 +295,22 @@ export default function IntegrationsPage() {
       )}
 
       {selected && (
-        <section style={{ marginBottom: 40, padding: "16px 20px", borderRadius: 10, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
-          <h3 style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.5)", marginBottom: 12 }}>
+        <section style={{ marginBottom: 40, padding: "16px 20px", borderRadius: 10, background: "var(--db-border)", border: "1px solid var(--db-border)" }}>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--db-text-4)", marginBottom: 12 }}>
             Recent syncs — {selected.label}
           </h3>
           {runs.length === 0 ? (
-            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.3)" }}>No syncs yet.</p>
+            <p style={{ fontSize: 13, color: "var(--db-text-6)" }}>No syncs yet.</p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {runs.map(r => (
-                <div key={r.id} style={{ display: "flex", gap: 16, fontSize: 13, color: "rgba(255,255,255,0.6)" }}>
+                <div key={r.id} style={{ display: "flex", gap: 16, fontSize: 13, color: "var(--db-text-3)" }}>
                   <span style={{ color: r.status === "done" ? "#1db584" : r.status === "error" ? "#ef4444" : "#f59e0b", fontWeight: 600, width: 60 }}>
                     {r.status}
                   </span>
                   <span>{r.chunksProcessed} chunks</span>
                   <span>{r.nodesExtracted} nodes</span>
-                  <span style={{ color: "rgba(255,255,255,0.3)", marginLeft: "auto" }}>{formatRelative(r.startedAt)}</span>
+                  <span style={{ color: "var(--db-text-6)", marginLeft: "auto" }}>{formatRelative(r.startedAt)}</span>
                 </div>
               ))}
             </div>
@@ -320,7 +320,7 @@ export default function IntegrationsPage() {
 
       {unconnected.length > 0 && (
         <section>
-          <h2 style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>
+          <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--db-text-5)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>
             Available
           </h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
@@ -329,21 +329,21 @@ export default function IntegrationsPage() {
                 key={m.type}
                 style={{
                   padding: "18px 20px", borderRadius: 10,
-                  background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)",
+                  background: "var(--db-border)", border: "1px solid var(--db-border)",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                   <span style={{ fontSize: 22 }}>{CONNECTOR_ICONS[m.type] ?? "🔌"}</span>
-                  <span style={{ fontSize: 15, fontWeight: 600, color: "#fff" }}>{m.label}</span>
+                  <span style={{ fontSize: 15, fontWeight: 600, color: "var(--db-text)" }}>{m.label}</span>
                 </div>
-                <p style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", marginBottom: 16, lineHeight: 1.5 }}>
+                <p style={{ fontSize: 13, color: "var(--db-text-5)", marginBottom: 16, lineHeight: 1.5 }}>
                   {m.description}
                 </p>
                 <button
                   onClick={() => handleConnect(m)}
                   style={{
-                    padding: "7px 16px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.15)",
-                    background: "rgba(255,255,255,0.06)", color: "#fff",
+                    padding: "7px 16px", borderRadius: 7, border: "1px solid var(--db-border-alt)",
+                    background: "var(--db-overlay-md)", color: "var(--db-text-2)",
                     fontSize: 13, fontWeight: 600, cursor: "pointer", width: "100%",
                   }}
                 >
@@ -362,15 +362,15 @@ export default function IntegrationsPage() {
         }} onClick={() => setAddingType(null)}>
           <div
             style={{
-              background: "#111", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12,
+              background: "var(--db-surface)", border: "1px solid var(--db-border-alt)", borderRadius: 12,
               padding: "28px 32px", width: 440, maxWidth: "90vw", maxHeight: "85vh", overflowY: "auto",
             }}
             onClick={e => e.stopPropagation()}
           >
-            <h2 style={{ fontSize: 18, fontWeight: 700, color: "#fff", marginBottom: 6 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--db-text)", marginBottom: 6 }}>
               Connect {addingType.label}
             </h2>
-            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", marginBottom: 24 }}>
+            <p style={{ fontSize: 13, color: "var(--db-text-5)", marginBottom: 24 }}>
               {addingType.description}
             </p>
 
@@ -481,8 +481,8 @@ export default function IntegrationsPage() {
               <button
                 onClick={() => setAddingType(null)}
                 style={{
-                  padding: "10px 20px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)",
-                  background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 14, cursor: "pointer",
+                  padding: "10px 20px", borderRadius: 8, border: "1px solid var(--db-border-alt)",
+                  background: "transparent", color: "var(--db-text-4)", fontSize: 14, cursor: "pointer",
                 }}
               >
                 Cancel
@@ -500,7 +500,7 @@ function Field({ label, value, onChange, type = "text", hint }: {
 }) {
   return (
     <div style={{ marginBottom: 16 }}>
-      <label style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.7)", display: "block", marginBottom: 6 }}>
+      <label style={{ fontSize: 13, fontWeight: 600, color: "var(--db-text-2)", display: "block", marginBottom: 6 }}>
         {label}
       </label>
       <input
@@ -508,11 +508,11 @@ function Field({ label, value, onChange, type = "text", hint }: {
         onChange={e => onChange(e.target.value)}
         style={{
           width: "100%", padding: "9px 12px", borderRadius: 7,
-          border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.05)",
-          color: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box",
+          border: "1px solid var(--db-border-alt)", background: "var(--db-border)",
+          color: "var(--db-text)", fontSize: 14, outline: "none", boxSizing: "border-box",
         }}
       />
-      {hint && <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginTop: 4 }}>{hint}</p>}
+      {hint && <p style={{ fontSize: 12, color: "var(--db-text-6)", marginTop: 4 }}>{hint}</p>}
     </div>
   );
 }

@@ -87,7 +87,7 @@ export async function POST(req: Request) {
       .join('\n\n')
 
     const { object } = await generateObject({
-      model: google('gemini-2.5-flash-preview-05-20'),
+      model: google('gemini-2.0-flash'),
       schema: AssessmentSchema,
       system: `You are a scope assessment engine embedded in Plumb, a tool used by Forward-Deployed Engineers (FDEs) at AI companies.
 

@@ -67,7 +67,8 @@ const PROTECTED_PREFIXES = [
   '/notes',
   '/stream',
   '/connections',
-  '/sync/'
+  '/sync/',
+  '/product-graph/',
 ]
 
 function isProtectedRoute(path: string): boolean {

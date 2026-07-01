@@ -17,39 +17,37 @@ import { queryProductGraph, formatProductContextForPrompt } from './queryService
 import { getDemoScenario, listDemoScenarios } from './demoSeed'
 import { runConnectorPipeline } from '../connectors/pipeline'
 
+/** Resolve the authoritative customer ID for a request.
+ * When Supabase auth is active, req.orgId is always used (client value ignored).
+ * Falls back to client-supplied value only in local dev (no Supabase configured). */
+function resolveCustomerId(req: Request, clientId?: string): string | null {
+  return req.orgId ?? clientId ?? null
+}
+
 export function productGraphRouter(): Router {
   const router = Router()
 
   // POST /product-graph/ingest
-  // Body: { customerId, fileName, mimeType, content: base64 }
   router.post('/ingest', async (req: Request, res: Response) => {
     try {
-      const { customerId, fileName, mimeType, content } = req.body as {
-        customerId: string
-        fileName: string
-        mimeType: string
-        content: string
+      const { customerId: clientId, fileName, mimeType, content } = req.body as {
+        customerId?: string; fileName: string; mimeType: string; content: string
       }
-
+      const customerId = resolveCustomerId(req, clientId)
       if (!customerId || !fileName || !content) {
-        res.status(400).json({ error: 'customerId, fileName, content required' })
-        return
+        res.status(400).json({ error: 'customerId, fileName, content required' }); return
       }
-
       const job = createIngestJob({ customerId, fileName, mimeType: mimeType ?? 'text/plain' })
-
-      // Run pipeline async — return job immediately
       setImmediate(() => runIngestPipeline(job.id, customerId, content, mimeType ?? 'text/plain'))
-
       res.json({ jobId: job.id, status: 'pending' })
     } catch (err) {
       res.status(500).json({ error: (err as Error).message })
     }
   })
 
-  // GET /product-graph/jobs?customerId=...
+  // GET /product-graph/jobs
   router.get('/jobs', (req: Request, res: Response) => {
-    const customerId = String(req.query.customerId ?? '')
+    const customerId = resolveCustomerId(req, String(req.query.customerId ?? ''))
     if (!customerId) { res.status(400).json({ error: 'customerId required' }); return }
     res.json(listJobs(customerId))
   })
@@ -61,9 +59,9 @@ export function productGraphRouter(): Router {
     res.json(job)
   })
 
-  // GET /product-graph/review?customerId=...&status=pending|approved|rejected
+  // GET /product-graph/review
   router.get('/review', (req: Request, res: Response) => {
-    const customerId = String(req.query.customerId ?? '')
+    const customerId = resolveCustomerId(req, String(req.query.customerId ?? ''))
     if (!customerId) { res.status(400).json({ error: 'customerId required' }); return }
     const status = req.query.status as 'pending' | 'approved' | 'rejected' | undefined
     res.json(listReviewItems(customerId, status))
@@ -72,11 +70,7 @@ export function productGraphRouter(): Router {
   // POST /product-graph/review/:nodeId/approve
   router.post('/review/:nodeId/approve', (req: Request, res: Response) => {
     const { editedName, editedDescription } = req.body as { editedName?: string; editedDescription?: string }
-    const updated = updateReviewItem(String(req.params.nodeId), {
-      status: 'approved',
-      editedName,
-      editedDescription
-    })
+    const updated = updateReviewItem(String(req.params.nodeId), { status: 'approved', editedName, editedDescription })
     if (!updated) { res.status(404).json({ error: 'item not found' }); return }
     res.json(updated)
   })
@@ -89,10 +83,10 @@ export function productGraphRouter(): Router {
   })
 
   // POST /product-graph/write
-  // Body: { jobId, customerId } — writes approved nodes to FalkorDB
   router.post('/write', async (req: Request, res: Response) => {
     try {
-      const { jobId, customerId } = req.body as { jobId: string; customerId: string }
+      const { jobId, customerId: clientId } = req.body as { jobId: string; customerId?: string }
+      const customerId = resolveCustomerId(req, clientId)
       if (!jobId || !customerId) { res.status(400).json({ error: 'jobId, customerId required' }); return }
       const result = await writeApprovedNodes(jobId, customerId)
       res.json(result)
@@ -102,15 +96,12 @@ export function productGraphRouter(): Router {
   })
 
   // POST /product-graph/query
-  // Body: { customerId, dealDescription }
   router.post('/query', async (req: Request, res: Response) => {
     try {
-      const { customerId, dealDescription, format, minScore } = req.body as {
-        customerId: string
-        dealDescription: string
-        format?: 'json' | 'prompt'
-        minScore?: number
+      const { customerId: clientId, dealDescription, format, minScore } = req.body as {
+        customerId?: string; dealDescription: string; format?: 'json' | 'prompt'; minScore?: number
       }
+      const customerId = resolveCustomerId(req, clientId)
       if (!customerId || !dealDescription) {
         res.status(400).json({ error: 'customerId, dealDescription required' }); return
       }
@@ -126,13 +117,12 @@ export function productGraphRouter(): Router {
   })
 
   // POST /product-graph/ingest-urls
-  // Body: { customerId, urls: string[] } — up to 20 URLs, scraped in background
   router.post('/ingest-urls', async (req: Request, res: Response) => {
     try {
-      const { customerId, urls } = req.body as { customerId: string; urls: string[] }
+      const { customerId: clientId, urls } = req.body as { customerId?: string; urls: string[] }
+      const customerId = resolveCustomerId(req, clientId)
       if (!customerId || !Array.isArray(urls) || urls.length === 0) {
-        res.status(400).json({ error: 'customerId and urls[] required' })
-        return
+        res.status(400).json({ error: 'customerId and urls[] required' }); return
       }
       const capped = urls.map(u => u.trim()).filter(Boolean).slice(0, 20)
       const jobs = capped.map(url => {
@@ -149,22 +139,22 @@ export function productGraphRouter(): Router {
     }
   })
 
-  // GET /product-graph/stats?customerId=...
+  // GET /product-graph/stats
   router.get('/stats', (req: Request, res: Response) => {
-    const customerId = String(req.query.customerId ?? '')
+    const customerId = resolveCustomerId(req, String(req.query.customerId ?? ''))
     if (!customerId) { res.status(400).json({ error: 'customerId required' }); return }
     res.json(getProductGraphStats(customerId))
   })
 
-  // GET /product-graph/demo-scenarios — list available demo datasets
+  // GET /product-graph/demo-scenarios
   router.get('/demo-scenarios', (_req: Request, res: Response) => {
     res.json({ scenarios: listDemoScenarios() })
   })
 
   // POST /product-graph/seed-demo
-  // Body: { customerId, scenario } — feeds synthetic demo data through the extraction pipeline
   router.post('/seed-demo', async (req: Request, res: Response) => {
-    const { customerId, scenario = 'b2b-payments' } = req.body as { customerId: string; scenario?: string }
+    const { customerId: clientId, scenario = 'b2b-payments' } = req.body as { customerId?: string; scenario?: string }
+    const customerId = resolveCustomerId(req, clientId)
     if (!customerId) { res.status(400).json({ error: 'customerId required' }); return }
 
     const demo = getDemoScenario(scenario)
@@ -176,7 +166,6 @@ export function productGraphRouter(): Router {
 
     res.json({ ok: true, scenario, chunkCount: demo.chunks.length, message: 'Seeding started — check the Review tab in ~60 seconds' })
 
-    // Run async after response
     runConnectorPipeline(customerId, `[demo] ${demo.companyName}`, chunkGen())
       .then(r => console.log(`[demo-seed] done: ${r.chunksProcessed} chunks, ${r.nodesExtracted} nodes`))
       .catch(e => console.error('[demo-seed] error:', (e as Error).message))

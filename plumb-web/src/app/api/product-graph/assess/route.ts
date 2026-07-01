@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { anthropic } from '@ai-sdk/anthropic'
 import { streamText } from 'ai'
 import { z } from 'zod'
+import { createClient } from '@/lib/supabase/server'
 
 const RAILWAY_URL = process.env.STREAM_API_URL ?? 'https://api.useplumb.ai'
 
@@ -54,12 +55,21 @@ Rules:
 - Be concrete and direct — no hedge language, no "it depends"`
 
 export async function POST(req: Request) {
+  const supabase = await createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+
+  if (!session) {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+  }
+
   const body = await req.json() as { customerId?: string; dealDescription?: string; minScore?: number }
   const { customerId, dealDescription, minScore } = body
 
   if (!customerId || !dealDescription?.trim()) {
     return NextResponse.json({ error: 'customerId and dealDescription required' }, { status: 400 })
   }
+
+  const authHeader = { 'Authorization': `Bearer ${session.access_token}` }
 
   const encoder = new TextEncoder()
 
@@ -74,7 +84,7 @@ export async function POST(req: Request) {
 
         const graphRes = await fetch(`${RAILWAY_URL}/product-graph/query`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeader },
           body: JSON.stringify({ customerId, dealDescription, format: 'json', minScore: minScore ?? 1 }),
         })
 

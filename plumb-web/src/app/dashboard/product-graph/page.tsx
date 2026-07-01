@@ -53,7 +53,6 @@ const DEFAULT_CONTROLS: GraphControls = {
 };
 
 export default function ProductGraphPage() {
-  const [customerId, setCustomerId] = useState("plumb-internal");
   const [tab, setTab] = useState<Tab>("ingest");
   const [controls, setControls] = useState<GraphControls>(DEFAULT_CONTROLS);
 
@@ -79,37 +78,6 @@ export default function ProductGraphPage() {
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--db-text)" }}>
           Product Graph
         </h1>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-          <label style={{ fontSize: 11, color: "var(--db-text-5)", flexShrink: 0 }}>Customer</label>
-          {[
-            { id: "plumb-internal", label: "Mixed" },
-            { id: "helix-demo", label: "Helix" },
-            { id: "vapi-demo", label: "Vapi" },
-          ].map((preset) => (
-            <button
-              key={preset.id}
-              onClick={() => setCustomerId(preset.id)}
-              style={{
-                fontSize: 11, padding: "3px 10px", borderRadius: 5,
-                background: customerId === preset.id ? "var(--db-overlay-md)" : "transparent",
-                color: customerId === preset.id ? "var(--db-text)" : "var(--db-text-5)",
-                border: `1px solid ${customerId === preset.id ? "var(--db-border-alt)" : "transparent"}`,
-                cursor: "pointer", fontWeight: customerId === preset.id ? 600 : 400,
-              }}
-            >
-              {preset.label}
-            </button>
-          ))}
-          <input
-            value={customerId}
-            onChange={(e) => setCustomerId(e.target.value.trim())}
-            style={{
-              fontSize: 12, border: "1px solid var(--db-input-border)", borderRadius: 5,
-              padding: "4px 10px", width: 130, background: "var(--db-input-bg)", color: "var(--db-text-2)",
-            }}
-            placeholder="custom-id"
-          />
-        </div>
       </div>
 
       {/* Tabs */}
@@ -136,9 +104,9 @@ export default function ProductGraphPage() {
         ))}
       </div>
 
-      {tab === "ingest" && <IngestTab customerId={customerId} />}
-      {tab === "review" && <ReviewTab customerId={customerId} />}
-      {tab === "query" && <QueryTab customerId={customerId} controls={controls} />}
+      {tab === "ingest" && <IngestTab />}
+      {tab === "review" && <ReviewTab />}
+      {tab === "query" && <QueryTab controls={controls} />}
       {tab === "controls" && <ControlsTab controls={controls} onChange={saveControls} />}
     </div>
   );
@@ -146,7 +114,8 @@ export default function ProductGraphPage() {
 
 // ─── Ingest Tab ───────────────────────────────────────────────────────────────
 
-function IngestTab({ customerId }: { customerId: string }) {
+function IngestTab() {
+  const customerId = "org";
   const [jobs, setJobs] = useState<IngestJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -159,7 +128,7 @@ function IngestTab({ customerId }: { customerId: string }) {
   const [urlResults, setUrlResults] = useState<{ url: string; jobId?: string; error?: string }[]>([]);
   const [seeding, setSeeding] = useState(false);
   const [seedMsg, setSeedMsg] = useState<string | null>(null);
-  const defaultScenario = customerId === "vapi-demo" ? "voice-ai" : "b2b-payments";
+  const defaultScenario = "b2b-payments";
   const [seedScenario, setSeedScenario] = useState<"b2b-payments" | "voice-ai">(defaultScenario);
 
   const loadJobs = useCallback(async () => {
@@ -516,7 +485,8 @@ function JobCard({ job, onRefresh }: { job: IngestJob; onRefresh: () => void }) 
 
 // ─── Review Tab ───────────────────────────────────────────────────────────────
 
-function ReviewTab({ customerId }: { customerId: string }) {
+function ReviewTab() {
+  const customerId = "org";
   const [items, setItems] = useState<ReviewQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"pending" | "approved" | "rejected" | "all">("pending");
@@ -1202,7 +1172,8 @@ function Row({ icon, iconColor, text }: { icon: string; iconColor: string; text:
   );
 }
 
-function QueryTab({ customerId, controls }: { customerId: string; controls: GraphControls }) {
+function QueryTab({ controls }: { controls: GraphControls }) {
+  const customerId = "org";
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<GraphQueryResult | null>(null);
   const [promptText, setPromptText] = useState<string | null>(null);

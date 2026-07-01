@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { anthropic } from '@ai-sdk/anthropic'
-import { generateObject } from 'ai'
+import { streamText } from 'ai'
 import { z } from 'zod'
 
 const RAILWAY_URL = process.env.STREAM_API_URL ?? 'https://api.useplumb.ai'
@@ -125,14 +125,46 @@ export async function POST(req: Request) {
           .filter(Boolean)
           .join('\n\n')
 
-        const { object } = await generateObject({
+        const userPrompt = `DEAL DESCRIPTION:\n${dealDescription}\n\nPRODUCT GRAPH (${totalNodes} matched nodes):\n${nodeContext}`
+
+        const jsonInstruction = `\n\nOUTPUT: Respond with a single valid JSON object only — no markdown, no code fences, no preamble. Start with { and end with }. Schema:\n{"contextScore":number,"headline":string,"buildable":string[],"blockers":[{"issue":string,"action":string}],"scopeForks":[{"decision":string,"options":string[]}],"gaps":string[],"buildSpec":null|{"approach":string,"keyConstraints":string[],"openQuestions":string[]}}`
+
+        emit({ event: 'prompt_preview', systemPrompt: SYSTEM_PROMPT, userPrompt })
+
+        const { fullStream } = streamText({
           model: anthropic('claude-sonnet-4-6'),
-          schema: AssessmentSchema,
-          system: SYSTEM_PROMPT,
-          prompt: `DEAL DESCRIPTION:\n${dealDescription}\n\nPRODUCT GRAPH (${totalNodes} matched nodes):\n${nodeContext}`,
+          system: SYSTEM_PROMPT + jsonInstruction,
+          prompt: userPrompt,
+          providerOptions: {
+            anthropic: {
+              thinking: { type: 'enabled', budgetTokens: 8000 },
+            },
+          },
         })
 
-        emit({ event: 'assessment', assessment: object, nodeCount: totalNodes })
+        let responseText = ''
+        for await (const part of fullStream) {
+          if (part.type === 'reasoning-delta') {
+            emit({ event: 'thinking_delta', text: part.text })
+          } else if (part.type === 'text-delta') {
+            responseText += part.text
+          }
+        }
+
+        emit({ event: 'thinking_done' })
+
+        // Extract JSON — find outermost { ... }
+        const jsonStart = responseText.indexOf('{')
+        const jsonEnd = responseText.lastIndexOf('}')
+        if (jsonStart === -1 || jsonEnd === -1) {
+          emit({ event: 'error', message: 'Assessment returned no JSON' })
+          controller.close()
+          return
+        }
+        const parsed = JSON.parse(responseText.slice(jsonStart, jsonEnd + 1))
+        const assessment = AssessmentSchema.parse(parsed)
+
+        emit({ event: 'assessment', assessment, nodeCount: totalNodes })
 
       } catch (err) {
         console.error('[product-graph/assess]', err)

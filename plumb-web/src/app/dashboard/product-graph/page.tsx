@@ -839,7 +839,8 @@ type LogLine =
   | { type: "status"; message: string }
   | { type: "graph_result"; labelCounts: Record<string, number>; totalNodes: number }
   | { type: "assessment_ready"; score: number }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "thinking_done" };
 
 type GraphStats = {
   totalNodes: number;
@@ -864,6 +865,118 @@ function scoreColor(score: number) {
   return "#ef4444";
 }
 
+function PromptPreviewPanel({ systemPrompt, userPrompt }: { systemPrompt: string; userPrompt: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{
+      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+      fontSize: 11,
+      background: "var(--db-surface)",
+      border: "1px solid var(--db-border)",
+      borderRadius: 8,
+      marginBottom: 10,
+      overflow: "hidden",
+    }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 8,
+          padding: "10px 16px", background: "none", border: "none", cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        <span style={{ color: "#cc785c", fontSize: 11 }}>{open ? "▼" : "▶"}</span>
+        <span style={{ color: "var(--db-text-5)", fontSize: 11 }}>Prompt sent to Claude</span>
+        <span style={{ marginLeft: "auto", color: "var(--db-text-6)", fontSize: 10 }}>
+          {(systemPrompt.length + userPrompt.length).toLocaleString()} chars
+        </span>
+      </button>
+      {open && (
+        <div style={{ borderTop: "1px solid var(--db-border)", padding: "12px 16px", lineHeight: 1.65 }}>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#cc785c", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+              System
+            </div>
+            <pre style={{ margin: 0, whiteSpace: "pre-wrap", color: "var(--db-text-5)", fontSize: 10.5 }}>
+              {systemPrompt}
+            </pre>
+          </div>
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#3e78c8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+              User
+            </div>
+            <pre style={{ margin: 0, whiteSpace: "pre-wrap", color: "var(--db-text-4)", fontSize: 10.5 }}>
+              {userPrompt}
+            </pre>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ThinkingPanel({ text, done }: { text: string; done: boolean }) {
+  const [open, setOpen] = useState(true);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (open && !done) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [text, open, done]);
+
+  return (
+    <div style={{
+      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+      fontSize: 11,
+      background: "var(--db-surface)",
+      border: "1px solid var(--db-border)",
+      borderRadius: 8,
+      marginBottom: 10,
+      overflow: "hidden",
+    }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 8,
+          padding: "10px 16px", background: "none", border: "none", cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        <span style={{ color: "#8b5cf6", fontSize: 11 }}>{open ? "▼" : "▶"}</span>
+        <span style={{ color: "var(--db-text-5)", fontSize: 11 }}>
+          {done ? "Claude's reasoning" : "Claude is thinking…"}
+        </span>
+        {!done && (
+          <span style={{
+            display: "inline-block", width: 6, height: 6, borderRadius: "50%",
+            background: "#8b5cf6", marginLeft: 4,
+            animation: "pulse 1s ease-in-out infinite",
+          }} />
+        )}
+        <span style={{ marginLeft: "auto", color: "var(--db-text-6)", fontSize: 10 }}>
+          {text.length.toLocaleString()} chars
+        </span>
+      </button>
+      {open && (
+        <div style={{
+          borderTop: "1px solid var(--db-border)",
+          padding: "12px 16px",
+          maxHeight: 320,
+          overflowY: "auto",
+          lineHeight: 1.7,
+        }}>
+          <pre style={{ margin: 0, whiteSpace: "pre-wrap", color: "var(--db-text-5)", fontSize: 10.5 }}>
+            {text}
+            {!done && <span style={{ color: "#8b5cf6" }}>▊</span>}
+          </pre>
+          <div ref={bottomRef} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function QueryLog({ lines }: { lines: LogLine[] }) {
   const BAR_MAX = 16;
   return (
@@ -881,14 +994,19 @@ function QueryLog({ lines }: { lines: LogLine[] }) {
     >
       {lines.map((line, i) => {
         if (line.type === "status") {
+          const isLast = i === lines.length - 1;
+          const nextIsThinking = lines[i + 1]?.type === "thinking_done";
           return (
             <div key={i} style={{ color: "var(--db-text-4)" }}>
               <span style={{ color: "#cc785c", marginRight: 8 }}>→</span>{line.message}
-              {i === lines.length - 1 && (
-                <span style={{ color: "var(--db-text-6)", animation: "none" }}> …</span>
+              {isLast && !nextIsThinking && (
+                <span style={{ color: "var(--db-text-6)" }}> …</span>
               )}
             </div>
           );
+        }
+        if (line.type === "thinking_done") {
+          return null;
         }
         if (line.type === "graph_result") {
           const counts = Object.entries(line.labelCounts).sort((a, b) => b[1] - a[1]);
@@ -1092,6 +1210,10 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<GraphStats | null>(null);
   const [queryLog, setQueryLog] = useState<LogLine[]>([]);
+  const [thinkingText, setThinkingText] = useState<string>("");
+  const [thinkingDone, setThinkingDone] = useState(false);
+  const [promptPreview, setPromptPreview] = useState<{ systemPrompt: string; userPrompt: string } | null>(null);
+  const thinkingRef = useRef("");
 
   useEffect(() => {
     void fetch(`${API}/product-graph/stats?customerId=${encodeURIComponent(customerId)}`)
@@ -1125,6 +1247,10 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
     setPromptText(null);
     setAssessment(null);
     setQueryLog([]);
+    setThinkingText("");
+    setThinkingDone(false);
+    setPromptPreview(null);
+    thinkingRef.current = "";
 
     const res = await fetch("/api/product-graph/assess", {
       method: "POST",
@@ -1155,6 +1281,9 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
           const data = JSON.parse(part.slice(6)) as {
             event: string;
             message?: string;
+            text?: string;
+            systemPrompt?: string;
+            userPrompt?: string;
             labelCounts?: Record<string, number>;
             totalNodes?: number;
             assessment?: ScopeAssessment;
@@ -1163,6 +1292,14 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
             setQueryLog(prev => [...prev, { type: "status", message: data.message! }]);
           } else if (data.event === "graph_result") {
             setQueryLog(prev => [...prev, { type: "graph_result", labelCounts: data.labelCounts!, totalNodes: data.totalNodes! }]);
+          } else if (data.event === "prompt_preview") {
+            setPromptPreview({ systemPrompt: data.systemPrompt!, userPrompt: data.userPrompt! });
+          } else if (data.event === "thinking_delta") {
+            thinkingRef.current += data.text ?? "";
+            setThinkingText(thinkingRef.current);
+          } else if (data.event === "thinking_done") {
+            setThinkingDone(true);
+            setQueryLog(prev => [...prev, { type: "thinking_done" }]);
           } else if (data.event === "assessment") {
             setAssessment(data.assessment!);
             setQueryLog(prev => [...prev, { type: "assessment_ready", score: data.assessment!.contextScore }]);
@@ -1258,6 +1395,8 @@ function QueryTab({ customerId, controls }: { customerId: string; controls: Grap
       </div>
 
       {queryLog.length > 0 && <QueryLog lines={queryLog} />}
+      {promptPreview && <PromptPreviewPanel systemPrompt={promptPreview.systemPrompt} userPrompt={promptPreview.userPrompt} />}
+      {thinkingText && <ThinkingPanel text={thinkingText} done={thinkingDone} />}
       {assessment && <AssessmentPanel assessment={assessment} />}
 
       {promptText && (

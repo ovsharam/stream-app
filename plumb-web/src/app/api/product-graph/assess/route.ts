@@ -89,9 +89,12 @@ export async function POST(req: Request) {
         const labelCounts: Record<string, number> = {}
         let totalNodes = 0
         for (const [key, nodes] of Object.entries(graphResult)) {
-          if (Array.isArray(nodes) && nodes.length > 0) {
-            labelCounts[key] = nodes.length
-            totalNodes += nodes.length
+          if (!Array.isArray(nodes) || nodes.length === 0) continue
+          // skip edge/relation keys — they don't have name+description
+          const validNodes = nodes.filter(n => n.name && n.description)
+          if (validNodes.length > 0) {
+            labelCounts[key] = validNodes.length
+            totalNodes += validNodes.length
           }
         }
 
@@ -120,7 +123,11 @@ export async function POST(req: Request) {
         const nodeContext = Object.entries(graphResult)
           .map(([key, nodes]) => {
             if (!Array.isArray(nodes) || nodes.length === 0) return null
-            return `## ${key.toUpperCase()}\n${nodes.map(n => `- ${n.name}: ${n.description}`).join('\n')}`
+            const lines = nodes
+              .filter(n => n.name && n.description)
+              .map(n => `- ${n.name}: ${n.description}`)
+            if (lines.length === 0) return null
+            return `## ${key.toUpperCase()}\n${lines.join('\n')}`
           })
           .filter(Boolean)
           .join('\n\n')

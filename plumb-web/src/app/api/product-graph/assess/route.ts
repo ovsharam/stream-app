@@ -19,7 +19,7 @@ const AssessmentSchema = z.object({
   })).describe('Hard stops that must be resolved before a build can start'),
   scopeForks: z.array(z.object({
     decision: z.string().describe('The architectural or product decision that must be made'),
-    options: z.array(z.string()).min(2).max(3).describe('The concrete options the graph reveals'),
+    options: z.array(z.string()).min(2).describe('The concrete options the graph reveals'),
   })).describe('Places where the graph reveals two valid paths — FDE must pick one before building'),
   gaps: z.array(z.string()).describe(
     'Things the deal description mentions that have NO coverage in the graph nodes. Empty array = full coverage.'

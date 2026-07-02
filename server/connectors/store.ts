@@ -16,15 +16,20 @@ import type { ConnectorConfig, ConnectorCredentials, ConnectorSettings, Connecto
 
 // ─── Backend selection ────────────────────────────────────────────────────────
 
+/** Accepts both SUPABASE_SECRET_KEY (new sb_secret_ format, Railway) and legacy SUPABASE_SERVICE_ROLE_KEY. */
+function supabaseKey(): string | undefined {
+  return process.env.SUPABASE_SECRET_KEY?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+}
+
 function isSupabaseConfigured(): boolean {
-  return Boolean(process.env.SUPABASE_URL?.trim() && process.env.SUPABASE_SERVICE_ROLE_KEY?.trim())
+  return Boolean(process.env.SUPABASE_URL?.trim() && supabaseKey())
 }
 
 let _sb: SupabaseClient | null = null
 function getSb(): SupabaseClient {
   if (_sb) return _sb
   const url = process.env.SUPABASE_URL!.trim()
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!.trim()
+  const key = supabaseKey()!
   _sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
   return _sb
 }

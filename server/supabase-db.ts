@@ -18,14 +18,19 @@ import { computeContextScore, normalizeEngagementStage } from '../shared/fde-con
 
 let _client: SupabaseClient | null = null
 
+/** Accepts both SUPABASE_SECRET_KEY (new sb_secret_ format, Railway) and legacy SUPABASE_SERVICE_ROLE_KEY. */
+function supabaseKey(): string | undefined {
+  return process.env.SUPABASE_SECRET_KEY?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+}
+
 export function isSupabaseConfigured(): boolean {
-  return Boolean(process.env.SUPABASE_URL?.trim() && process.env.SUPABASE_SERVICE_ROLE_KEY?.trim())
+  return Boolean(process.env.SUPABASE_URL?.trim() && supabaseKey())
 }
 
 function getClient(): SupabaseClient | null {
   if (_client) return _client
   const url = process.env.SUPABASE_URL?.trim()
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  const key = supabaseKey()
   if (!url || !key) return null
   _client = createClient(url, key, {
     auth: {

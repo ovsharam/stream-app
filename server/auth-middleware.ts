@@ -25,7 +25,10 @@ let _supabase: SupabaseClient | null = null
 function getSupabaseAdminClient(): SupabaseClient | null {
   if (_supabase) return _supabase
   const url = process.env.SUPABASE_URL?.trim()
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  // Accept both key names: SUPABASE_SECRET_KEY (new sb_secret_ format, used on Railway)
+  // and SUPABASE_SERVICE_ROLE_KEY (legacy service-role JWT).
+  const key =
+    process.env.SUPABASE_SECRET_KEY?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
   if (!url || !key) return null
   _supabase = createClient(url, key, {
     auth: {

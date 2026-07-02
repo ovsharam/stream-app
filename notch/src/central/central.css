@@ -16480,6 +16480,339 @@ button.x-home-running-row:hover {
 }
 
 
+/* ── Notification Blade (iOS/macOS-style) ── */
+
+/* Bell trigger button */
+.x-notif-bell {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 9100;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--x-border);
+  border-radius: 8px;
+  background: var(--x-bg);
+  color: var(--x-fg);
+  cursor: pointer;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--x-fg) 8%, transparent);
+  transition: background 0.12s ease;
+  -webkit-app-region: no-drag;
+}
+
+html.x-electron .x-notif-bell {
+  top: calc(var(--x-titlebar-h, 28px) + 10px);
+}
+
+.x-notif-bell:hover {
+  background: var(--x-surface);
+}
+
+.x-notif-bell-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #e5533d;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* Overlay (click-outside to close) */
+.x-nb-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 8099;
+  background: transparent;
+}
+
+/* The blade itself */
+.x-nb {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 360px;
+  z-index: 8100;
+  display: flex;
+  flex-direction: column;
+  /* always-dark frosted panel, independent of app theme */
+  background: rgba(16, 15, 14, 0.92);
+  backdrop-filter: blur(48px) saturate(1.4);
+  -webkit-backdrop-filter: blur(48px) saturate(1.4);
+  border-left: 1px solid rgba(250, 249, 245, 0.1);
+  transform: translateX(100%);
+  transition: transform 0.26s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              box-shadow 0.26s ease;
+  box-shadow: none;
+  overflow: hidden;
+  /* define dark-panel tokens scoped to the blade */
+  --nb-fg: rgba(250, 249, 245, 0.88);
+  --nb-body: rgba(250, 249, 245, 0.55);
+  --nb-muted: rgba(250, 249, 245, 0.28);
+  --nb-border: rgba(250, 249, 245, 0.08);
+  --nb-border-strong: rgba(250, 249, 245, 0.13);
+  --nb-surface: rgba(250, 249, 245, 0.05);
+  --nb-hover: rgba(250, 249, 245, 0.07);
+}
+
+.x-nb-open {
+  transform: translateX(0);
+  box-shadow: -24px 0 80px rgba(0, 0, 0, 0.5);
+}
+
+/* Header */
+.x-nb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 16px 14px;
+  border-bottom: 1px solid var(--nb-border);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+html.x-electron .x-nb-head {
+  padding-top: calc(var(--x-titlebar-h, 28px) + 16px);
+}
+
+.x-nb-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--nb-fg);
+  letter-spacing: -0.3px;
+}
+
+.x-nb-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.x-nb-clear-all {
+  border: none;
+  background: none;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #cc785c;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.x-nb-clear-all:hover {
+  background: var(--nb-hover);
+}
+
+.x-nb-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--nb-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.x-nb-close:hover {
+  background: var(--nb-hover);
+  color: var(--nb-fg);
+}
+
+/* Scrollable body */
+.x-nb-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.x-nb-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.x-nb-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.x-nb-body::-webkit-scrollbar-thumb {
+  background: var(--nb-border-strong);
+  border-radius: 2px;
+}
+
+/* Empty state */
+.x-nb-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 220px;
+  color: var(--nb-muted);
+}
+
+.x-nb-empty-icon {
+  opacity: 0.35;
+  color: var(--nb-muted);
+}
+
+.x-nb-empty-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--nb-muted);
+}
+
+/* Notification cards — iOS style */
+.x-nb-card {
+  border-radius: 14px;
+  background: var(--nb-surface);
+  border: 1px solid var(--nb-border-strong);
+  padding: 13px 13px 11px;
+  animation: x-nb-card-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes x-nb-card-in {
+  from { opacity: 0; transform: translateX(10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.x-nb-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+
+/* Source chip with colored dot */
+.x-nb-card-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--nb-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.x-nb-card-source::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--nb-dot, var(--nb-muted));
+  flex-shrink: 0;
+}
+
+.x-nb-card-time {
+  font-size: 11px;
+  color: var(--nb-muted);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.x-nb-card-dismiss {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 50%;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--nb-muted);
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.x-nb-card-dismiss:hover {
+  background: var(--nb-hover);
+  color: var(--nb-fg);
+}
+
+.x-nb-card-title {
+  margin: 0 0 3px;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--nb-fg);
+}
+
+.x-nb-card-body {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--nb-body);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.x-nb-card-actions {
+  display: flex;
+  gap: 7px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--nb-border);
+}
+
+.x-nb-card-btn {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--nb-border-strong);
+  background: var(--nb-hover);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--nb-fg);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.x-nb-card-btn:hover {
+  background: rgba(250, 249, 245, 0.12);
+}
+
+.x-nb-card-btn-primary {
+  background: #cc785c;
+  border-color: #cc785c;
+  color: #fff;
+}
+
+.x-nb-card-btn-primary:hover {
+  background: #a9583e;
+  border-color: #a9583e;
+}
+
 /* ── Build Dojo (restored) ── */
 /* Build Dojo */
 .x-dojo {

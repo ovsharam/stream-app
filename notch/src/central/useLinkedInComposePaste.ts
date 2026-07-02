@@ -8,7 +8,7 @@ import {
   type LinkedInPasteDetail,
   type WebviewEl
 } from './linkedinComposeFill'
-import { pushAppToast } from './appToastStore'
+import { pushNotification } from './notificationHistoryStore'
 
 function runPaste(
   webviewEl: HTMLElement,
@@ -26,23 +26,21 @@ function runPaste(
     .then((result) => {
       if (result.ok) {
         clearArmedLinkedInPaste()
-        pushAppToast({
+        pushNotification({
+          id: `linkedin-paste-${threadId}`,
           kind: 'info',
           title: 'LinkedIn',
           subtitle: result.sendReady
             ? 'Draft pasted — review and tap Send in LinkedIn'
             : 'Draft pasted in the message box',
-          dedupeKey: `linkedin-paste-${threadId}`,
-          expiresAt: Date.now() + 8000
         })
         return
       }
-      pushAppToast({
+      pushNotification({
+        id: `linkedin-paste-fail-${threadId}`,
         kind: 'info',
         title: 'LinkedIn',
         subtitle: 'Reply copied — paste into the message box (⌘V)',
-        dedupeKey: `linkedin-paste-fail-${threadId}`,
-        expiresAt: Date.now() + 10_000
       })
     })
     .finally(() => {
@@ -80,12 +78,11 @@ export function useLinkedInComposePaste(
       })
         .then((result) => {
           if (result.ok) return
-          pushAppToast({
+          pushNotification({
+            id: `linkedin-focus-${detail.threadId}`,
             kind: 'info',
             title: 'LinkedIn',
             subtitle: 'Opened messaging — find the conversation in your inbox',
-            dedupeKey: `linkedin-focus-${detail.threadId}`,
-            expiresAt: Date.now() + 8000
           })
         })
         .finally(() => {

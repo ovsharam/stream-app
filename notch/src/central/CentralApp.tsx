@@ -30,7 +30,7 @@ import { WorkspaceBrowser } from './WorkspaceBrowser'
 import { HomeWorkspaceRail } from './HomeWorkspaceRail'
 import { PinnedAppShell } from './PinnedAppShell'
 import { LinkedInBackgroundPerception } from './LinkedInBackgroundPerception'
-import { AppToastStack } from './AppToastStack'
+import { NotificationBlade, NotificationBell } from './NotificationBlade'
 import { useAgentProposalNotifications } from './useAgentProposalNotifications'
 import { useCalendarToasts } from './useCalendarToasts'
 import { markCalendarShaded, wasCalendarShaded } from './calendarShade'
@@ -239,6 +239,7 @@ export function CentralApp() {
   const [composeError, setComposeError] = useState<string | null>(null)
   const { mentionTargets: contactMentions } = useComposeContacts()
   const [contextItemId, setContextItemId] = useState<string | null>(null)
+  const [notifOpen, setNotifOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)
   const themeBtnRef = useRef<HTMLButtonElement>(null)
   const [threadTarget, setThreadTarget] = useState<{ itemId: string; day?: string } | null>(null)
@@ -1816,7 +1817,8 @@ export function CentralApp() {
         />
       ) : null}
 
-      <AppToastStack />
+      <NotificationBell onClick={() => setNotifOpen((v) => !v)} />
+      <NotificationBlade open={notifOpen} onClose={() => setNotifOpen(false)} />
     </div>
     </LinkedInPerceptionProvider>
   )

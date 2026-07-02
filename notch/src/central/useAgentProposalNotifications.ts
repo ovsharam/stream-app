@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { agentApi } from '../lib/api'
-import { dismissAppToast, pushAppToast } from './appToastStore'
+import { pushNotification, dismissNotification } from './notificationHistoryStore'
 
+// Use localStorage (not sessionStorage) so seen IDs survive app restarts
 const SEEN_KEY = 'notch.agentProposals.seen'
 
 function loadSeenIds(): Set<string> {
   try {
-    const raw = sessionStorage.getItem(SEEN_KEY)
+    const raw = localStorage.getItem(SEEN_KEY)
     if (!raw) return new Set()
     const parsed = JSON.parse(raw) as string[]
     return new Set(parsed)
@@ -17,7 +18,7 @@ function loadSeenIds(): Set<string> {
 
 function saveSeenIds(ids: Set<string>): void {
   try {
-    sessionStorage.setItem(SEEN_KEY, JSON.stringify([...ids].slice(-200)))
+    localStorage.setItem(SEEN_KEY, JSON.stringify([...ids].slice(-500)))
   } catch {
     /* ignore */
   }
@@ -43,7 +44,7 @@ async function notifyNewProposals(seen: Set<string>): Promise<Set<string>> {
     const next = new Set(seen)
     for (const proposal of fresh) {
       next.add(proposal.id)
-      const title = `LinkedIn draft — ${proposal.senderName}`
+      const title = `LinkedIn — ${proposal.senderName}`
       const body =
         proposal.brief?.humanSummary?.slice(0, 140) ||
         proposal.rawMessage.slice(0, 140) ||
@@ -55,14 +56,15 @@ async function notifyNewProposals(seen: Set<string>): Promise<Set<string>> {
         showBrowserNotification(title, body, proposal.id)
       }
 
-      const toastId = pushAppToast({
-        kind: 'agent',
-        title: `LinkedIn — ${proposal.senderName}`,
-        subtitle: body,
-        urgency: 'normal',
-        dedupeKey: `agent-${proposal.id}`,
-        expiresAt: Date.now() + 60_000,
-        actions: [
+      const notifId = `agent-${proposal.id}`
+      pushNotification(
+        {
+          id: notifId,
+          kind: 'agent',
+          title,
+          subtitle: body,
+        },
+        [
           {
             label: 'Review',
             primary: true,
@@ -70,15 +72,15 @@ async function notifyNewProposals(seen: Set<string>): Promise<Set<string>> {
               window.dispatchEvent(
                 new CustomEvent('notch:open-agent-inbox', { detail: { proposalId: proposal.id } })
               )
-              dismissAppToast(toastId)
-            }
+              dismissNotification(notifId)
+            },
           },
           {
             label: 'Dismiss',
-            onClick: () => dismissAppToast(toastId)
-          }
+            onClick: () => dismissNotification(notifId),
+          },
         ]
-      })
+      )
     }
     saveSeenIds(next)
     return next

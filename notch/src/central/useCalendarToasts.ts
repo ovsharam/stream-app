@@ -1,7 +1,7 @@
 import { useCallback, useEffect } from 'react'
 import type { CalendarRailEvent } from '@shared/cluster'
 import { clusterApi } from '../lib/api'
-import { pushAppToast } from './appToastStore'
+import { pushNotification, dismissNotification } from './notificationHistoryStore'
 import { tabFromCalendarEvent } from './workspace'
 
 type MeetingThreshold = 'live' | '5m' | '15m'
@@ -12,7 +12,6 @@ const THRESHOLD_TITLES: Record<MeetingThreshold, string> = {
   '15m': 'In 15 minutes'
 }
 
-/** Persisted in localStorage — survives Notch restarts for the calendar day. */
 function sessionKey(eventId: string, threshold: MeetingThreshold): string {
   const day = new Date().toISOString().slice(0, 10)
   return `notch.toast.meeting.${day}.${eventId}.${threshold}`
@@ -50,16 +49,19 @@ function thresholdForEvent(evt: CalendarRailEvent, now: number): MeetingThreshol
   return null
 }
 
-function pushMeetingToast(evt: CalendarRailEvent, threshold: MeetingThreshold): void {
-  const urgency = threshold === 'live' || threshold === '5m' ? 'high' : 'normal'
+function pushMeetingNotification(evt: CalendarRailEvent, threshold: MeetingThreshold): void {
   const tab = tabFromCalendarEvent(evt)
-  const actions: Parameters<typeof pushAppToast>[0]['actions'] = []
+  const title = evt.title.length > 56 ? `${evt.title.slice(0, 53)}…` : evt.title
+  const subtitle = `${THRESHOLD_TITLES[threshold]} — ${evt.timeLabel}`
+  const notifId = `meeting-${evt.id}-${threshold}`
+
+  const actions: Parameters<typeof pushNotification>[1] = []
 
   if (evt.link) {
     actions.push({
       label: 'Join',
       primary: true,
-      onClick: () => openExternal(evt.link!)
+      onClick: () => openExternal(evt.link!),
     })
   }
 
@@ -77,32 +79,16 @@ function pushMeetingToast(evt: CalendarRailEvent, threshold: MeetingThreshold): 
               summary: tab.summary,
               id: tab.id,
               tabKind: 'temp',
-              activate: true
-            }
+              activate: true,
+            },
           })
         )
-      }
+        dismissNotification(notifId)
+      },
     })
   }
 
-  const expiresAt =
-    threshold === 'live'
-      ? evt.endsAt
-      : threshold === '5m'
-        ? evt.startsAt
-        : Date.now() + 3 * 60_000
-
-  const title = evt.title.length > 56 ? `${evt.title.slice(0, 53)}…` : evt.title
-
-  pushAppToast({
-    kind: 'meeting',
-    title: THRESHOLD_TITLES[threshold],
-    subtitle: `${title} — ${evt.timeLabel}`,
-    urgency,
-    dedupeKey: `meeting-${evt.id}-${threshold}`,
-    expiresAt,
-    actions
-  })
+  pushNotification({ id: notifId, kind: 'meeting', title, subtitle }, actions)
 }
 
 function scanCalendarEvents(events: CalendarRailEvent[]): void {
@@ -111,7 +97,7 @@ function scanCalendarEvents(events: CalendarRailEvent[]): void {
     const threshold = thresholdForEvent(evt, now)
     if (!threshold || wasFired(evt.id, threshold)) continue
     markFired(evt.id, threshold)
-    pushMeetingToast(evt, threshold)
+    pushMeetingNotification(evt, threshold)
   }
 }
 

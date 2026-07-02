@@ -44,7 +44,9 @@ const PUBLIC_PREFIXES = [
   '/health',
   '/auth/',
   '/webhooks/',
-  '/sim/'
+  '/sim/',
+  // OAuth browser redirects (provider → callback) arrive without a Bearer token
+  '/connectors/oauth/'
 ]
 
 function isPublicRoute(path: string): boolean {
@@ -72,6 +74,7 @@ const PROTECTED_PREFIXES = [
   '/connections',
   '/sync/',
   '/product-graph/',
+  '/connectors',
 ]
 
 function isProtectedRoute(path: string): boolean {

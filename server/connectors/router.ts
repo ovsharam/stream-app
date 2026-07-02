@@ -11,6 +11,11 @@ import { getConnectorImpl, listConnectorMeta } from './registry'
 import { syncConnector } from './scheduler'
 import type { ConnectorCredentials, ConnectorSettings, ConnectorType } from './types'
 
+/** When Supabase auth is active, req.orgId is authoritative; client value only in local dev. */
+function resolveCustomerId(req: { orgId?: string }, clientId?: string): string {
+  return req.orgId ?? clientId ?? ''
+}
+
 export function connectorRouter(): Router {
   const router = Router()
 
@@ -21,7 +26,7 @@ export function connectorRouter(): Router {
 
   // GET /api/stream/connectors?customerId=... — list customer's connectors
   router.get('/', async (req, res) => {
-    const customerId = String(req.query.customerId ?? '')
+    const customerId = resolveCustomerId(req, String(req.query.customerId ?? '') || undefined)
     if (!customerId) return res.status(400).json({ error: 'customerId required' })
     try {
       const all = await listConnectors(customerId)
@@ -34,10 +39,11 @@ export function connectorRouter(): Router {
 
   // POST /api/stream/connectors — create connector
   router.post('/', async (req, res) => {
-    const { customerId, type, label, credentials = {}, settings = {} } = req.body as {
-      customerId: string; type: ConnectorType; label?: string
+    const { customerId: clientId, type, label, credentials = {}, settings = {} } = req.body as {
+      customerId?: string; type: ConnectorType; label?: string
       credentials?: ConnectorCredentials; settings?: ConnectorSettings
     }
+    const customerId = resolveCustomerId(req, clientId)
     if (!customerId || !type) return res.status(400).json({ error: 'customerId and type required' })
     try {
       const impl = getConnectorImpl(type)

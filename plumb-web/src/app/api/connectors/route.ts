@@ -1,21 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { randomUUID } from 'crypto'
+import { requireOrg, getServiceClient } from '@/lib/connector-auth'
 
-function getServiceClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('Missing Supabase env vars')
-  return createServiceClient(url, key)
-}
+export async function GET(_req: NextRequest) {
+  const ctx = await requireOrg()
+  if (ctx instanceof NextResponse) return ctx
 
-export async function GET(req: NextRequest) {
-  const customerId = req.nextUrl.searchParams.get('customerId') ?? 'plumb-internal'
   const sb = getServiceClient()
   const { data, error } = await sb
     .from('pg_connectors')
     .select('*')
-    .eq('customer_id', customerId)
+    .eq('customer_id', ctx.orgId)
     .order('created_at', { ascending: false })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   const connectors = (data ?? []).map(r => ({
@@ -31,8 +26,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const ctx = await requireOrg()
+  if (ctx instanceof NextResponse) return ctx
+
   const body = await req.json()
-  const { customerId = 'plumb-internal', type, label, credentials = {}, settings = {} } = body
+  const { type, label, credentials = {}, settings = {} } = body
   if (!type) return NextResponse.json({ error: 'type required' }, { status: 400 })
 
   const sb = getServiceClient()
@@ -40,7 +38,7 @@ export async function POST(req: NextRequest) {
   const id = randomUUID()
   const { data, error } = await sb.from('pg_connectors').insert({
     id,
-    customer_id: customerId,
+    customer_id: ctx.orgId, // org from session — client-supplied customerId is ignored
     type,
     label: label ?? type,
     credentials_json: JSON.stringify(credentials),

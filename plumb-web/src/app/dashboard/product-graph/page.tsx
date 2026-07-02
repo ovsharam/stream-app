@@ -957,7 +957,153 @@ function QueryLog({ lines }: { lines: LogLine[] }) {
   );
 }
 
-function AssessmentPanel({ assessment: a }: { assessment: ScopeAssessment }) {
+/** Turn the scope assessment into a self-contained build-agent prompt.
+ *  The agent gets only graph-confirmed capabilities and constraints — it must
+ *  not invent product features the assessment didn't confirm. */
+function composeBuildPrompt(dealDescription: string, a: ScopeAssessment): string {
+  const spec = a.buildSpec;
+  if (!spec) return "";
+  const lines = [
+    `BUILD REQUEST — from Plumb scope assessment (context score ${a.contextScore}/100)`,
+    ``,
+    `DEAL / USE CASE:`,
+    dealDescription.trim(),
+    ``,
+    `APPROACH:`,
+    spec.approach,
+  ];
+  if (a.buildable.length > 0) {
+    lines.push(``, `CONFIRMED PRODUCT CAPABILITIES TO BUILD ON:`, ...a.buildable.map((b) => `- ${b}`));
+  }
+  if (spec.keyConstraints.length > 0) {
+    lines.push(``, `HARD CONSTRAINTS — the build must respect these:`, ...spec.keyConstraints.map((c) => `- ${c}`));
+  }
+  if (spec.openQuestions.length > 0) {
+    lines.push(
+      ``,
+      `OPEN QUESTIONS — make a sensible assumption for each and document it in the README:`,
+      ...spec.openQuestions.map((q) => `- ${q}`)
+    );
+  }
+  lines.push(
+    ``,
+    `Deliver a working v1. Only use the capabilities listed above — do not invent product features the assessment did not confirm.`
+  );
+  return lines.join("\n");
+}
+
+type BuildExecutor = "claude-code" | "cursor-cloud" | "cursor-local";
+
+const EXECUTOR_LABELS: Record<BuildExecutor, string> = {
+  "claude-code": "Claude Code · headless",
+  "cursor-cloud": "Cursor · cloud",
+  "cursor-local": "Cursor · local",
+};
+
+function BuildDispatch({ dealDescription, assessment: a }: { dealDescription: string; assessment: ScopeAssessment }) {
+  const [executor, setExecutor] = useState<BuildExecutor>("claude-code");
+  const [state, setState] = useState<"idle" | "dispatching" | "done" | "error">("idle");
+  const [message, setMessage] = useState<string | null>(null);
+  const [showPrompt, setShowPrompt] = useState(false);
+
+  const prompt = composeBuildPrompt(dealDescription, a);
+
+  async function dispatch() {
+    setState("dispatching");
+    setMessage(null);
+    try {
+      const r = await fetch(`${API}/build/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ executor, prompt }),
+      });
+      const data = (await r.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: string };
+      if (r.ok && data.ok) {
+        setState("done");
+        setMessage(data.message ?? "Build agent dispatched.");
+      } else {
+        setState("error");
+        setMessage(data.message ?? data.error ?? `Dispatch failed (${r.status})`);
+      }
+    } catch (e) {
+      setState("error");
+      setMessage((e as Error).message);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--db-border)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <button
+          onClick={() => void dispatch()}
+          disabled={state === "dispatching" || state === "done"}
+          style={{
+            fontSize: 12, padding: "8px 16px", borderRadius: 6, fontWeight: 700, border: "none",
+            background: state === "done" ? "rgba(29,181,132,0.15)" : state === "dispatching" ? "var(--db-surface-2)" : "#1db584",
+            color: state === "done" ? "#1db584" : state === "dispatching" ? "var(--db-text-5)" : "#fff",
+            cursor: state === "dispatching" || state === "done" ? "default" : "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {state === "dispatching" ? "Dispatching…" : state === "done" ? "✓ Agent building" : "⚡ Build it"}
+        </button>
+        <select
+          value={executor}
+          onChange={(e) => setExecutor(e.target.value as BuildExecutor)}
+          disabled={state === "dispatching" || state === "done"}
+          style={{
+            fontSize: 11, padding: "7px 8px", borderRadius: 6, background: "var(--db-input-bg)",
+            color: "var(--db-text-3)", border: "1px solid var(--db-input-border)", cursor: "pointer",
+          }}
+        >
+          {(Object.keys(EXECUTOR_LABELS) as BuildExecutor[]).map((ex) => (
+            <option key={ex} value={ex}>{EXECUTOR_LABELS[ex]}</option>
+          ))}
+        </select>
+        <button
+          onClick={() => setShowPrompt((v) => !v)}
+          style={{
+            fontSize: 11, padding: "7px 10px", borderRadius: 6, background: "transparent",
+            color: "var(--db-text-4)", border: "1px solid var(--db-border-alt)", cursor: "pointer",
+          }}
+        >
+          {showPrompt ? "Hide prompt" : "View prompt"}
+        </button>
+        {state === "error" && (
+          <button
+            onClick={() => { setState("idle"); setMessage(null); }}
+            style={{
+              fontSize: 11, padding: "7px 10px", borderRadius: 6, background: "transparent",
+              color: "var(--db-text-4)", border: "1px solid var(--db-border-alt)", cursor: "pointer",
+            }}
+          >
+            Retry
+          </button>
+        )}
+      </div>
+      {message && (
+        <div style={{
+          marginTop: 8, fontSize: 11, lineHeight: 1.5,
+          color: state === "error" ? "#ef4444" : "#1db584",
+        }}>
+          {state === "error" ? "✗ " : "→ "}{message}
+        </div>
+      )}
+      {showPrompt && (
+        <pre style={{
+          marginTop: 10, marginBottom: 0, padding: "10px 12px", fontSize: 10.5, lineHeight: 1.55,
+          background: "var(--db-input-bg)", border: "1px solid var(--db-border)", borderRadius: 6,
+          color: "var(--db-text-4)", whiteSpace: "pre-wrap", wordBreak: "break-word",
+          maxHeight: 260, overflowY: "auto",
+        }}>
+          {prompt}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function AssessmentPanel({ assessment: a, dealDescription }: { assessment: ScopeAssessment; dealDescription: string }) {
   const color = scoreColor(a.contextScore);
   return (
     <div style={{ marginBottom: 24 }}>
@@ -1079,6 +1225,7 @@ function AssessmentPanel({ assessment: a }: { assessment: ScopeAssessment }) {
                 ))}
               </div>
             )}
+            <BuildDispatch dealDescription={dealDescription} assessment={a} />
           </div>
         )}
       </div>
@@ -1112,6 +1259,7 @@ function QueryTab({ controls }: { controls: GraphControls }) {
   const [result, setResult] = useState<GraphQueryResult | null>(null);
   const [promptText, setPromptText] = useState<string | null>(null);
   const [assessment, setAssessment] = useState<ScopeAssessment | null>(null);
+  const [assessedQuery, setAssessedQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<GraphStats | null>(null);
   const [queryLog, setQueryLog] = useState<LogLine[]>([]);
@@ -1151,6 +1299,7 @@ function QueryTab({ controls }: { controls: GraphControls }) {
     setResult(null);
     setPromptText(null);
     setAssessment(null);
+    setAssessedQuery(query);
     setQueryLog([]);
     setThinkingText("");
     setThinkingDone(false);
@@ -1302,7 +1451,7 @@ function QueryTab({ controls }: { controls: GraphControls }) {
       {queryLog.length > 0 && <QueryLog lines={queryLog} />}
       {promptPreview && <PromptPreviewPanel systemPrompt={promptPreview.systemPrompt} userPrompt={promptPreview.userPrompt} />}
       {thinkingText && <ThinkingPanel text={thinkingText} done={thinkingDone} />}
-      {assessment && <AssessmentPanel assessment={assessment} />}
+      {assessment && <AssessmentPanel assessment={assessment} dealDescription={assessedQuery} />}
 
       {promptText && (
         <div

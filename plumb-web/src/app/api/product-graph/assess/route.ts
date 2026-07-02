@@ -46,8 +46,17 @@ Scoring:
 - 40-69: Significant scope gaps or unresolved architectural decisions
 - 0-39: Major blockers or the deal doesn't match what the product can do
 
+Availability tags — nodes may carry a timeline marker. Treat them differently:
+- untagged / [GA]: shipped, usable in the build TODAY
+- [BETA]: exists but gated — flag as a blocker action ("get beta access") not a capability
+- [UPCOMING]: on the roadmap, NOT usable today — never count it as buildable now; surface it as a timing scope fork ("wait for X or build the workaround")
+- [REQUESTED]: does not exist — it is demand, not capability. A "(requested N×)" count means many sources want it; tell the FDE to relay demand to product but scope the deal WITHOUT it
+- [NOT_PLANNED]: explicitly ruled out — treat as a hard limitation
+- [DEPRECATED]: going away — never build on it; flag if the deal depends on it
+
 Rules:
 - Only reference what is in the graph nodes — do NOT invent capabilities
+- Only [GA]/untagged/[BETA-with-access] nodes count toward contextScore and buildable — [UPCOMING]/[REQUESTED] must never inflate the score
 - Blockers must cite specific limitations or constraints from the graph
 - Scope forks are real architectural choices revealed by the graph — not hypotheticals
 - Gaps are specific things in the deal description with zero graph coverage
@@ -94,7 +103,7 @@ export async function POST(req: Request) {
           return
         }
 
-        const graphResult = await graphRes.json() as Record<string, Array<{ name: string; description: string }>>
+        const graphResult = await graphRes.json() as Record<string, Array<{ name: string; description: string; availability?: string; mentionCount?: number }>>
 
         const labelCounts: Record<string, number> = {}
         let totalNodes = 0
@@ -135,7 +144,11 @@ export async function POST(req: Request) {
             if (!Array.isArray(nodes) || nodes.length === 0) return null
             const lines = nodes
               .filter(n => n.name && n.description)
-              .map(n => `- ${n.name}: ${n.description}`)
+              .map(n => {
+                const avail = n.availability && n.availability !== 'ga' ? ` [${n.availability.toUpperCase()}]` : ''
+                const demand = n.availability === 'requested' && (n.mentionCount ?? 1) > 1 ? ` (requested ${n.mentionCount}×)` : ''
+                return `- ${n.name}${avail}${demand}: ${n.description}`
+              })
             if (lines.length === 0) return null
             return `## ${key.toUpperCase()}\n${lines.join('\n')}`
           })

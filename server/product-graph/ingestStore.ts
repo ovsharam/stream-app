@@ -6,6 +6,7 @@ import { dirname, join } from 'path'
 import type {
   IngestJob,
   IngestJobStatus,
+  ProductAvailability,
   ProductEdge,
   ProductNode,
   ProductNodeLabel,
@@ -92,8 +93,24 @@ function getDb(): Database.Database {
   db = new Database(path)
   db.pragma('journal_mode = WAL')
   db.exec(SCHEMA)
+  migrateAvailabilityColumns(db)
   deduplicateExistingNodes(db)
   return db
+}
+
+/** Additive migration: temporal/roadmap axis + demand tracking (July 2026). */
+function migrateAvailabilityColumns(database: Database.Database): void {
+  const addColumn = (sql: string) => {
+    try {
+      database.exec(sql)
+    } catch {
+      /* column already exists */
+    }
+  }
+  addColumn(`ALTER TABLE pg_product_nodes ADD COLUMN availability TEXT NOT NULL DEFAULT 'ga'`)
+  addColumn(`ALTER TABLE pg_product_nodes ADD COLUMN mention_count INTEGER NOT NULL DEFAULT 1`)
+  addColumn(`ALTER TABLE pg_product_nodes ADD COLUMN last_confirmed_at INTEGER`)
+  addColumn(`ALTER TABLE pg_review_queue ADD COLUMN availability TEXT`)
 }
 
 // One-time migration: collapse existing duplicate rows by (customer_id, name), keeping the highest-confidence row.
@@ -220,8 +237,8 @@ export function insertReviewItems(items: Omit<ReviewQueueItem, 'id' | 'status' |
   const now = Date.now()
   const insert = database.prepare(
     `INSERT INTO pg_review_queue
-     (id, customer_id, job_id, label, name, description, confidence, source_doc_id, properties_json, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
+     (id, customer_id, job_id, label, name, description, confidence, source_doc_id, availability, properties_json, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
   )
   const all = database.transaction((rows: typeof items) => {
     return rows.map((item) => {
@@ -235,6 +252,7 @@ export function insertReviewItems(items: Omit<ReviewQueueItem, 'id' | 'status' |
         item.description,
         item.confidence,
         item.sourceDocId,
+        item.availability ?? null,
         JSON.stringify(item.properties ?? {}),
         now
       )
@@ -298,6 +316,7 @@ function rowToReview(r: Record<string, unknown>): ReviewQueueItem {
     description: String(r.description),
     confidence: Number(r.confidence),
     sourceDocId: String(r.source_doc_id),
+    availability: r.availability ? (String(r.availability) as ProductAvailability) : undefined,
     properties: JSON.parse(String(r.properties_json ?? '{}')),
     status: String(r.status) as ReviewStatus,
     editedName: r.edited_name ? String(r.edited_name) : undefined,
@@ -324,20 +343,37 @@ export function upsertProductNode(node: ProductNode): ProductNode {
     const keepDescription =
       node.confidence >= Number(existing.confidence) ? node.description : String(existing.description)
     const keepConfidence = Math.max(node.confidence, Number(existing.confidence))
+    // Availability: the NEWER observation wins — "requested" that shipped becomes
+    // "ga", "upcoming" that landed becomes "ga". Recency is the whole point.
+    const keepAvailability = node.availability ?? String(existing.availability ?? 'ga')
+    // Every independent re-observation is a demand/state signal
+    const mentionCount = Number(existing.mention_count ?? 1) + 1
     database
-      .prepare(`UPDATE pg_product_nodes SET description=?, confidence=?, written_at=? WHERE id=?`)
-      .run(keepDescription, keepConfidence, now, String(existing.id))
+      .prepare(
+        `UPDATE pg_product_nodes
+         SET description=?, confidence=?, availability=?, mention_count=?, last_confirmed_at=?, written_at=?
+         WHERE id=?`
+      )
+      .run(keepDescription, keepConfidence, keepAvailability, mentionCount, now, now, String(existing.id))
     database.prepare(`DELETE FROM pg_nodes_fts WHERE node_id=?`).run(String(existing.id))
     database
       .prepare(`INSERT INTO pg_nodes_fts (name, description, label, node_id, customer_id) VALUES (?, ?, ?, ?, ?)`)
       .run(node.name, keepDescription, node.label, String(existing.id), node.customerId)
-    return rowToNode({ ...existing, description: keepDescription, confidence: keepConfidence, written_at: now })
+    return rowToNode({
+      ...existing,
+      description: keepDescription,
+      confidence: keepConfidence,
+      availability: keepAvailability,
+      mention_count: mentionCount,
+      last_confirmed_at: now,
+      written_at: now
+    })
   }
 
   database
     .prepare(
-      `INSERT INTO pg_product_nodes (id, customer_id, label, name, description, source_doc_id, confidence, properties_json, written_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO pg_product_nodes (id, customer_id, label, name, description, source_doc_id, confidence, availability, mention_count, last_confirmed_at, properties_json, written_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
     )
     .run(
       node.id,
@@ -347,6 +383,8 @@ export function upsertProductNode(node: ProductNode): ProductNode {
       node.description,
       node.sourceDocId,
       node.confidence,
+      node.availability ?? 'ga',
+      now,
       JSON.stringify(node.properties ?? {}),
       now
     )
@@ -440,6 +478,9 @@ function rowToNode(r: Record<string, unknown>): ProductNode {
     description: String(r.description),
     confidence: Number(r.confidence),
     sourceDocId: String(r.source_doc_id),
+    availability: (r.availability ? String(r.availability) : 'ga') as ProductAvailability,
+    mentionCount: Number(r.mention_count ?? 1),
+    lastConfirmedAt: r.last_confirmed_at ? Number(r.last_confirmed_at) : undefined,
     properties: JSON.parse(String(r.properties_json ?? '{}'))
   }
 }

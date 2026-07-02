@@ -30,7 +30,8 @@ async function writeNodeToFalkor(node: ProductNode): Promise<void> {
          n.confidence = $confidence,
          n.customerId = $customerId,
          n.sourceDocId = $sourceDocId,
-         n.label = $label`,
+         n.label = $label,
+         n.availability = $availability`,
     {
       params: {
         id: node.id,
@@ -39,7 +40,8 @@ async function writeNodeToFalkor(node: ProductNode): Promise<void> {
         confidence: node.confidence,
         customerId: node.customerId,
         sourceDocId: node.sourceDocId,
-        label: node.label
+        label: node.label,
+        availability: node.availability ?? 'ga'
       }
     }
   )
@@ -120,6 +122,7 @@ export async function writeApprovedNodes(jobId: string, customerId: string): Pro
     name: item.editedName ?? item.name,
     description: item.editedDescription ?? item.description,
     confidence: item.confidence,
+    availability: item.availability,
     sourceDocId: item.sourceDocId,
     customerId
   }))

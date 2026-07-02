@@ -12,7 +12,10 @@ const ExtractedNodeSchema = z.object({
       label: z.enum(['capability', 'limitation', 'integration', 'pattern', 'constraint', 'workaround']),
       name: z.string().describe('Concise identifier, 3–8 words'),
       description: z.string().describe('Clear factual description, 1–3 sentences'),
-      confidence: z.number().min(0).max(1).describe('How clearly stated in source: 1.0 = explicit, 0.5 = implied')
+      confidence: z.number().min(0).max(1).describe('How clearly stated in source: 1.0 = explicit, 0.5 = implied'),
+      availability: z
+        .enum(['ga', 'beta', 'upcoming', 'requested', 'not_planned', 'deprecated'])
+        .describe('Where this sits on the product timeline TODAY, per the source text')
     })
   ).max(12)
 })
@@ -26,6 +29,14 @@ Node types:
 - pattern: a common usage pattern, recommended workflow, or implementation approach
 - constraint: business rule, compliance requirement, pricing tier boundary, SLA limit, quota
 - workaround: an explicit or implied way to work around a limitation
+
+Availability — where each fact sits on the product timeline (FDEs must never confuse "possible now" with "coming" or "wished for"):
+- ga: shipped, generally available right now (default when the text presents it as current fact)
+- beta: exists but gated — "in beta", "preview", "early access", "behind a flag"
+- upcoming: committed roadmap — "shipping next quarter", "currently building", "planned for Q3"
+- requested: asked for but NOT committed — "customers keep asking", "feature request", "on the wishlist"
+- not_planned: explicitly ruled out — "no plans to support", "out of scope"
+- deprecated: being removed or already gone — "sunset", "deprecated", "removed in v2"
 
 Rules:
 - Extract only what is clearly stated or strongly implied in the text
@@ -60,6 +71,7 @@ export async function extractChunk(
       name: n.name,
       description: n.description,
       confidence: n.confidence,
+      availability: n.availability,
       sourceDocId: jobId  // jobId doubles as source doc reference
     }))
   } catch (err) {

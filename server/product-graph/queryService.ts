@@ -128,7 +128,11 @@ export function formatProductContextForPrompt(result: ProductGraphQueryResult, c
   const emit = (label: string, nodes: ProductNode[]) => {
     if (nodes.length === 0) return
     sections.push(`\n### ${label}`)
-    for (const n of nodes) sections.push(`- **${n.name}**: ${n.description}`)
+    for (const n of nodes) {
+      const avail = n.availability && n.availability !== 'ga' ? ` [${n.availability.toUpperCase()}]` : ''
+      const demand = n.availability === 'requested' && (n.mentionCount ?? 1) > 1 ? ` (requested ${n.mentionCount}×)` : ''
+      sections.push(`- **${n.name}**${avail}${demand}: ${n.description}`)
+    }
   }
 
   emit('Capabilities',      result.capabilities)

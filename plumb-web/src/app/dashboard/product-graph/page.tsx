@@ -21,6 +21,16 @@ const LABEL_COLORS: Record<string, string> = {
   workaround: "#ec4899",
 };
 
+/** Roadmap-position chips: now / gated / coming / wished-for / never / dying */
+const AVAILABILITY_COLORS: Record<string, string> = {
+  ga: "#1db584",
+  beta: "#3e78c8",
+  upcoming: "#8b5cf6",
+  requested: "#f59e0b",
+  not_planned: "#e05252",
+  deprecated: "#6b7280",
+};
+
 const LABEL_ICONS: Record<string, string> = {
   capability: "✓",
   limitation: "✗",
@@ -665,6 +675,19 @@ function ReviewCard({
             >
               {item.label}
             </span>
+            {item.availability && item.availability !== "ga" && (
+              <span
+                style={{
+                  fontSize: 9, fontWeight: 700,
+                  color: AVAILABILITY_COLORS[item.availability] ?? "var(--db-text-4)",
+                  background: `${AVAILABILITY_COLORS[item.availability] ?? "#6b7280"}14`,
+                  borderRadius: 3, padding: "2px 6px",
+                  textTransform: "uppercase", letterSpacing: "0.05em",
+                }}
+              >
+                {item.availability.replace("_", " ")}
+              </span>
+            )}
             <span style={{ fontSize: 10, color: "var(--db-text-6)" }}>
               {Math.round(item.confidence * 100)}% confidence
             </span>

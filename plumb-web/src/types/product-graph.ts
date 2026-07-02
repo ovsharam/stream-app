@@ -6,6 +6,15 @@ export type ProductNodeLabel =
   | 'constraint'
   | 'workaround'
 
+/** Temporal/roadmap axis: where a fact sits on the product timeline. */
+export type ProductAvailability =
+  | 'ga'
+  | 'beta'
+  | 'upcoming'
+  | 'requested'
+  | 'not_planned'
+  | 'deprecated'
+
 export type ProductEdgeType =
   | 'REQUIRES'
   | 'BLOCKS'
@@ -23,6 +32,9 @@ export interface ProductNode {
   confidence: number
   sourceDocId: string
   customerId: string
+  availability?: ProductAvailability
+  mentionCount?: number
+  lastConfirmedAt?: number
   properties?: Record<string, string | number | boolean>
 }
 
@@ -46,6 +58,7 @@ export interface ReviewQueueItem {
   description: string
   confidence: number
   sourceDocId: string
+  availability?: ProductAvailability
   properties?: Record<string, string | number | boolean>
   status: ReviewStatus
   editedName?: string

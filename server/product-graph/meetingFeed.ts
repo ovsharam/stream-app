@@ -47,7 +47,10 @@ const MeetingDeltaSchema = z.object({
           .number()
           .min(0)
           .max(1)
-          .describe('1.0 = explicitly stated on the call, 0.5 = implied')
+          .describe('1.0 = explicitly stated on the call, 0.5 = implied'),
+        availability: z
+          .enum(['ga', 'beta', 'upcoming', 'requested', 'not_planned', 'deprecated'])
+          .describe('Where this sits on the product timeline per what was said on the call')
       })
     )
     .max(8)
@@ -65,9 +68,18 @@ Extract a node ONLY when the transcript reveals one of:
 - constraint: a business rule, quota, pricing-tier boundary, SLA, or compliance limit stated
 - workaround: an explicit way the team got around a limitation ("we worked around it by scripting the import")
 
+Availability — calls are exactly where roadmap position gets said out loud. Listen for it:
+- ga: "yes, that works today" → generally available now
+- beta: "it's in beta / early access / behind a flag"
+- upcoming: "that ships next quarter", "the team is building it now"
+- requested: "we keep getting asked for that", "I'll add it to the feature requests", client asked and it doesn't exist
+- not_planned: "there are no plans for that", "that's not on the roadmap"
+- deprecated: "we're sunsetting that", "that's going away in v2"
+
 Hard rules:
 - IGNORE scheduling, pleasantries, pricing negotiation, next-step logistics, and client-specific deal details.
 - Extract only PRODUCT facts that generalize beyond this one client.
+- A client asking for something the product lacks IS a signal — extract it as label=capability with availability=requested (the demand itself is durable knowledge).
 - If the call surfaces nothing durable about the product, return an empty array. Empty is correct and expected.
 - name = noun phrase ("No SSO on Starter plan", "Bulk export via API", "Webhook-then-poll ingestion pattern").
 - confidence: 1.0 explicitly stated, 0.7 clearly implied, 0.5 inferred.`
@@ -147,6 +159,7 @@ async function extractMeetingDeltas(
       name: n.name,
       description: n.description,
       confidence: n.confidence,
+      availability: n.availability,
       sourceDocId: jobId
     }))
   } catch (err) {

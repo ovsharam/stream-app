@@ -12,6 +12,24 @@ export type ProductNodeLabel =
   | 'constraint'
   | 'workaround'
 
+/**
+ * The temporal/roadmap axis — FDEs operate at the edge of demand, so every
+ * fact carries WHERE it sits on the product timeline:
+ * - ga: shipped and generally available right now
+ * - beta: exists but gated (beta / preview / early access)
+ * - upcoming: confirmed on the roadmap / actively being built
+ * - requested: asked for repeatedly but not committed to the roadmap
+ * - not_planned: explicitly ruled out
+ * - deprecated: existed, being removed or already gone
+ */
+export type ProductAvailability =
+  | 'ga'
+  | 'beta'
+  | 'upcoming'
+  | 'requested'
+  | 'not_planned'
+  | 'deprecated'
+
 export type ProductEdgeType =
   | 'REQUIRES'
   | 'BLOCKS'
@@ -31,6 +49,12 @@ export interface ProductNode {
   sourceDocId: string
   /** Which enterprise customer this graph belongs to */
   customerId: string
+  /** Where this sits on the product timeline (default 'ga' for legacy nodes) */
+  availability?: ProductAvailability
+  /** Independent observations (syncs / meetings / docs) that surfaced this fact */
+  mentionCount?: number
+  /** Last time any source re-confirmed this fact — staleness signal for FDEs */
+  lastConfirmedAt?: number
   properties?: Record<string, string | number | boolean>
 }
 
@@ -54,6 +78,8 @@ export interface ReviewQueueItem {
   description: string
   confidence: number
   sourceDocId: string
+  /** Roadmap position detected by the extractor (reviewer can trust or fix) */
+  availability?: ProductAvailability
   properties?: Record<string, string | number | boolean>
   status: ReviewStatus
   /** Set when user edits the name before approving */

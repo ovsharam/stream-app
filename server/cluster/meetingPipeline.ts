@@ -707,6 +707,33 @@ export async function endMeetingSession(
 
   const transcript = session.chunks.map((c) => c.text).join('\n').trim()
 
+  // Phase 1 — Notch-as-Piper: mine the transcript for PRODUCT deltas (workarounds,
+  // features shipped, limitations hit) and feed them into the product-graph review
+  // queue. Fire-and-forget: never let the graph feed block or fail meeting end.
+  if (transcript) {
+    try {
+      const { feedMeetingTranscriptToGraph } =
+        require('../product-graph/meetingFeed') as typeof import('../product-graph/meetingFeed')
+      void feedMeetingTranscriptToGraph({
+        transcript,
+        sessionId: session.id,
+        title: session.title
+      })
+        .then((r) => {
+          if (r.nodesExtracted > 0) {
+            console.log(
+              `[product-graph] meeting ${session.id}: ${r.nodesExtracted} product delta(s) queued for review`
+            )
+          }
+        })
+        .catch((e: Error) =>
+          console.warn('[product-graph] meeting feed failed:', e.message)
+        )
+    } catch (e) {
+      console.warn('[product-graph] meeting feed dispatch failed:', (e as Error).message)
+    }
+  }
+
   const extraction = transcript
     ? await extractWithLLM(transcript)
     : {

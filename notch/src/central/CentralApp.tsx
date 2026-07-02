@@ -11,6 +11,7 @@ import { ContextRail } from './ContextRail'
 import { IntegrationsPanel } from './IntegrationsPanel'
 import { BuildDojo } from './BuildDojo'
 import { NotesView } from './NotesView'
+import { ProductChatView } from './ProductChatView'
 import { MindGraphView } from './MindGraphView'
 import { CaseWorkspaceView } from './CaseWorkspaceView'
 import { ClientsView } from './ClientsView'
@@ -1328,6 +1329,10 @@ export function CentralApp() {
       ) : page === 'notes' ? (
         <main className="x-main x-main-utility">
           <NotesView onOpenIntegrations={() => setPage('integrations')} />
+        </main>
+      ) : page === 'product' ? (
+        <main className="x-main x-main-utility">
+          <ProductChatView />
         </main>
       ) : page === 'mind' ? (
         <main className="x-main x-main-utility x-main-mind-graph">

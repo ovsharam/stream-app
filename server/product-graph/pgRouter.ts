@@ -14,6 +14,12 @@ import {
 } from './ingestStore'
 import { writeApprovedNodes } from './graphWriter'
 import { queryProductGraph, formatProductContextForPrompt } from './queryService'
+import {
+  matchNodesForQuestion,
+  streamProductChatAnswer,
+  summarizeNode,
+  type ChatHistoryMessage
+} from './chatService'
 import { getDemoScenario, listDemoScenarios } from './demoSeed'
 import { runConnectorPipeline } from '../connectors/pipeline'
 
@@ -144,6 +150,58 @@ export function productGraphRouter(): Router {
     const customerId = resolveCustomerId(req, String(req.query.customerId ?? ''))
     if (!customerId) { res.status(400).json({ error: 'customerId required' }); return }
     res.json(getProductGraphStats(customerId))
+  })
+
+  // POST /product-graph/chat — graph-grounded product Q&A (SSE stream)
+  router.post('/chat', async (req: Request, res: Response) => {
+    const { customerId: clientId, question, history } = req.body as {
+      customerId?: string
+      question?: string
+      history?: ChatHistoryMessage[]
+    }
+    const customerId = resolveCustomerId(req, clientId)
+    if (!customerId || !question?.trim()) {
+      res.status(400).json({ error: 'customerId and question required' })
+      return
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('X-Accel-Buffering', 'no')
+    res.flushHeaders?.()
+
+    const emit = (data: Record<string, unknown>) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`)
+    }
+
+    try {
+      const nodes = await matchNodesForQuestion(customerId, question.trim())
+      emit({ event: 'nodes', nodes: nodes.map(summarizeNode) })
+
+      if (nodes.length === 0) {
+        // Deterministic refusal — the whole point is never guessing.
+        emit({
+          event: 'no_coverage',
+          message:
+            'No product-graph coverage for this question. The graph does not know — and guessing is how deals go wrong. Ingest the relevant docs (Ingest tab), sync a connector that covers this area, or ask the product team and capture the answer in your next recorded meeting.'
+        })
+        emit({ event: 'done' })
+        res.end()
+        return
+      }
+
+      await streamProductChatAnswer({
+        question: question.trim(),
+        nodes,
+        history,
+        onDelta: (text) => emit({ event: 'delta', text })
+      })
+      emit({ event: 'done' })
+    } catch (err) {
+      emit({ event: 'error', message: (err as Error).message })
+    } finally {
+      res.end()
+    }
   })
 
   // GET /product-graph/demo-scenarios

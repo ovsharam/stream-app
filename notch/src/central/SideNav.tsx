@@ -36,6 +36,7 @@ export type Page =
   | 'case'
   | 'clients'
   | 'demo'
+  | 'product'
 
 export type NavTarget = {
   id: string
@@ -74,6 +75,12 @@ const PRIMARY_NAV: NavTarget[] = [
     label: 'Clients',
     hint: 'Accounts & engagements',
     page: 'clients'
+  },
+  {
+    id: 'product',
+    label: 'Product',
+    hint: 'Ask the product graph',
+    page: 'product'
   },
   {
     id: 'build',
@@ -145,6 +152,8 @@ function NavIcon({ id }: { id: string }) {
       return <IconBookmark className={cls} />
     case 'mind':
       return <IconSpark className={cls} />
+    case 'product':
+      return <IconGlobe className={cls} />
     case 'build':
       return <IconRadar className={cls} />
     case 'signals':

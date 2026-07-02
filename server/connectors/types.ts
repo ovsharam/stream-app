@@ -14,8 +14,12 @@ export type ConnectorType =
   | 'confluence'
   | 'gitbook'
   | 'readme'
+  | 'salesforce'
+  | 'gmail'
+  | 'teams'
+  | 'docs_site'
 
-export type AuthType = 'pat' | 'api_key' | 'oauth'
+export type AuthType = 'pat' | 'api_key' | 'oauth' | 'none'
 
 export interface ConnectorCredentials {
   accessToken?: string
@@ -58,6 +62,13 @@ export interface ConnectorSettings {
   // GitBook
   spaceIds?: string[]
   // Readme.com — no extra settings needed (syncs all docs + changelog)
+  // Gmail
+  searchQuery?: string    // Gmail search syntax, e.g. 'label:product-updates'
+  // Teams — reuses `channels` (channel display names); empty = product-ish defaults
+  teamNames?: string[]    // filter joined teams by display name; empty = all
+  // Public docs crawler
+  siteUrls?: string[]     // seed URLs, e.g. ['https://docs.vapi.ai']
+  maxPages?: number       // crawl cap per seed (default 40)
 }
 
 export interface ConnectorConfig {

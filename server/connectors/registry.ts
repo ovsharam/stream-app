@@ -14,6 +14,10 @@ import { clickupConnector } from './clickup'
 import { confluenceConnector } from './confluence'
 import { gitbookConnector } from './gitbook'
 import { readmeConnector } from './readme'
+import { salesforceConnector } from './salesforce'
+import { gmailConnector } from './gmail'
+import { teamsConnector } from './teams'
+import { docsSiteConnector } from './docs-site'
 
 const registry = new Map<ConnectorType, ConnectorImpl>([
   ['github',      githubConnector],
@@ -31,6 +35,10 @@ const registry = new Map<ConnectorType, ConnectorImpl>([
   ['confluence',  confluenceConnector],
   ['gitbook',     gitbookConnector],
   ['readme',      readmeConnector],
+  ['salesforce',  salesforceConnector],
+  ['gmail',       gmailConnector],
+  ['teams',       teamsConnector],
+  ['docs_site',   docsSiteConnector],
 ])
 
 export function getConnectorImpl(type: ConnectorType): ConnectorImpl {
